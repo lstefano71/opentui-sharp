@@ -80,7 +80,7 @@ public sealed class NativeBuffer : IDisposable
     /// <summary>Draws a single character at the specified cell position with styling.</summary>
     public void DrawChar(uint x, uint y, uint codepoint, Rgba fg, Rgba bg, TextAttribute attrs = TextAttribute.None) =>
         RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferDrawChar(Handle, x, y, codepoint, fgPtr, bgPtr, (uint)attrs));
+            OpenTuiNative.BufferDrawChar(Handle, codepoint, x, y, fgPtr, bgPtr, (uint)attrs));
 
     /// <summary>Fills a rectangular region with the specified color.</summary>
     public void FillRect(uint x, uint y, uint w, uint h, Rgba color) =>

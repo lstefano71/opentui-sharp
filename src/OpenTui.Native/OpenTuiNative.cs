@@ -563,14 +563,14 @@ internal static partial class OpenTuiNative
 
     /// <summary>Draws a single character at the specified cell position with styling.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>
+    /// <param name="codepoint">Unicode codepoint to render.</param>
     /// <param name="x">X position in columns.</param>
     /// <param name="y">Y position in rows.</param>
-    /// <param name="codepoint">Unicode codepoint to render.</param>
     /// <param name="fg">Pointer to the foreground RGBA color.</param>
     /// <param name="bg">Pointer to the background RGBA color.</param>
     /// <param name="attrs">Cell attributes bitmask.</param>
     [LibraryImport(LibName, EntryPoint = "bufferDrawChar")]
-    internal static partial void BufferDrawChar(nint buffer, uint x, uint y, uint codepoint, nint fg, nint bg, uint attrs);
+    internal static partial void BufferDrawChar(nint buffer, uint codepoint, uint x, uint y, nint fg, nint bg, uint attrs);
 
     /// <summary>Draws a text buffer view into the optimized buffer at the specified position.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>
