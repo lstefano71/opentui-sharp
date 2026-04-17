@@ -24,8 +24,34 @@ public class Text : Widget
     public TextAttribute Attributes { get; set; } = TextAttribute.None;
 
     /// <inheritdoc />
-    protected internal override void Draw(nint buffer, int offsetX, int offsetY)
+    protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {
-        // Will use native bufferDrawText once high-level wrappers are available
+        var fg = ResolvedFg;
+        var bg = ResolvedBg;
+        int maxW = (int)Layout.LayoutWidth;
+        int maxH = (int)Layout.LayoutHeight;
+        if (maxW <= 0 || maxH <= 0) return;
+
+        int y = 0;
+        foreach (var chunk in _content.Chunks)
+        {
+            var chunkFg = chunk.Fg ?? fg;
+            var chunkBg = chunk.Bg ?? bg;
+            var chunkAttrs = chunk.Attributes | Attributes;
+
+            var lines = chunk.Text.Split('\n');
+            for (int lineIdx = 0; lineIdx < lines.Length; lineIdx++)
+            {
+                if (lineIdx > 0) y++;
+                if (y >= maxH) break;
+
+                var line = lines[lineIdx];
+                if (line.Length > 0)
+                {
+                    buffer.DrawText(line, (uint)offsetX, (uint)(offsetY + y), chunkFg, chunkBg, chunkAttrs);
+                }
+            }
+            if (y >= maxH) break;
+        }
     }
 }

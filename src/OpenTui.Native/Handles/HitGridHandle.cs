@@ -2,14 +2,15 @@ namespace OpenTui.Native;
 
 /// <summary>
 /// Safe handle wrapping the native opentui HitGrid pointer.
-/// Released via <c>renderlib_hit_grid_destroy</c>.
+/// HitGrid is internally managed by the renderer — there is no separate destroy function.
+/// This handle is non-owning and does not release the underlying resource.
 /// </summary>
 public sealed class HitGridHandle : OpenTuiSafeHandle
 {
     /// <inheritdoc />
     protected override bool ReleaseHandle()
     {
-        OpenTuiNative.HitGridDestroy(handle);
+        // HitGrid is owned by the renderer and destroyed when the renderer is destroyed.
         return true;
     }
 }

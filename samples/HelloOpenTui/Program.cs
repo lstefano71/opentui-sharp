@@ -4,6 +4,7 @@ using var app = new App(new AppOptions { TargetFps = 30 });
 
 app.Root.Border = BorderStyle.Rounded;
 app.Root.Title = "Hello OpenTUI";
+app.Root.Bg = Rgba.FromHex("#1a1a2e");
 
 app.Root.Add(new Text("Welcome to OpenTUI-sharp! 🎉")
 {
@@ -17,8 +18,4 @@ app.Root.Add(new Text("Press Ctrl+C to exit.")
     AlignSelf = Align.Center
 });
 
-// Note: Full rendering requires the native opentui.dll.
-// This sample demonstrates the widget tree and layout API.
-Console.WriteLine("Widget tree created successfully!");
-Console.WriteLine($"Root has {app.Root.Children.Count} children");
-Console.WriteLine("(Full TUI rendering requires native renderer integration)");
+app.Run();

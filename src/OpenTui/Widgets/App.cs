@@ -49,26 +49,46 @@ public sealed class App : IDisposable
     public void Run()
     {
         _running = true;
+        uint cols = _options.Cols > 0 ? (uint)_options.Cols : (uint)Console.WindowWidth;
+        uint rows = _options.Rows > 0 ? (uint)_options.Rows : (uint)Console.WindowHeight;
+        int fps = Math.Clamp(_options.TargetFps, 1, 120);
 
-        // TODO: Initialize native renderer
-        // TODO: Setup terminal (alternate screen, raw mode, mouse)
-        // TODO: Start render loop with target FPS timing
-        // TODO: Input polling loop
+        using var renderer = new NativeRenderer(cols, rows, useStdout: true, useAlternateScreen: _options.AlternateScreen);
+        renderer.SetupTerminal(_options.AlternateScreen);
 
         Console.CancelKeyPress += OnCancelKeyPress;
         try
         {
             while (_running)
             {
-                _root.Layout.CalculateLayout();
+                // Handle resize
+                uint newCols = (uint)Console.WindowWidth;
+                uint newRows = (uint)Console.WindowHeight;
+                bool resized = newCols != cols || newRows != rows;
+                if (resized)
+                {
+                    cols = newCols;
+                    rows = newRows;
+                    renderer.Resize(cols, rows);
+                }
 
-                // Render placeholder — needs native buffer
-                Thread.Sleep(1000 / _options.TargetFps);
+                // Layout
+                _root.Layout.CalculateLayout(cols, rows);
+
+                // Render
+                var buffer = renderer.GetNextBuffer();
+                buffer.Clear();
+                buffer.ClearScissors();
+                _root.Render(buffer, 0, 0);
+                renderer.Render(forceFullRender: resized);
+
+                Thread.Sleep(1000 / fps);
             }
         }
         finally
         {
             Console.CancelKeyPress -= OnCancelKeyPress;
+            renderer.RestoreTerminalModes();
         }
     }
 
@@ -81,7 +101,6 @@ public sealed class App : IDisposable
         if (_disposed) return;
         _disposed = true;
         Stop();
-        // TODO: Destroy native renderer, restore terminal
     }
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)

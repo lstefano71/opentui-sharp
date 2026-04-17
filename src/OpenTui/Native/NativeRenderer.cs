@@ -172,13 +172,13 @@ public sealed class NativeRenderer : IDisposable
         }
     }
 
-    /// <summary>Dumps internal buffers to the specified file descriptor for debugging.</summary>
-    public void DumpBuffers(long fd) =>
-        OpenTuiNative.DumpBuffers(Handle, fd);
+    /// <summary>Dumps internal buffers to a file named with the given timestamp for debugging.</summary>
+    public void DumpBuffers(long? timestamp = null) =>
+        OpenTuiNative.DumpBuffers(Handle, timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
-    /// <summary>Dumps the stdout buffer to the specified file descriptor for debugging.</summary>
-    public void DumpStdoutBuffer(long fd) =>
-        OpenTuiNative.DumpStdoutBuffer(Handle, fd);
+    /// <summary>Dumps the stdout buffer to a file named with the given timestamp for debugging.</summary>
+    public void DumpStdoutBuffer(long? timestamp = null) =>
+        OpenTuiNative.DumpStdoutBuffer(Handle, timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
     /// <inheritdoc />
     public void Dispose()

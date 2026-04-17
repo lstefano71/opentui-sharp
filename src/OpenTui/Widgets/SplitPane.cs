@@ -41,8 +41,8 @@ public class SplitPane : Widget
     public event Action<float>? OnSplitChanged;
 
     /// <inheritdoc />
-    protected internal override void Draw(nint buffer, int offsetX, int offsetY)
+    protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {
-        // TODO: wire to native buffer
+        // SplitPane itself draws nothing — children render via recursive Render
     }
 }

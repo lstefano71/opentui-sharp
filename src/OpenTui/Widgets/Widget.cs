@@ -98,22 +98,29 @@ public abstract class Widget : IEnumerable<Widget>
     /// <param name="buffer">The native buffer to draw into.</param>
     /// <param name="offsetX">X offset from parent's absolute position.</param>
     /// <param name="offsetY">Y offset from parent's absolute position.</param>
-    protected internal abstract void Draw(nint buffer, int offsetX, int offsetY);
+    protected internal abstract void Draw(NativeBuffer buffer, int offsetX, int offsetY);
 
     /// <summary>
     /// Renders this widget and all its children recursively.
     /// </summary>
-    internal void Render(nint buffer, int parentX, int parentY)
+    internal void Render(NativeBuffer buffer, int parentX, int parentY)
     {
         if (!Visible) return;
 
         int absX = parentX + (int)Layout.LayoutX;
         int absY = parentY + (int)Layout.LayoutY;
+        int w = (int)Layout.LayoutWidth;
+        int h = (int)Layout.LayoutHeight;
 
         Draw(buffer, absX, absY);
 
-        foreach (var child in _children)
-            child.Render(buffer, absX, absY);
+        if (w > 0 && h > 0)
+        {
+            buffer.PushScissor(absX, absY, (uint)w, (uint)h);
+            foreach (var child in _children)
+                child.Render(buffer, absX, absY);
+            buffer.PopScissor();
+        }
     }
 
     /// <summary>Gets the resolved foreground color, inheriting from parent chain.</summary>

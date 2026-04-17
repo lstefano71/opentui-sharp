@@ -28,9 +28,28 @@ public class Progress : Widget
     public string? Label { get; set; }
 
     /// <inheritdoc />
-    protected internal override void Draw(nint buffer, int offsetX, int offsetY)
+    protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {
-        // TODO: wire to native buffer
+        int w = (int)Layout.LayoutWidth;
+        int h = (int)Layout.LayoutHeight;
+        if (w <= 0 || h <= 0) return;
+
+        var completedColor = CompletedColor ?? Rgba.FromHex("#00FF88");
+        var remainingColor = RemainingColor ?? Rgba.FromInts(64, 64, 64);
+        int filledWidth = (int)(w * Math.Clamp(Percentage / 100.0, 0, 1));
+
+        if (filledWidth > 0)
+            buffer.FillRect((uint)offsetX, (uint)offsetY, (uint)filledWidth, (uint)h, completedColor);
+        if (filledWidth < w)
+            buffer.FillRect((uint)(offsetX + filledWidth), (uint)offsetY, (uint)(w - filledWidth), (uint)h, remainingColor);
+
+        if (ShowPercentage || Label is not null)
+        {
+            string label = Label is not null
+                ? $"{Label} {Percentage:F0}%"
+                : $"{Percentage:F0}%";
+            buffer.DrawText(label, (uint)offsetX, (uint)offsetY, ResolvedFg);
+        }
     }
 }
 
@@ -62,8 +81,15 @@ public class Spinner : Widget
     public string CurrentFrame => Frames[FrameIndex % Frames.Length];
 
     /// <inheritdoc />
-    protected internal override void Draw(nint buffer, int offsetX, int offsetY)
+    protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {
-        // TODO: wire to native buffer
+        var color = SpinnerColor ?? ResolvedFg;
+        string frame = CurrentFrame;
+        buffer.DrawText(frame, (uint)offsetX, (uint)offsetY, color);
+
+        if (Label is not null)
+        {
+            buffer.DrawText(Label, (uint)(offsetX + frame.Length + 1), (uint)offsetY, ResolvedFg);
+        }
     }
 }

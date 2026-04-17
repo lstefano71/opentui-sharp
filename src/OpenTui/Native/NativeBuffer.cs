@@ -87,10 +87,63 @@ public sealed class NativeBuffer : IDisposable
         RgbaMarshalling.WithColorPtr(color, ptr =>
             OpenTuiNative.BufferFillRect(Handle, x, y, w, h, ptr));
 
-    /// <summary>Draws text from a text view into the buffer at the given position with styling.</summary>
-    public void DrawText(nint textView, uint x, uint y, uint maxWidth, Rgba fg, Rgba bg, TextAttribute attrs = TextAttribute.None) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferDrawText(Handle, textView, x, y, maxWidth, fgPtr, bgPtr, (uint)attrs));
+    /// <summary>Draws a UTF-8 text string into the buffer at the given position with styling.</summary>
+    public void DrawText(string text, uint x, uint y, Rgba fg, Rgba? bg = null, TextAttribute attrs = TextAttribute.None)
+    {
+        var utf8 = new Utf8String(text);
+        utf8.WithPtr((textPtr, textLen) =>
+            RgbaMarshalling.WithColorPtrs(fg, bg ?? Rgba.Transparent, (fgPtr, bgPtr) =>
+                OpenTuiNative.BufferDrawText(Handle, textPtr, (uint)textLen, x, y, fgPtr, bgPtr, (uint)attrs)));
+    }
+
+    /// <summary>Draws a box with optional border, background fill, and title text.</summary>
+    public void DrawBox(int x, int y, uint w, uint h, BorderCharacters? borderChars = null,
+        bool borderTop = true, bool borderRight = true, bool borderBottom = true, bool borderLeft = true,
+        bool shouldFill = true, Rgba? borderColor = null, Rgba? backgroundColor = null,
+        string? title = null, TitleAlignment titleAlignment = TitleAlignment.Left,
+        string? bottomTitle = null, TitleAlignment bottomTitleAlignment = TitleAlignment.Left)
+    {
+        var chars = borderChars ?? BorderCharacters.Single;
+        uint[] codePoints = chars.ToCodePoints();
+
+        // Pack options bitfield
+        uint packed = 0;
+        if (borderTop) packed |= 0b1000;
+        if (borderRight) packed |= 0b0100;
+        if (borderBottom) packed |= 0b0010;
+        if (borderLeft) packed |= 0b0001;
+        if (shouldFill) packed |= 1u << 4;
+        packed |= (uint)titleAlignment << 5;
+        packed |= (uint)bottomTitleAlignment << 7;
+
+        Span<float> borderRgba = [
+            (borderColor ?? Rgba.White).R, (borderColor ?? Rgba.White).G,
+            (borderColor ?? Rgba.White).B, (borderColor ?? Rgba.White).A
+        ];
+        Span<float> bgRgba = [
+            (backgroundColor ?? Rgba.Transparent).R, (backgroundColor ?? Rgba.Transparent).G,
+            (backgroundColor ?? Rgba.Transparent).B, (backgroundColor ?? Rgba.Transparent).A
+        ];
+
+        byte[]? titleBytes = title != null ? System.Text.Encoding.UTF8.GetBytes(title) : null;
+        byte[]? bottomTitleBytes = bottomTitle != null ? System.Text.Encoding.UTF8.GetBytes(bottomTitle) : null;
+
+        unsafe
+        {
+            fixed (uint* charsPtr = codePoints)
+            fixed (float* borderColorPtr = borderRgba)
+            fixed (float* bgColorPtr = bgRgba)
+            fixed (byte* titlePtr = titleBytes)
+            fixed (byte* bottomTitlePtr = bottomTitleBytes)
+            {
+                OpenTuiNative.BufferDrawBox(Handle, x, y, w, h,
+                    (nint)charsPtr, packed,
+                    (nint)borderColorPtr, (nint)bgColorPtr,
+                    titleBytes != null ? (nint)titlePtr : 0, (uint)(titleBytes?.Length ?? 0),
+                    bottomTitleBytes != null ? (nint)bottomTitlePtr : 0, (uint)(bottomTitleBytes?.Length ?? 0));
+            }
+        }
+    }
 
     /// <summary>Draws a region from a source buffer into this buffer at the specified position.</summary>
     public void DrawFrameBuffer(int x, int y, NativeBuffer source, uint srcX, uint srcY, uint w, uint h) =>

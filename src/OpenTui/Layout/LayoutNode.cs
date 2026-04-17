@@ -124,6 +124,14 @@ public sealed class LayoutNode
     public float PaddingBottom { set => YGNodeStyleSetPadding(YogaNode, YGEdge.Bottom, value); }
     public float Padding { set => YGNodeStyleSetPadding(YogaNode, YGEdge.All, value); }
 
+    // --- Spacing: border ---
+
+    public float BorderLeft { set => YGNodeStyleSetBorder(YogaNode, YGEdge.Left, value); }
+    public float BorderTop { set => YGNodeStyleSetBorder(YogaNode, YGEdge.Top, value); }
+    public float BorderRight { set => YGNodeStyleSetBorder(YogaNode, YGEdge.Right, value); }
+    public float BorderBottom { set => YGNodeStyleSetBorder(YogaNode, YGEdge.Bottom, value); }
+    public float Border { set => YGNodeStyleSetBorder(YogaNode, YGEdge.All, value); }
+
     // --- Gap (row/column gaps) ---
 
     public float Gap { set => YGNodeStyleSetGap(YogaNode, YGGutter.All, value); }

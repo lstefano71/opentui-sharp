@@ -28,7 +28,7 @@ public class TextInput : Widget
     public event Action<string>? OnChange;
 
     /// <inheritdoc />
-    protected internal override void Draw(nint buffer, int offsetX, int offsetY)
+    protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {
         // TODO: wire to native buffer
     }

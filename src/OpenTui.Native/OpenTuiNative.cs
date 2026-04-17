@@ -253,17 +253,17 @@ internal static partial class OpenTuiNative
     [LibraryImport(LibName, EntryPoint = "processCapabilityResponse")]
     internal static partial void ProcessCapabilityResponse(nint renderer, nint data, nuint len);
 
-    /// <summary>Dumps the internal buffers to the specified file descriptor for debugging.</summary>
+    /// <summary>Dumps the internal buffers to a file named with the given timestamp for debugging.</summary>
     /// <param name="renderer">Handle to the renderer instance.</param>
-    /// <param name="fd">File descriptor for debug output.</param>
+    /// <param name="timestamp">Timestamp in milliseconds (e.g. DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).</param>
     [LibraryImport(LibName, EntryPoint = "dumpBuffers")]
-    internal static partial void DumpBuffers(nint renderer, long fd);
+    internal static partial void DumpBuffers(nint renderer, long timestamp);
 
-    /// <summary>Dumps the stdout buffer to the specified file descriptor for debugging.</summary>
+    /// <summary>Dumps the stdout buffer to a file named with the given timestamp for debugging.</summary>
     /// <param name="renderer">Handle to the renderer instance.</param>
-    /// <param name="fd">File descriptor for debug output.</param>
+    /// <param name="timestamp">Timestamp in milliseconds (e.g. DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()).</param>
     [LibraryImport(LibName, EntryPoint = "dumpStdoutBuffer")]
-    internal static partial void DumpStdoutBuffer(nint renderer, long fd);
+    internal static partial void DumpStdoutBuffer(nint renderer, long timestamp);
 
     #endregion
 
@@ -375,17 +375,17 @@ internal static partial class OpenTuiNative
     [LibraryImport(LibName, EntryPoint = "bufferWriteResolvedChars")]
     internal static partial uint BufferWriteResolvedChars(nint buffer, nint chars, nuint len, [MarshalAs(UnmanagedType.U1)] bool append);
 
-    /// <summary>Draws text from a text view into the buffer at the given position with styling.</summary>
+    /// <summary>Draws UTF-8 text into the buffer at the given position with styling.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>
-    /// <param name="textView">Handle to the text view.</param>
+    /// <param name="textPtr">Pointer to UTF-8 encoded text bytes.</param>
+    /// <param name="textLen">Byte length of the text.</param>
     /// <param name="x">X position in columns.</param>
     /// <param name="y">Y position in rows.</param>
-    /// <param name="maxWidth">Maximum width in columns.</param>
     /// <param name="fg">Pointer to the foreground RGBA color.</param>
     /// <param name="bg">Pointer to the background RGBA color.</param>
     /// <param name="attrs">Cell attributes bitmask.</param>
     [LibraryImport(LibName, EntryPoint = "bufferDrawText")]
-    internal static partial void BufferDrawText(nint buffer, nint textView, uint x, uint y, uint maxWidth, nint fg, nint bg, uint attrs);
+    internal static partial void BufferDrawText(nint buffer, nint textPtr, uint textLen, uint x, uint y, nint fg, nint bg, uint attrs);
 
     /// <summary>Sets a single cell with alpha blending applied.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>
@@ -503,22 +503,22 @@ internal static partial class OpenTuiNative
     [LibraryImport(LibName, EntryPoint = "bufferDrawGrid")]
     internal static partial void BufferDrawGrid(nint buffer, nint gridDef, nint widths, nint heights, nint colors, uint colorCount, nint borderChars, uint borderCharCount, nint borderColor);
 
-    /// <summary>Draws a box with borders and an optional title.</summary>
+    /// <summary>Draws a box with borders, background fill, and optional title text.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>
     /// <param name="x">X position in columns.</param>
     /// <param name="y">Y position in rows.</param>
     /// <param name="w">Width in columns.</param>
     /// <param name="h">Height in rows.</param>
-    /// <param name="borderChars">Pointer to the border character array.</param>
-    /// <param name="borderCharCount">Number of border characters.</param>
-    /// <param name="borderColor">Pointer to the border RGBA color.</param>
-    /// <param name="titlePtr">Pointer to the UTF-8 title string.</param>
-    /// <param name="titleColor">Pointer to the title RGBA color.</param>
+    /// <param name="borderChars">Pointer to a uint[11] array of border codepoints.</param>
+    /// <param name="packedOptions">Packed bitfield: bits 0-3 border sides, bit 4 fill, bits 5-6 title align, bits 7-8 bottom title align.</param>
+    /// <param name="borderColor">Pointer to the border RGBA float[4] color.</param>
+    /// <param name="backgroundColor">Pointer to the background RGBA float[4] color.</param>
+    /// <param name="titlePtr">Pointer to the UTF-8 title string (0 for none).</param>
     /// <param name="titleLen">Byte length of the title string.</param>
-    /// <param name="titleAlign">Pointer to the title alignment value.</param>
-    /// <param name="titleAlignVal">Title alignment enumeration value.</param>
+    /// <param name="bottomTitlePtr">Pointer to the UTF-8 bottom title string (0 for none).</param>
+    /// <param name="bottomTitleLen">Byte length of the bottom title string.</param>
     [LibraryImport(LibName, EntryPoint = "bufferDrawBox")]
-    internal static partial void BufferDrawBox(nint buffer, int x, int y, uint w, uint h, nint borderChars, uint borderCharCount, nint borderColor, nint titlePtr, nint titleColor, uint titleLen, nint titleAlign, uint titleAlignVal);
+    internal static partial void BufferDrawBox(nint buffer, int x, int y, uint w, uint h, nint borderChars, uint packedOptions, nint borderColor, nint backgroundColor, nint titlePtr, uint titleLen, nint bottomTitlePtr, uint bottomTitleLen);
 
     /// <summary>Pushes a scissor (clipping) rectangle onto the buffer's clip stack.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>
@@ -597,12 +597,17 @@ internal static partial class OpenTuiNative
     // calls LinkDestroy, which is declared here for compilation but may be a no-op
     // or internally managed.
 
-    /// <summary>Allocates a new link entry in the link store for the given URL hash.</summary>
-    /// <param name="linkStore">Handle to the link store.</param>
-    /// <param name="urlHash">Hash of the URL string.</param>
+    /// <summary>Destroys a link store (no-op if internally managed by the renderer).</summary>
+    /// <param name="link">Handle to the link store.</param>
+    [LibraryImport(LibName, EntryPoint = "linkDestroy")]
+    internal static partial void LinkDestroy(nint link);
+
+    /// <summary>Allocates a new link entry for the given URL (UTF-8 pointer + byte length).</summary>
+    /// <param name="urlPtr">Pointer to the UTF-8 encoded URL bytes.</param>
+    /// <param name="urlLen">Byte length of the URL string.</param>
     /// <returns>The allocated link identifier.</returns>
     [LibraryImport(LibName, EntryPoint = "linkAlloc")]
-    internal static partial uint LinkAlloc(nint linkStore, uint urlHash);
+    internal static partial uint LinkAlloc(nint urlPtr, uint urlLen);
 
     /// <summary>Gets the URL string for a link ID into the output buffer. Returns the actual byte length.</summary>
     /// <param name="linkId">Link identifier extracted from attributes.</param>
@@ -634,69 +639,74 @@ internal static partial class OpenTuiNative
     // calls HitGridDestroy, which is declared here for compilation but may be a no-op
     // or internally managed.
 
-    /// <summary>Adds a rectangular hit region to the hit grid.</summary>
+    /// <summary>Destroys a hit grid (no-op if internally managed by the renderer).</summary>
     /// <param name="hitGrid">Handle to the hit grid.</param>
+    [LibraryImport(LibName, EntryPoint = "hitGridDestroy")]
+    internal static partial void HitGridDestroy(nint hitGrid);
+
+    /// <summary>Adds a rectangular hit region to the hit grid.</summary>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     /// <param name="x">X position in columns.</param>
     /// <param name="y">Y position in rows.</param>
     /// <param name="w">Width in columns.</param>
     /// <param name="h">Height in rows.</param>
-    /// <param name="id">Pointer to the UTF-8 identifier string.</param>
+    /// <param name="id">Numeric identifier for the hit region.</param>
     [LibraryImport(LibName, EntryPoint = "addToHitGrid")]
-    internal static partial void AddToHitGrid(nint hitGrid, int x, int y, uint w, uint h, uint id);
+    internal static partial void AddToHitGrid(nint renderer, int x, int y, uint w, uint h, uint id);
 
     /// <summary>Clears all hit regions from the current hit grid.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     [LibraryImport(LibName, EntryPoint = "clearCurrentHitGrid")]
-    internal static partial void ClearCurrentHitGrid(nint hitGrid);
+    internal static partial void ClearCurrentHitGrid(nint renderer);
 
     /// <summary>Pushes a scissor (clipping) rectangle onto the hit grid's clip stack.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     /// <param name="x">X position in columns.</param>
     /// <param name="y">Y position in rows.</param>
     /// <param name="w">Width in columns.</param>
     /// <param name="h">Height in rows.</param>
     [LibraryImport(LibName, EntryPoint = "hitGridPushScissorRect")]
-    internal static partial void HitGridPushScissorRect(nint hitGrid, int x, int y, uint w, uint h);
+    internal static partial void HitGridPushScissorRect(nint renderer, int x, int y, uint w, uint h);
 
     /// <summary>Pops the most recent scissor rectangle from the hit grid's clip stack.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     [LibraryImport(LibName, EntryPoint = "hitGridPopScissorRect")]
-    internal static partial void HitGridPopScissorRect(nint hitGrid);
+    internal static partial void HitGridPopScissorRect(nint renderer);
 
     /// <summary>Clears all scissor rectangles from the hit grid's clip stack.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     [LibraryImport(LibName, EntryPoint = "hitGridClearScissorRects")]
-    internal static partial void HitGridClearScissorRects(nint hitGrid);
+    internal static partial void HitGridClearScissorRects(nint renderer);
 
     /// <summary>Adds a hit region to the current hit grid, clipped by the active scissor rectangles.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     /// <param name="x">X position in columns.</param>
     /// <param name="y">Y position in rows.</param>
     /// <param name="w">Width in columns.</param>
     /// <param name="h">Height in rows.</param>
-    /// <param name="id">Pointer to the UTF-8 identifier string.</param>
+    /// <param name="id">Numeric identifier for the hit region.</param>
     [LibraryImport(LibName, EntryPoint = "addToCurrentHitGridClipped")]
-    internal static partial void AddToCurrentHitGridClipped(nint hitGrid, int x, int y, uint w, uint h, uint id);
+    internal static partial void AddToCurrentHitGridClipped(nint renderer, int x, int y, uint w, uint h, uint id);
 
     /// <summary>Tests whether the given coordinates hit any region, returning the region ID or 0.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     /// <param name="x">X position in columns.</param>
     /// <param name="y">Y position in rows.</param>
     /// <returns>The hit region ID, or 0 if no hit.</returns>
     [LibraryImport(LibName, EntryPoint = "checkHit")]
-    internal static partial uint CheckHit(nint hitGrid, uint x, uint y);
+    internal static partial uint CheckHit(nint renderer, uint x, uint y);
 
     /// <summary>Gets whether the hit grid has been modified since the last check.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     /// <returns>True if the hit grid has been modified.</returns>
     [LibraryImport(LibName, EntryPoint = "getHitGridDirty")]
     [return: MarshalAs(UnmanagedType.U1)]
-    internal static partial bool GetHitGridDirty(nint hitGrid);
+    internal static partial bool GetHitGridDirty(nint renderer);
 
     /// <summary>Dumps the hit grid contents for debugging.</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
+    /// <param name="renderer">Handle to the renderer instance.</param>
     [LibraryImport(LibName, EntryPoint = "dumpHitGrid")]
-    internal static partial void DumpHitGrid(nint hitGrid);
+    internal static partial void DumpHitGrid(nint renderer);
 
     #endregion
 
@@ -1767,15 +1777,9 @@ internal static partial class OpenTuiNative
     // corresponding exports in the documented native API. They may exist as internal
     // native exports or may need to be added. Declared here for compilation.
 
-    /// <summary>Destroys a hit grid (may be internally managed by the renderer).</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
-    [LibraryImport(LibName, EntryPoint = "destroyHitGrid")]
-    internal static partial void HitGridDestroy(nint hitGrid);
-
-    /// <summary>Destroys a link store (may be internally managed by the renderer).</summary>
-    /// <param name="linkStore">Handle to the link store.</param>
-    [LibraryImport(LibName, EntryPoint = "destroyLinkStore")]
-    internal static partial void LinkDestroy(nint linkStore);
+    // NOTE: HitGrid and LinkStore are internally managed by the renderer.
+    // There are no separate destroyHitGrid or destroyLinkStore native exports.
+    // The renderer's destroy function handles cleanup of these resources.
 
     #endregion
 }

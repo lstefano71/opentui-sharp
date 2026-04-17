@@ -23,8 +23,40 @@ public class StatusBar : Widget
     public Rgba? DefaultBg { get; set; }
 
     /// <inheritdoc />
-    protected internal override void Draw(nint buffer, int offsetX, int offsetY)
+    protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {
-        // TODO: wire to native buffer
+        int w = (int)Layout.LayoutWidth;
+        int h = (int)Layout.LayoutHeight;
+        if (w <= 0 || h <= 0) return;
+
+        var barBg = DefaultBg ?? Rgba.FromInts(32, 32, 32);
+        buffer.FillRect((uint)offsetX, (uint)offsetY, (uint)w, (uint)h, barBg);
+
+        // Draw left sections
+        int xPos = offsetX;
+        foreach (var section in LeftSections)
+        {
+            var sectionBg = section.Bg ?? barBg;
+            var sectionFg = section.Fg ?? ResolvedFg;
+            string text = $" {section.Text} ";
+            int sectionW = Math.Max(text.Length, section.MinWidth);
+            buffer.FillRect((uint)xPos, (uint)offsetY, (uint)sectionW, (uint)h, sectionBg);
+            buffer.DrawText(text, (uint)xPos, (uint)offsetY, sectionFg, sectionBg);
+            xPos += sectionW;
+        }
+
+        // Draw right sections (right-aligned)
+        int rightX = offsetX + w;
+        for (int i = RightSections.Count - 1; i >= 0; i--)
+        {
+            var section = RightSections[i];
+            var sectionBg = section.Bg ?? barBg;
+            var sectionFg = section.Fg ?? ResolvedFg;
+            string text = $" {section.Text} ";
+            int sectionW = Math.Max(text.Length, section.MinWidth);
+            rightX -= sectionW;
+            buffer.FillRect((uint)rightX, (uint)offsetY, (uint)sectionW, (uint)h, sectionBg);
+            buffer.DrawText(text, (uint)rightX, (uint)offsetY, sectionFg, sectionBg);
+        }
     }
 }
