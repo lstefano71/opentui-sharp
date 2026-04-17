@@ -32,6 +32,13 @@ ehthumbs.db
 Desktop.ini
 .DS_Store
 
+## Node / npm (native DLL source)
+node_modules/
+package-lock.json
+
+## Native DLL (copied from npm at build time)
+runtimes/
+
 ## Test results
 TestResults/
 *.trx

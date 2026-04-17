@@ -1,0 +1,8 @@
+{
+  "name": "opentui-sharp",
+  "private": true,
+  "description": "Native DLL dependency for OpenTUI C# bindings",
+  "dependencies": {
+    "@opentui/core-win32-x64": "0.1.100"
+  }
+}

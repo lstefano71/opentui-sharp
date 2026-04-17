@@ -9,8 +9,20 @@
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <NativeDllSource>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '..', '..', 'node_modules', '@opentui', 'core-win32-x64', 'opentui.dll'))</NativeDllSource>
+    <NativeDllTarget>$([MSBuild]::NormalizePath('$(MSBuildProjectDirectory)', '..', '..', 'runtimes', 'win-x64', 'native', 'opentui.dll'))</NativeDllTarget>
+  </PropertyGroup>
+
+  <!-- Copy the native DLL from npm to the NuGet runtimes convention path -->
+  <Target Name="CopyNativeDll" BeforeTargets="Build" Condition="Exists('$(NativeDllSource)')">
+    <MakeDir Directories="$([System.IO.Path]::GetDirectoryName('$(NativeDllTarget)'))" />
+    <Copy SourceFiles="$(NativeDllSource)" DestinationFiles="$(NativeDllTarget)" SkipUnchangedFiles="true" />
+  </Target>
+
   <ItemGroup>
-    <None Include="..\..\runtimes\win-x64\native\opentui.dll" Pack="true" PackagePath="runtimes\win-x64\native\">
+    <None Include="..\..\runtimes\win-x64\native\opentui.dll" Pack="true" PackagePath="runtimes\win-x64\native\"
+          Condition="Exists('..\..\runtimes\win-x64\native\opentui.dll')">
       <Link>runtimes\win-x64\native\opentui.dll</Link>
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
