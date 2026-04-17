@@ -13,4 +13,7 @@ public abstract class OpenTuiSafeHandle : SafeHandle
 
     /// <inheritdoc />
     public override bool IsInvalid => handle == nint.Zero;
+
+    /// <summary>Sets the underlying handle value. For use by wrapper constructors.</summary>
+    internal void SetHandleValue(nint value) => SetHandle(value);
 }
