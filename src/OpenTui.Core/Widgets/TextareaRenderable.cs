@@ -1,3 +1,7 @@
+using System.Runtime.InteropServices;
+using System.Text;
+using OpenTui.Core.Native;
+
 namespace OpenTui.Core;
 
 /// <summary>
@@ -104,24 +108,30 @@ public class TextareaRenderable : EditBufferRenderable
     public Rgba FocusedBackgroundColor
     {
         get => _focusedBackgroundColor;
-        set { _focusedBackgroundColor = value; UpdateColors(); }
+        set
+        {
+            _focusedBackgroundColor = value;
+            UpdateColors();
+        }
     }
 
     public Rgba FocusedTextColor
     {
         get => _focusedTextColor;
-        set { _focusedTextColor = value; UpdateColors(); }
+        set
+        {
+            _focusedTextColor = value;
+            UpdateColors();
+        }
     }
 
     public string InitialValue
     {
         set
         {
-            if (!_initialValueSet)
-            {
-                SetText(value);
-                _initialValueSet = true;
-            }
+            if (_initialValueSet) return;
+            SetText(value);
+            _initialValueSet = true;
         }
     }
 
@@ -154,8 +164,7 @@ public class TextareaRenderable : EditBufferRenderable
             return;
         }
 
-        // Raw character input
-        if (!key.Ctrl && !key.Meta)
+        if (!key.Ctrl && !key.Meta && !key.Super && !key.Hyper)
         {
             if (key.Name == "space")
             {
@@ -164,7 +173,7 @@ public class TextareaRenderable : EditBufferRenderable
                 return;
             }
 
-            if (key.Sequence is { } seq && seq.Length > 0)
+            if (key.Sequence is { Length: > 0 } seq)
             {
                 char first = seq[0];
                 if (first >= 32 && first != 127)
@@ -181,17 +190,18 @@ public class TextareaRenderable : EditBufferRenderable
 
     private bool DispatchAction(KeyEvent key)
     {
-        // Default textarea keybindings matching TS
+        bool metaLike = key.Meta || key.Option;
+
         return key switch
         {
-            { Name: "left", Shift: false, Ctrl: false, Meta: false } => MoveCursorLeft(),
-            { Name: "right", Shift: false, Ctrl: false, Meta: false } => MoveCursorRight(),
-            { Name: "up", Shift: false, Ctrl: false, Meta: false } => MoveCursorUp(),
-            { Name: "down", Shift: false, Ctrl: false, Meta: false } => MoveCursorDown(),
-            { Name: "left", Shift: true, Ctrl: false } => MoveCursorLeft(select: true),
-            { Name: "right", Shift: true, Ctrl: false } => MoveCursorRight(select: true),
-            { Name: "up", Shift: true, Ctrl: false } => MoveCursorUp(select: true),
-            { Name: "down", Shift: true, Ctrl: false } => MoveCursorDown(select: true),
+            { Name: "left", Shift: false, Ctrl: false, Meta: false, Option: false, Super: false } => MoveCursorLeft(),
+            { Name: "right", Shift: false, Ctrl: false, Meta: false, Option: false, Super: false } => MoveCursorRight(),
+            { Name: "up", Shift: false, Ctrl: false, Meta: false, Option: false, Super: false } => MoveCursorUp(),
+            { Name: "down", Shift: false, Ctrl: false, Meta: false, Option: false, Super: false } => MoveCursorDown(),
+            { Name: "left", Shift: true, Ctrl: false, Super: false } when !metaLike => MoveCursorLeft(select: true),
+            { Name: "right", Shift: true, Ctrl: false, Super: false } when !metaLike => MoveCursorRight(select: true),
+            { Name: "up", Shift: true, Ctrl: false, Super: false } when !metaLike => MoveCursorUp(select: true),
+            { Name: "down", Shift: true, Ctrl: false, Super: false } when !metaLike => MoveCursorDown(select: true),
 
             { Name: "home" } when !key.Shift => GotoBufferHome(),
             { Name: "end" } when !key.Shift => GotoBufferEnd(),
@@ -202,32 +212,59 @@ public class TextareaRenderable : EditBufferRenderable
             { Name: "e", Ctrl: true } when !key.Shift => GotoLineEnd(),
             { Name: "a", Ctrl: true, Shift: true } => GotoLineHome(select: true),
             { Name: "e", Ctrl: true, Shift: true } => GotoLineEnd(select: true),
+            { Name: "a", Shift: false, Super: false } when metaLike => GotoVisualLineHome(),
+            { Name: "e", Shift: false, Super: false } when metaLike => GotoVisualLineEnd(),
+            { Name: "a", Shift: true, Super: false } when metaLike => GotoVisualLineHome(select: true),
+            { Name: "e", Shift: true, Super: false } when metaLike => GotoVisualLineEnd(select: true),
 
-            { Name: "backspace" } when !key.Ctrl && !key.Meta => DeleteCharBackward(),
-            { Name: "delete" } when !key.Ctrl && !key.Meta => DeleteChar(),
-            { Name: "return" or "linefeed" } when !key.Meta => NewLine(),
-            { Name: "return", Meta: true } => Submit(),
+            { Name: "left", Super: true } when !key.Shift => GotoVisualLineHome(),
+            { Name: "right", Super: true } when !key.Shift => GotoVisualLineEnd(),
+            { Name: "up", Super: true } when !key.Shift => GotoBufferHome(),
+            { Name: "down", Super: true } when !key.Shift => GotoBufferEnd(),
+            { Name: "left", Super: true, Shift: true } => GotoVisualLineHome(select: true),
+            { Name: "right", Super: true, Shift: true } => GotoVisualLineEnd(select: true),
+            { Name: "up", Super: true, Shift: true } => GotoBufferHome(select: true),
+            { Name: "down", Super: true, Shift: true } => GotoBufferEnd(select: true),
+            { Name: "a", Super: true } => SelectAll(),
 
-            // Word movement
+            { Name: "f", Ctrl: true } when !key.Shift => MoveCursorRight(),
+            { Name: "b", Ctrl: true } when !key.Shift => MoveCursorLeft(),
+
+            { Name: "backspace" } when !key.Ctrl && !key.Meta && !key.Option => DeleteCharBackward(),
+            { Name: "backspace", Shift: true } when !key.Ctrl && !key.Meta && !key.Option => DeleteCharBackward(),
+            { Name: "d", Ctrl: true } when !key.Shift => DeleteChar(),
+            { Name: "delete" } when !key.Ctrl && !key.Meta && !key.Option => DeleteChar(),
+            { Name: "return" or "linefeed" } when !key.Meta && !key.Option => NewLine(),
+            { Name: "return" } when metaLike => Submit(),
+
+            { Name: "f", Shift: false, Super: false } when metaLike => MoveWordForward(),
+            { Name: "b", Shift: false, Super: false } when metaLike => MoveWordBackward(),
+            { Name: "right", Shift: false, Super: false } when metaLike => MoveWordForward(),
+            { Name: "left", Shift: false, Super: false } when metaLike => MoveWordBackward(),
             { Name: "right", Ctrl: true } when !key.Shift => MoveWordForward(),
             { Name: "left", Ctrl: true } when !key.Shift => MoveWordBackward(),
+            { Name: "f", Shift: true, Super: false } when metaLike => MoveWordForward(select: true),
+            { Name: "b", Shift: true, Super: false } when metaLike => MoveWordBackward(select: true),
+            { Name: "right", Shift: true, Super: false } when metaLike => MoveWordForward(select: true),
+            { Name: "left", Shift: true, Super: false } when metaLike => MoveWordBackward(select: true),
             { Name: "right", Ctrl: true, Shift: true } => MoveWordForward(select: true),
             { Name: "left", Ctrl: true, Shift: true } => MoveWordBackward(select: true),
 
-            // Delete word
             { Name: "w", Ctrl: true } => DeleteWordBackward(),
             { Name: "backspace", Ctrl: true } => DeleteWordBackward(),
-            { Name: "backspace", Meta: true } => DeleteWordBackward(),
+            { Name: "backspace" } when metaLike => DeleteWordBackward(),
+            { Name: "d" } when metaLike => DeleteWordForward(),
+            { Name: "delete" } when metaLike => DeleteWordForward(),
             { Name: "delete", Ctrl: true } => DeleteWordForward(),
 
-            // Line operations
             { Name: "d", Ctrl: true, Shift: true } => DeleteLine(),
             { Name: "k", Ctrl: true } => DeleteToLineEnd(),
             { Name: "u", Ctrl: true } => DeleteToLineStart(),
 
-            // Undo/redo
             { Name: "-", Ctrl: true } => Undo(),
             { Name: ".", Ctrl: true } => Redo(),
+            { Name: "z", Super: true } when !key.Shift => Undo(),
+            { Name: "z", Super: true, Shift: true } => Redo(),
 
             _ => false,
         };
@@ -252,7 +289,7 @@ public class TextareaRenderable : EditBufferRenderable
         base.TextColor = effectiveFg;
     }
 
-    private void ApplyPlaceholder(string? placeholder)
+    private unsafe void ApplyPlaceholder(string? placeholder)
     {
         if (string.IsNullOrEmpty(placeholder))
         {
@@ -260,11 +297,32 @@ public class TextareaRenderable : EditBufferRenderable
             return;
         }
 
-        // Build minimal styled text data — for now just plain UTF-8
-        // The native format expects serialized styled text; plain bytes may
-        // suffice for simple placeholder text until full serialization is implemented.
-        var placeholderBytes = System.Text.Encoding.UTF8.GetBytes(placeholder);
-        EditorView.SetPlaceholderStyledText(placeholderBytes);
+        byte[] textBytes = Encoding.UTF8.GetBytes(placeholder);
+        float[] fg = [_placeholderColor.R, _placeholderColor.G, _placeholderColor.B, _placeholderColor.A];
+        var nativeChunk = new NativeStyledChunk[1];
+        GCHandle textPin = default;
+        GCHandle colorPin = default;
+
+        try
+        {
+            textPin = GCHandle.Alloc(textBytes, GCHandleType.Pinned);
+            colorPin = GCHandle.Alloc(fg, GCHandleType.Pinned);
+
+            nativeChunk[0] = new NativeStyledChunk
+            {
+                TextPtr = textPin.AddrOfPinnedObject(),
+                TextLen = (nuint)textBytes.Length,
+                FgPtr = colorPin.AddrOfPinnedObject(),
+                Attributes = (uint)TextAttributes.None,
+            };
+
+            EditorView.SetPlaceholderStyledText(nativeChunk);
+        }
+        finally
+        {
+            if (colorPin.IsAllocated) colorPin.Free();
+            if (textPin.IsAllocated) textPin.Free();
+        }
     }
 
     #endregion

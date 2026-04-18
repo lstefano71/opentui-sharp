@@ -10,6 +10,20 @@ namespace OpenTui.Core;
 /// </summary>
 public sealed class EditorView : IDisposable
 {
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeLineInfo
+    {
+        public nint StartColsPtr;
+        public uint StartColsLen;
+        public nint WidthColsPtr;
+        public uint WidthColsLen;
+        public nint SourcesPtr;
+        public uint SourcesLen;
+        public nint WrapsPtr;
+        public uint WrapsLen;
+        public uint WidthColsMax;
+    }
+
     private nint _handle;
     private bool _disposed;
 
@@ -180,16 +194,30 @@ public sealed class EditorView : IDisposable
 
     #region Selection
 
-    /// <summary>Sets the selection range by character offsets with selection colors.</summary>
-    public void SetSelection(uint start, uint end, Rgba selFg, Rgba selBg) =>
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            OpenTuiNative.EditorViewSetSelection(Handle, start, end, fgPtr, bgPtr));
+    /// <summary>Sets the selection range by character offsets with optional selection colors.</summary>
+    public void SetSelection(uint start, uint end, Rgba? selFg = null, Rgba? selBg = null) =>
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            OpenTuiNative.EditorViewSetSelection(Handle, start, end, bgPtr, fgPtr));
 
     /// <summary>Resets (clears) the current selection.</summary>
     public void ResetSelection() => OpenTuiNative.EditorViewResetSelection(Handle);
 
     /// <summary>Gets the current selection as a packed 64-bit value.</summary>
     public ulong GetSelection() => OpenTuiNative.EditorViewGetSelection(Handle);
+
+    /// <summary>Gets the current selection range, or null when no selection is active.</summary>
+    public (uint Start, uint End)? GetSelectionRange()
+    {
+        const ulong noSelection = 0xffff_ffff_ffff_ffffUL;
+        ulong packed = GetSelection();
+        if (packed == noSelection)
+            return null;
+
+        return ((uint)(packed >> 32), (uint)(packed & 0xffff_ffff));
+    }
+
+    /// <summary>Returns true when the editor currently has an active selection.</summary>
+    public bool HasSelection() => GetSelectionRange() is not null;
 
     /// <summary>Gets the currently selected text, or an empty string if nothing is selected.</summary>
     public string GetSelectedText() =>
@@ -199,11 +227,11 @@ public sealed class EditorView : IDisposable
     public void DeleteSelectedText() => OpenTuiNative.EditorViewDeleteSelectedText(Handle);
 
     /// <summary>Sets a local (visual coordinate) selection.</summary>
-    public bool SetLocalSelection(int sx, int sy, int ex, int ey, Rgba selFg, Rgba selBg, bool extend = false, bool visual = false)
+    public bool SetLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false)
     {
         bool result = false;
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            result = OpenTuiNative.EditorViewSetLocalSelection(Handle, sx, sy, ex, ey, fgPtr, bgPtr, extend, visual));
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            result = OpenTuiNative.EditorViewSetLocalSelection(Handle, sx, sy, ex, ey, bgPtr, fgPtr, extend, visual));
         return result;
     }
 
@@ -211,18 +239,18 @@ public sealed class EditorView : IDisposable
     public void ResetLocalSelection() => OpenTuiNative.EditorViewResetLocalSelection(Handle);
 
     /// <summary>Updates the local (visual coordinate) selection extent.</summary>
-    public bool UpdateLocalSelection(int sx, int sy, int ex, int ey, Rgba selFg, Rgba selBg, bool extend = false, bool visual = false)
+    public bool UpdateLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false)
     {
         bool result = false;
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            result = OpenTuiNative.EditorViewUpdateLocalSelection(Handle, sx, sy, ex, ey, fgPtr, bgPtr, extend, visual));
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            result = OpenTuiNative.EditorViewUpdateLocalSelection(Handle, sx, sy, ex, ey, bgPtr, fgPtr, extend, visual));
         return result;
     }
 
     /// <summary>Updates the end offset of the current selection.</summary>
-    public void UpdateSelection(uint newEnd, Rgba selFg, Rgba selBg) =>
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            OpenTuiNative.EditorViewUpdateSelection(Handle, newEnd, fgPtr, bgPtr));
+    public void UpdateSelection(uint newEnd, Rgba? selFg = null, Rgba? selBg = null) =>
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            OpenTuiNative.EditorViewUpdateSelection(Handle, newEnd, bgPtr, fgPtr));
 
     #endregion
 
@@ -239,15 +267,18 @@ public sealed class EditorView : IDisposable
 
     #region Placeholder & Tab Indicators
 
-    /// <summary>Sets the placeholder styled text from a serialized data buffer.</summary>
-    public void SetPlaceholderStyledText(byte[] data)
+    /// <summary>Sets the placeholder styled text from native styled chunks.</summary>
+    internal unsafe void SetPlaceholderStyledText(ReadOnlySpan<NativeStyledChunk> chunks)
     {
-        unsafe
+        if (chunks.IsEmpty)
         {
-            fixed (byte* ptr = data)
-            {
-                OpenTuiNative.EditorViewSetPlaceholderStyledText(Handle, (nint)ptr, (nuint)data.Length);
-            }
+            OpenTuiNative.EditorViewSetPlaceholderStyledText(Handle, 0, 0);
+            return;
+        }
+
+        fixed (NativeStyledChunk* ptr = chunks)
+        {
+            OpenTuiNative.EditorViewSetPlaceholderStyledText(Handle, (nint)ptr, (nuint)chunks.Length);
         }
     }
 
@@ -270,6 +301,54 @@ public sealed class EditorView : IDisposable
     /// <summary>Gets logical line information directly into the output struct.</summary>
     public void GetLogicalLineInfoDirect(nint outInfo) =>
         OpenTuiNative.EditorViewGetLogicalLineInfoDirect(Handle, outInfo);
+
+    /// <summary>Gets viewport-relative line layout information as a managed <see cref="LineInfo"/>.</summary>
+    public unsafe LineInfo GetLineInfo()
+    {
+        GetVirtualLineCount();
+
+        NativeLineInfo info = default;
+        OpenTuiNative.EditorViewGetLineInfoDirect(Handle, (nint)(&info));
+
+        return MarshalLineInfo(in info);
+    }
+
+    /// <summary>Gets full-document logical line layout information as a managed <see cref="LineInfo"/>.</summary>
+    public unsafe LineInfo GetLogicalLineInfo()
+    {
+        GetVirtualLineCount();
+
+        NativeLineInfo info = default;
+        OpenTuiNative.EditorViewGetLogicalLineInfoDirect(Handle, (nint)(&info));
+
+        return MarshalLineInfo(in info);
+    }
+
+    private static unsafe LineInfo MarshalLineInfo(in NativeLineInfo info)
+    {
+        var startCols = new uint[info.StartColsLen];
+        var widthCols = new uint[info.WidthColsLen];
+        var sources = new uint[info.SourcesLen];
+        var wraps = new uint[info.WrapsLen];
+
+        for (int i = 0; i < (int)info.StartColsLen; i++)
+            startCols[i] = ((uint*)info.StartColsPtr)[i];
+        for (int i = 0; i < (int)info.WidthColsLen; i++)
+            widthCols[i] = ((uint*)info.WidthColsPtr)[i];
+        for (int i = 0; i < (int)info.SourcesLen; i++)
+            sources[i] = ((uint*)info.SourcesPtr)[i];
+        for (int i = 0; i < (int)info.WrapsLen; i++)
+            wraps[i] = ((uint*)info.WrapsPtr)[i];
+
+        return new LineInfo
+        {
+            LineStartCols = startCols,
+            LineWidthCols = widthCols,
+            LineSources = sources,
+            LineWraps = wraps,
+            LineWidthColsMax = info.WidthColsMax,
+        };
+    }
 
     #endregion
 

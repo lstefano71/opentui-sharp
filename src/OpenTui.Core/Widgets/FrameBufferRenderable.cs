@@ -9,6 +9,7 @@ namespace OpenTui.Core;
 public class FrameBufferOptions : RenderableOptions
 {
     public Rgba? BackgroundColor { get; init; }
+    public bool RespectAlpha { get; init; } = true;
 }
 
 /// <summary>
@@ -20,6 +21,7 @@ public class FrameBufferOptions : RenderableOptions
 public class FrameBufferRenderable : Renderable
 {
     private Rgba _backgroundColor;
+    private bool _respectAlpha;
     private OptimizedBuffer? _privateBuffer;
     private int _lastWidth;
     private int _lastHeight;
@@ -29,6 +31,7 @@ public class FrameBufferRenderable : Renderable
     {
         options ??= new FrameBufferOptions();
         _backgroundColor = options.BackgroundColor ?? Rgba.Transparent;
+        _respectAlpha = options.RespectAlpha;
     }
 
     /// <summary>
@@ -48,6 +51,21 @@ public class FrameBufferRenderable : Renderable
     {
         get => _backgroundColor;
         set { _backgroundColor = value; RequestRender(); }
+    }
+
+    public bool RespectAlpha
+    {
+        get => _respectAlpha;
+        set
+        {
+            if (_respectAlpha == value)
+                return;
+
+            _respectAlpha = value;
+            if (_privateBuffer is not null)
+                _privateBuffer.RespectAlpha = value;
+            RequestRender();
+        }
     }
 
     /// <summary>
@@ -70,7 +88,7 @@ public class FrameBufferRenderable : Renderable
         {
             _privateBuffer?.Dispose();
             _privateBuffer = OptimizedBuffer.Create(
-                (uint)_widthValue, (uint)_heightValue, _ctx.WidthMethod, true, $"framebuf-{Id}");
+                (uint)_widthValue, (uint)_heightValue, _ctx.WidthMethod, _respectAlpha, $"framebuf-{Id}");
             _privateBuffer.Clear(_backgroundColor);
             _lastWidth = _widthValue;
             _lastHeight = _heightValue;

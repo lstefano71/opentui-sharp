@@ -20,6 +20,8 @@ public class EditBufferOptions : RenderableOptions
     public bool ShowCursor { get; init; } = true;
     public Rgba? CursorColor { get; init; }
     public CursorStyle CursorStyle { get; init; } = CursorStyle.BlinkingBlock;
+    public string? TabIndicator { get; init; }
+    public Rgba? TabIndicatorColor { get; init; }
     public SyntaxStyle? SyntaxStyle { get; init; }
     public Action<(int Line, int VisualColumn)>? OnCursorChange { get; init; }
     public Action? OnContentChange { get; init; }
@@ -30,7 +32,7 @@ public class EditBufferOptions : RenderableOptions
 /// Owns an EditBuffer + EditorView for text editing and display.
 /// Matches TypeScript EditBufferRenderable from EditBufferRenderable.ts.
 /// </summary>
-public abstract class EditBufferRenderable : Renderable
+public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 {
     protected Rgba _ebTextColor;
     protected Rgba _ebBackgroundColor;
@@ -39,9 +41,16 @@ public abstract class EditBufferRenderable : Renderable
     protected Rgba? _selectionFg;
     protected byte _wrapMode;
     protected float _scrollMargin;
+    protected float _scrollSpeed;
     protected bool _showCursor;
     protected Rgba _cursorColor;
     protected CursorStyle _cursorStyle;
+    protected string? _tabIndicator;
+    protected Rgba? _tabIndicatorColor;
+
+    private LineInfo? _cachedLineInfo;
+    private bool _lineInfoDirty = true;
+    private uint? _selectionAnchorOffset;
 
     public EditBuffer EditBuffer { get; }
     public EditorView EditorView { get; }
@@ -56,13 +65,16 @@ public abstract class EditBufferRenderable : Renderable
         _selectionFg = options.SelectionFg;
         _wrapMode = options.WrapMode;
         _scrollMargin = options.ScrollMargin;
+        _scrollSpeed = options.ScrollSpeed;
+        Selectable = options.Selectable;
         _showCursor = options.ShowCursor;
         _cursorColor = options.CursorColor ?? Rgba.FromInts(255, 255, 255);
         _cursorStyle = options.CursorStyle;
+        _tabIndicator = options.TabIndicator;
+        _tabIndicatorColor = options.TabIndicatorColor;
 
         Focusable = true;
 
-        // Create native resources
         EditBuffer = EditBuffer.Create((byte)ctx.WidthMethod);
         uint w = _widthValue > 0 ? (uint)_widthValue : 80u;
         uint h = _heightValue > 0 ? (uint)_heightValue : 24u;
@@ -70,6 +82,11 @@ public abstract class EditBufferRenderable : Renderable
 
         EditorView.SetWrapMode(_wrapMode);
         EditorView.SetScrollMargin(_scrollMargin);
+        if (!string.IsNullOrEmpty(_tabIndicator))
+            EditorView.SetTabIndicator(ToCodepoint(_tabIndicator));
+        if (_tabIndicatorColor is { } tabIndicatorColor)
+            EditorView.SetTabIndicatorColor(tabIndicatorColor);
+
         EditBuffer.SetForeground(_ebTextColor);
         EditBuffer.SetBackground(_ebBackgroundColor);
         EditBuffer.SetAttributes(_defaultAttributes);
@@ -102,177 +119,362 @@ public abstract class EditBufferRenderable : Renderable
     }
 
     public string PlainText => EditBuffer.GetText();
+    public int LineCount => CountLogicalLines(PlainText);
     public int VirtualLineCount => (int)EditorView.GetVirtualLineCount();
+    public int ScrollY => EditorView.GetViewport().Y;
 
     public LogicalCursor LogicalCursor => EditBuffer.GetCursorPosition();
     public VisualCursor VisualCursor => EditorView.GetVisualCursor();
 
+    public byte WrapMode
+    {
+        get => _wrapMode;
+        set
+        {
+            if (_wrapMode == value) return;
+            _wrapMode = value;
+            EditorView.SetWrapMode(value);
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            InvalidateLineInfo();
+            RequestRender();
+        }
+    }
+
+    public float ScrollSpeed
+    {
+        get => _scrollSpeed;
+        set => _scrollSpeed = Math.Max(0, value);
+    }
+
+    public string? TabIndicator
+    {
+        get => _tabIndicator;
+        set
+        {
+            if (_tabIndicator == value) return;
+            _tabIndicator = value;
+            if (!string.IsNullOrEmpty(value))
+                EditorView.SetTabIndicator(ToCodepoint(value));
+            RequestRender();
+        }
+    }
+
+    public Rgba? TabIndicatorColor
+    {
+        get => _tabIndicatorColor;
+        set
+        {
+            _tabIndicatorColor = value;
+            if (value is { } color)
+                EditorView.SetTabIndicatorColor(color);
+            RequestRender();
+        }
+    }
+
     #endregion
 
-    #region Text Operations (delegated to EditBuffer)
+    #region Text Operations
 
-    public void SetText(string text) => EditBuffer.SetText(text);
+    public void SetText(string text)
+    {
+        ClearSelection();
+        EditBuffer.SetText(text);
+        InvalidateLineInfo();
+    }
+
     public string GetText() => EditBuffer.GetText();
-    public virtual void InsertText(string text) { EditBuffer.InsertText(text); RequestRender(); }
-    public virtual bool DeleteCharBackward() { EditBuffer.DeleteCharBackward(); RequestRender(); return true; }
-    public virtual bool DeleteChar() { EditBuffer.DeleteChar(); RequestRender(); return true; }
-    public virtual bool NewLine() { EditBuffer.NewLine(); RequestRender(); return true; }
-    public virtual bool Undo() { EditBuffer.Undo(); RequestRender(); return true; }
-    public virtual bool Redo() { EditBuffer.Redo(); RequestRender(); return true; }
+
+    public virtual void InsertText(string text)
+    {
+        DeleteSelectionIfPresent();
+        EditBuffer.InsertText(text);
+        InvalidateLineInfo();
+        RequestRender();
+    }
+
+    public virtual bool DeleteCharBackward()
+    {
+        if (DeleteSelectionIfPresent())
+            return true;
+
+        ClearSelection();
+        EditBuffer.DeleteCharBackward();
+        InvalidateLineInfo();
+        RequestRender();
+        return true;
+    }
+
+    public virtual bool DeleteChar()
+    {
+        if (DeleteSelectionIfPresent())
+            return true;
+
+        ClearSelection();
+        EditBuffer.DeleteChar();
+        InvalidateLineInfo();
+        RequestRender();
+        return true;
+    }
+
+    public virtual bool NewLine()
+    {
+        ClearSelection();
+        EditBuffer.NewLine();
+        InvalidateLineInfo();
+        RequestRender();
+        return true;
+    }
+
+    public virtual bool Undo()
+    {
+        ClearSelection();
+        EditBuffer.Undo();
+        InvalidateLineInfo();
+        RequestRender();
+        return true;
+    }
+
+    public virtual bool Redo()
+    {
+        ClearSelection();
+        EditBuffer.Redo();
+        InvalidateLineInfo();
+        RequestRender();
+        return true;
+    }
 
     #endregion
 
-    #region Cursor Movement (delegated to EditBuffer/EditorView)
+    #region Cursor Movement
 
     public bool MoveCursorLeft(bool select = false)
     {
+        if (!select && EditorView.HasSelection())
+        {
+            var selection = EditorView.GetSelectionRange()!.Value;
+            EditBuffer.SetCursorByOffset(selection.Start);
+            ClearSelection();
+            RequestRender();
+            return true;
+        }
+
+        UpdateSelectionForMovement(select, beforeMovement: true);
         EditBuffer.MoveCursorLeft();
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool MoveCursorRight(bool select = false)
     {
+        if (!select && EditorView.HasSelection())
+        {
+            var selection = EditorView.GetSelectionRange()!.Value;
+            uint cursorOffset = EditBuffer.GetCursorPosition().Offset;
+            uint targetOffset = cursorOffset == selection.Start && selection.End > selection.Start
+                ? selection.End - 1
+                : selection.End;
+            EditBuffer.SetCursorByOffset(targetOffset);
+            ClearSelection();
+            RequestRender();
+            return true;
+        }
+
+        UpdateSelectionForMovement(select, beforeMovement: true);
         EditBuffer.MoveCursorRight();
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool MoveCursorUp(bool select = false)
     {
+        UpdateSelectionForMovement(select, beforeMovement: true);
         EditorView.MoveUpVisual();
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool MoveCursorDown(bool select = false)
     {
+        UpdateSelectionForMovement(select, beforeMovement: true);
         EditorView.MoveDownVisual();
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool GotoLineHome(bool select = false)
     {
-        var cursor = EditBuffer.GetCursorPosition();
-        EditBuffer.SetCursor(cursor.Row, 0);
+        UpdateSelectionForMovement(select, beforeMovement: true);
+        var (logical, _) = EditorView.GetCursor();
+        if (logical.Col == 0 && logical.Row > 0)
+        {
+            EditBuffer.SetCursor(logical.Row - 1, 0);
+            var prevLineEol = EditBuffer.GetEOL();
+            EditBuffer.SetCursor(prevLineEol.Row, prevLineEol.Col);
+        }
+        else
+        {
+            EditBuffer.SetCursor(logical.Row, 0);
+        }
+
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool GotoLineEnd(bool select = false)
     {
+        UpdateSelectionForMovement(select, beforeMovement: true);
+        var (logical, _) = EditorView.GetCursor();
         var eol = EditBuffer.GetEOL();
-        EditBuffer.SetCursor(eol.Row, eol.Col);
+        if (logical.Col == eol.Col && logical.Row < (uint)Math.Max(0, LineCount - 1))
+            EditBuffer.SetCursor(logical.Row + 1, 0);
+        else
+            EditBuffer.SetCursor(eol.Row, eol.Col);
+
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool GotoVisualLineHome(bool select = false)
     {
+        UpdateSelectionForMovement(select, beforeMovement: true);
         var sol = EditorView.GetVisualSOL();
-        EditBuffer.SetCursorByOffset(sol.Offset);
+        EditBuffer.SetCursor(sol.LogicalRow, sol.LogicalCol);
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool GotoVisualLineEnd(bool select = false)
     {
+        UpdateSelectionForMovement(select, beforeMovement: true);
         var eol = EditorView.GetVisualEOL();
-        EditBuffer.SetCursorByOffset(eol.Offset);
+        EditBuffer.SetCursor(eol.LogicalRow, eol.LogicalCol);
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool GotoBufferHome(bool select = false)
     {
+        UpdateSelectionForMovement(select, beforeMovement: true);
         EditBuffer.SetCursor(0, 0);
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool GotoBufferEnd(bool select = false)
     {
-        // Move to end by getting text and setting cursor by offset
-        var text = EditBuffer.GetText();
-        uint len = (uint)System.Text.Encoding.UTF8.GetByteCount(text);
-        EditBuffer.SetCursorByOffset(len);
+        UpdateSelectionForMovement(select, beforeMovement: true);
+        EditBuffer.GotoLine(uint.MaxValue);
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool MoveWordForward(bool select = false)
     {
-        var boundary = EditorView.GetNextWordBoundary();
+        UpdateSelectionForMovement(select, beforeMovement: true);
+        var boundary = EditBuffer.GetNextWordBoundary();
         EditBuffer.SetCursorByOffset(boundary.Offset);
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public bool MoveWordBackward(bool select = false)
     {
-        var boundary = EditorView.GetPrevWordBoundary();
+        UpdateSelectionForMovement(select, beforeMovement: true);
+        var boundary = EditBuffer.GetPrevWordBoundary();
         EditBuffer.SetCursorByOffset(boundary.Offset);
+        UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
         return true;
     }
 
     public virtual bool DeleteWordForward()
     {
-        var boundary = EditorView.GetNextWordBoundary();
+        if (DeleteSelectionIfPresent())
+            return true;
+
+        var boundary = EditBuffer.GetNextWordBoundary();
         var cursor = EditBuffer.GetCursorPosition();
-        uint start = EditBuffer.PositionToOffset(cursor.Row, cursor.Col);
-        if (boundary.Offset > start)
-            EditBuffer.DeleteRange(cursor.Row, cursor.Col, boundary.LogicalRow, boundary.LogicalCol);
+        if (boundary.Offset > cursor.Offset)
+            EditBuffer.DeleteRange(cursor.Row, cursor.Col, boundary.Row, boundary.Col);
+
+        ClearSelection();
+        InvalidateLineInfo();
         RequestRender();
         return true;
     }
 
     public virtual bool DeleteWordBackward()
     {
-        var boundary = EditorView.GetPrevWordBoundary();
+        if (DeleteSelectionIfPresent())
+            return true;
+
+        var boundary = EditBuffer.GetPrevWordBoundary();
         var cursor = EditBuffer.GetCursorPosition();
-        uint cursorOffset = EditBuffer.PositionToOffset(cursor.Row, cursor.Col);
-        if (boundary.Offset < cursorOffset)
-            EditBuffer.DeleteRange(boundary.LogicalRow, boundary.LogicalCol, cursor.Row, cursor.Col);
+        if (boundary.Offset < cursor.Offset)
+            EditBuffer.DeleteRange(boundary.Row, boundary.Col, cursor.Row, cursor.Col);
+
+        ClearSelection();
+        InvalidateLineInfo();
         RequestRender();
         return true;
     }
 
     public virtual bool DeleteLine()
     {
+        ClearSelection();
         EditBuffer.DeleteLine();
+        InvalidateLineInfo();
         RequestRender();
         return true;
     }
 
     public virtual bool DeleteToLineEnd()
     {
-        var cursor = EditBuffer.GetCursorPosition();
+        if (DeleteSelectionIfPresent())
+            return true;
+
+        var (cursor, _) = EditorView.GetCursor();
         var eol = EditBuffer.GetEOL();
         if (eol.Col > cursor.Col)
             EditBuffer.DeleteRange(cursor.Row, cursor.Col, eol.Row, eol.Col);
+
+        InvalidateLineInfo();
         RequestRender();
         return true;
     }
 
     public virtual bool DeleteToLineStart()
     {
-        var cursor = EditBuffer.GetCursorPosition();
+        if (DeleteSelectionIfPresent())
+            return true;
+
+        var (cursor, _) = EditorView.GetCursor();
         if (cursor.Col > 0)
             EditBuffer.DeleteRange(cursor.Row, 0, cursor.Row, cursor.Col);
+        else if (cursor.Row > 0)
+            EditBuffer.DeleteCharBackward();
+
+        InvalidateLineInfo();
         RequestRender();
         return true;
     }
 
     public virtual bool SelectAll()
     {
-        // Select all text from start to end
-        string text = EditBuffer.GetText();
-        uint len = (uint)System.Text.Encoding.UTF8.GetByteCount(text);
-        if (len > 0 && _selectionBg.HasValue)
-            EditorView.SetSelection(0, len, _selectionFg ?? _ebTextColor, _selectionBg.Value);
-        return true;
+        UpdateSelectionForMovement(false, beforeMovement: true);
+        EditBuffer.SetCursor(0, 0);
+        return GotoBufferEnd(select: true);
     }
 
     #endregion
@@ -291,7 +493,6 @@ public abstract class EditBufferRenderable : Renderable
             ? 80u
             : (uint)width;
 
-        // Use the virtual line count as measured height
         EditorView.SetViewportSize(constrainedWidth, 10000);
         float measuredHeight = EditorView.GetTotalVirtualLineCount();
         float measuredWidth = constrainedWidth;
@@ -313,17 +514,13 @@ public abstract class EditBufferRenderable : Renderable
         var baseX = _buffered ? 0 : (int)_screenX;
         var baseY = _buffered ? 0 : (int)_screenY;
 
-        // Update editor view dimensions if they changed
         EditorView.SetViewportSize((uint)_widthValue, (uint)_heightValue);
 
-        // Draw background
         buffer.FillRect((uint)baseX, (uint)baseY,
             (uint)_widthValue, (uint)_heightValue, _ebBackgroundColor);
 
-        // Draw the editor view via native handle
         buffer.DrawEditorView(EditorView.Handle, baseX, baseY);
 
-        // Cursor
         if (_showCursor && Focused)
         {
             var vc = EditorView.GetVisualCursor();
@@ -337,6 +534,85 @@ public abstract class EditBufferRenderable : Renderable
 
     #endregion
 
+    #region Selection / Line Info
+
+    public override bool HasSelection() => EditorView.HasSelection();
+
+    public override string GetSelectedText() => EditorView.GetSelectedText();
+
+    public LineInfo? GetCachedLineInfo()
+    {
+        if (_lineInfoDirty)
+        {
+            _cachedLineInfo = EditorView.GetLogicalLineInfo();
+            _lineInfoDirty = false;
+        }
+
+        return _cachedLineInfo;
+    }
+
+    protected void InvalidateLineInfo()
+    {
+        _lineInfoDirty = true;
+        Emit(ILineInfoProvider.LineInfoChangeEvent);
+    }
+
+    #endregion
+
+    #region Mouse / Paste / Resize
+
+    protected override void HandlePaste(PasteEvent evt)
+    {
+        InsertText(evt.Text);
+    }
+
+    protected override void OnMouseEvent(UiMouseEvent evt)
+    {
+        if (evt.Type == MouseEventType.Scroll && evt.Scroll is { } scroll)
+        {
+            var viewport = EditorView.GetViewport();
+            int offsetX = viewport.X;
+            int offsetY = viewport.Y;
+
+            switch (scroll.Direction)
+            {
+                case "up":
+                    offsetY = Math.Max(0, offsetY - scroll.Delta);
+                    break;
+                case "down":
+                {
+                    int totalVirtualLines = (int)EditorView.GetTotalVirtualLineCount();
+                    int maxOffsetY = Math.Max(0, totalVirtualLines - viewport.Height);
+                    offsetY = Math.Min(offsetY + scroll.Delta, maxOffsetY);
+                    break;
+                }
+                case "left" when _wrapMode == 0:
+                    offsetX = Math.Max(0, offsetX - scroll.Delta);
+                    break;
+                case "right" when _wrapMode == 0:
+                    offsetX = Math.Max(0, offsetX + scroll.Delta);
+                    break;
+            }
+
+            if (offsetX != viewport.X || offsetY != viewport.Y)
+            {
+                EditorView.SetViewport((uint)offsetX, (uint)offsetY, (uint)viewport.Width, (uint)viewport.Height, clamp: true);
+                RequestRender();
+            }
+        }
+
+        base.OnMouseEvent(evt);
+    }
+
+    protected override void OnResize(int width, int height)
+    {
+        base.OnResize(width, height);
+        EditorView.SetViewportSize((uint)width, (uint)height);
+        InvalidateLineInfo();
+    }
+
+    #endregion
+
     #region Dispose
 
     protected override void DestroySelf()
@@ -344,6 +620,84 @@ public abstract class EditBufferRenderable : Renderable
         EditorView.Dispose();
         EditBuffer.Dispose();
         base.DestroySelf();
+    }
+
+    #endregion
+
+    #region Helpers
+
+    protected bool DeleteSelectionIfPresent()
+    {
+        if (!EditorView.HasSelection())
+            return false;
+
+        EditorView.DeleteSelectedText();
+        _selectionAnchorOffset = null;
+        InvalidateLineInfo();
+        RequestRender();
+        return true;
+    }
+
+    protected void ClearSelection()
+    {
+        _selectionAnchorOffset = null;
+        if (EditorView.HasSelection())
+            EditorView.ResetSelection();
+    }
+
+    private void UpdateSelectionForMovement(bool select, bool beforeMovement)
+    {
+        if (!select)
+        {
+            _selectionAnchorOffset = null;
+            if (EditorView.HasSelection())
+                EditorView.ResetSelection();
+            return;
+        }
+
+        uint currentOffset = EditBuffer.GetCursorPosition().Offset;
+        if (beforeMovement)
+        {
+            _selectionAnchorOffset ??= currentOffset;
+            return;
+        }
+
+        if (_selectionAnchorOffset is not { } anchorOffset)
+            return;
+
+        currentOffset = EditBuffer.GetCursorPosition().Offset;
+        if (currentOffset == anchorOffset)
+        {
+            EditorView.ResetSelection();
+            return;
+        }
+
+        EditorView.SetSelection(
+            Math.Min(anchorOffset, currentOffset),
+            Math.Max(anchorOffset, currentOffset),
+            _selectionFg ?? _ebTextColor,
+            _selectionBg);
+    }
+
+    private static int CountLogicalLines(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return 1;
+
+        int count = 1;
+        foreach (char ch in text)
+            if (ch == '\n')
+                count++;
+
+        return count;
+    }
+
+    private static uint ToCodepoint(string value)
+    {
+        foreach (var rune in value.EnumerateRunes())
+            return (uint)rune.Value;
+
+        return 0;
     }
 
     #endregion

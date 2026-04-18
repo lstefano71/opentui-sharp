@@ -1,196 +1,312 @@
-// Input Demo — form with 4 input fields and tab navigation
-// Port of input-demo.ts using OpenTui.Core
 using OpenTui.Core;
+using System.Text.RegularExpressions;
 
-// --- Create renderer ---
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
-    ExitOnCtrlC = true,
+    ExitOnCtrlC = false,
     TargetFps = 30,
 });
 
-// --- Field definitions ---
-string[] fieldNames = ["Name", "Email", "Password", "Comment"];
-string[] placeholders =
-[
-    "Enter your name...",
-    "Enter email...",
-    "Enter password...",
-    "Add a comment...",
-];
+renderer.Native.SetBackgroundColor(Rgba.FromHex("#001122"));
 
-int focusedIndex = 0;
+InputRenderable? nameInput = null;
+InputRenderable? emailInput = null;
+InputRenderable? passwordInput = null;
+InputRenderable? commentInput = null;
+TextRenderable? keyLegendDisplay = null;
+TextRenderable? statusDisplay = null;
 
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
+string lastActionText = "Welcome to InputRenderable demo! Use Tab to navigate between fields.";
+Rgba lastActionColor = Rgba.FromHex("#FFCC00");
+int activeInputIndex = 0;
+Timer? actionResetTimer = null;
+
+var inputElements = new List<InputRenderable>();
+
+var parentContainer = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#3b82f6"),
-    Border = true,
-    BorderStyle = BorderStyle.Single,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
+    Id = "parent-container",
+    ZIndex = 10,
 });
+renderer.Root.Add(parentContainer);
 
-var headerText = new TextRenderable(renderer, new TextOptions
+nameInput = CreateInput("name-input", 5, 2, 40, "Enter your name...", 50);
+emailInput = CreateInput("email-input", 5, 6, 40, "Enter your email...", 100);
+passwordInput = CreateInput("password-input", 5, 10, 40, "Enter password...", 50);
+commentInput = CreateInput("comment-input", 5, 14, 60, "Enter a comment...", 200);
+
+inputElements.AddRange([nameInput, emailInput, passwordInput, commentInput]);
+foreach (var input in inputElements)
 {
-    Id = "header-text",
-    Content = "Input Demo",
-    Fg = Rgba.FromInts(255, 255, 255),
+    parentContainer.Add(input);
+}
+
+keyLegendDisplay = new TextRenderable(renderer, new TextOptions
+{
+    Id = "key-legend",
+    Width = DimensionValue.Point(50),
+    Height = DimensionValue.Point(12),
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(50),
+    Top = DimensionValue.Point(2),
+    ZIndex = 50,
+    Fg = Rgba.FromHex("#AAAAAA"),
 });
-header.Add(headerText);
+parentContainer.Add(keyLegendDisplay);
 
-// --- Form container ---
-var formBox = new BoxRenderable(renderer, new BoxOptions
+statusDisplay = new TextRenderable(renderer, new TextOptions
 {
-    Id = "form",
-    Width = DimensionValue.Auto,
-    FlexDirection = FlexDirectionValue.Column,
-    FlexGrow = 1,
-    Padding = DimensionValue.Point(1),
+    Id = "status-display",
+    Width = DimensionValue.Point(80),
+    Height = DimensionValue.Point(18),
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(5),
+    Top = DimensionValue.Point(19),
+    ZIndex = 50,
 });
+parentContainer.Add(statusDisplay);
 
-// --- Create labeled input rows ---
-var inputs = new InputRenderable[fieldNames.Length];
-
-for (int i = 0; i < fieldNames.Length; i++)
+foreach (var input in inputElements)
 {
-    var row = new BoxRenderable(renderer, new BoxOptions
+    input.On<string>(InputRenderable.Events.Input, value =>
     {
-        Id = $"row-{i}",
-        Width = DimensionValue.Auto,
-        Height = DimensionValue.Point(1),
-        FlexDirection = FlexDirectionValue.Row,
-        AlignItems = AlignValue.Center,
-        MarginBottom = DimensionValue.Point(1),
+        lastActionText = $"{GetInputName(input)} input: \"{value}\"";
+        lastActionColor = Rgba.FromHex("#00FFFF");
+        UpdateDisplays();
     });
 
-    var label = new TextRenderable(renderer, new TextOptions
+    input.On<string>(InputRenderable.Events.Change, value =>
     {
-        Id = $"label-{i}",
-        Content = $"{fieldNames[i],10}: ",
-        Fg = Rgba.FromHex("#94a3b8"),
-        Width = DimensionValue.Point(12),
+        lastActionText = $"*** {GetInputName(input)} CHANGED: \"{value}\" ***";
+        lastActionColor = Rgba.FromHex("#FF00FF");
+        UpdateDisplays();
+        ScheduleActionReset(1000);
     });
 
-    var input = new InputRenderable(renderer, new InputOptions
+    input.On<string>(InputRenderable.Events.Enter, value =>
     {
-        Id = $"input-{i}",
-        Value = "",
-        Placeholder = placeholders[i],
-        PlaceholderColor = Rgba.FromHex("#666666"),
-        BackgroundColor = Rgba.FromHex("#0f172a"),
-        TextColor = Rgba.FromHex("#f8fafc"),
-        FocusedBackgroundColor = Rgba.FromHex("#111827"),
-        FocusedTextColor = Rgba.FromHex("#f8fafc"),
-        CursorColor = Rgba.FromHex("#fbbf24"),
-        Width = DimensionValue.Auto,
-        Height = DimensionValue.Point(1),
-        MaxLength = 50,
-        FlexGrow = 1,
-        Buffered = true,
+        string inputName = GetInputName(input);
+        bool isValid = inputName switch
+        {
+            "Name" => ValidateName(value),
+            "Email" => ValidateEmail(value),
+            "Password" => ValidatePassword(value),
+            _ => true,
+        };
+
+        lastActionText = $"*** {inputName} SUBMITTED: \"{value}\" {(isValid ? "(Valid)" : "(Invalid)")} ***";
+        lastActionColor = isValid ? Rgba.FromHex("#00FF00") : Rgba.FromHex("#FF0000");
+        UpdateDisplays();
+        ScheduleActionReset(1500);
     });
 
-    inputs[i] = input;
-    row.Add(label);
-    row.Add(input);
-    formBox.Add(row);
+    input.On(RenderableEventNames.Focused, () => UpdateDisplays());
+    input.On(RenderableEventNames.Blurred, () => UpdateDisplays());
 }
 
-// --- Status panel ---
-var statusBox = new BoxRenderable(renderer, new BoxOptions
+renderer.KeyInput.On("keypress", (KeyEvent key) =>
 {
-    Id = "status",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(5),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#475569"),
-    FlexDirection = FlexDirectionValue.Column,
-    Padding = DimensionValue.Point(1),
-});
-
-var statusText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "status-text",
-    Content = "",
-    Fg = Rgba.FromHex("#e2e8f0"),
-});
-statusBox.Add(statusText);
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(1),
-    BackgroundColor = Rgba.FromHex("#1e293b"),
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-
-var footerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    Content = "TAB: next field | ENTER: submit | Ctrl+C: exit",
-    Fg = Rgba.FromHex("#94a3b8"),
-});
-footer.Add(footerText);
-
-// --- Build tree ---
-renderer.Root.Add(header);
-renderer.Root.Add(formBox);
-renderer.Root.Add(statusBox);
-renderer.Root.Add(footer);
-
-// --- Update status display ---
-void UpdateStatus(string? extra = null)
-{
-    string lines = $"Focused: {fieldNames[focusedIndex]}";
-    for (int i = 0; i < fieldNames.Length; i++)
-        lines += $"\n  {fieldNames[i]}: {inputs[i].Value}";
-    if (extra is not null)
-        lines += $"\n{extra}";
-    statusText.SetContent(lines);
-    renderer.RequestRender();
-}
-
-// --- Focus management ---
-void FocusField(int index)
-{
-    inputs[focusedIndex].Blur();
-    focusedIndex = index;
-    inputs[focusedIndex].Focus();
-    UpdateStatus();
-}
-
-// Wire up input events for live status updates
-for (int i = 0; i < inputs.Length; i++)
-{
-    inputs[i].On<string>(InputRenderable.Events.Input, _ => UpdateStatus());
-    inputs[i].On<string>(InputRenderable.Events.Enter, _ => UpdateStatus("✓ Submitted!"));
-}
-
-// --- Key handling (tab navigation + enter submit) ---
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
-{
-    switch (e.Name)
+    if (key.Name == "tab")
     {
-        case "tab" when !e.Shift:
-            FocusField((focusedIndex + 1) % fieldNames.Length);
-            e.StopPropagation();
-            break;
-        case "tab" when e.Shift:
-            FocusField((focusedIndex - 1 + fieldNames.Length) % fieldNames.Length);
-            e.StopPropagation();
-            break;
+        NavigateToInput(key.Shift ? activeInputIndex - 1 : activeInputIndex + 1);
+        return;
+    }
+
+    if (key.Ctrl && key.Name == "f")
+    {
+        var activeInput = GetActiveInput();
+        if (activeInput?.Focused == true)
+        {
+            activeInput.Blur();
+            lastActionText = $"Focus removed from {GetInputName(activeInput)} input";
+        }
+        else
+        {
+            activeInput?.Focus();
+            lastActionText = $"{GetInputName(activeInput)} input focused";
+        }
+
+        lastActionColor = Rgba.FromHex("#FFCC00");
+        UpdateDisplays();
+        return;
+    }
+
+    if (key.Ctrl && key.Name == "c")
+    {
+        var activeInput = GetActiveInput();
+        if (activeInput is not null)
+        {
+            activeInput.Value = "";
+            lastActionText = $"{GetInputName(activeInput)} input cleared";
+            lastActionColor = Rgba.FromHex("#FFAA00");
+            UpdateDisplays();
+        }
+        return;
+    }
+
+    if (key.Ctrl && key.Name == "r")
+    {
+        ResetInputs();
     }
 });
 
-// --- Start ---
-FocusField(0);
-renderer.RequestRender();
-
+UpdateDisplays();
+nameInput.Focus();
 await Task.Delay(Timeout.Infinite);
+
+InputRenderable CreateInput(string id, int left, int top, int width, string placeholder, int maxLength) =>
+    new(renderer, new InputOptions
+    {
+        Id = id,
+        Position = PositionValue.Absolute,
+        Left = DimensionValue.Point(left),
+        Top = DimensionValue.Point(top),
+        Width = DimensionValue.Point(width),
+        Height = DimensionValue.Point(3),
+        ZIndex = 100,
+        BackgroundColor = Rgba.FromHex("#001122"),
+        TextColor = Rgba.White,
+        Placeholder = placeholder,
+        PlaceholderColor = Rgba.FromHex("#666666"),
+        CursorColor = Rgba.FromHex("#FFFF00"),
+        Value = "",
+        MaxLength = maxLength,
+    });
+
+InputRenderable? GetActiveInput() =>
+    activeInputIndex >= 0 && activeInputIndex < inputElements.Count
+        ? inputElements[activeInputIndex]
+        : null;
+
+void NavigateToInput(int index)
+{
+    GetActiveInput()?.Blur();
+    activeInputIndex = Math.Max(0, Math.Min(index, inputElements.Count - 1));
+    var newActive = GetActiveInput();
+    newActive?.Focus();
+    lastActionText = $"Switched to {GetInputName(newActive)} input";
+    lastActionColor = Rgba.FromHex("#FFCC00");
+    UpdateDisplays();
+}
+
+void ResetInputs()
+{
+    nameInput!.Value = "";
+    emailInput!.Value = "";
+    passwordInput!.Value = "";
+    commentInput!.Value = "";
+
+    lastActionText = "All inputs reset to empty values";
+    lastActionColor = Rgba.FromHex("#FF00FF");
+    UpdateDisplays();
+    ScheduleActionReset(1000);
+}
+
+void ScheduleActionReset(int delayMs)
+{
+    actionResetTimer?.Dispose();
+    actionResetTimer = new Timer(_ =>
+    {
+        lastActionColor = Rgba.FromHex("#FFCC00");
+        UpdateDisplays();
+    }, null, delayMs, Timeout.Infinite);
+}
+
+void UpdateDisplays()
+{
+    if (keyLegendDisplay is null || statusDisplay is null || nameInput is null || emailInput is null || passwordInput is null || commentInput is null)
+        return;
+
+    var activeInput = GetActiveInput();
+    string activeInputName = GetInputName(activeInput);
+
+    keyLegendDisplay.Content = new StyledText(
+        TextChunk.Styled("Key Controls:", fg: Rgba.White, attributes: TextAttributes.Bold),
+        TextChunk.Plain("\nTab/Shift+Tab: Navigate between inputs"),
+        TextChunk.Plain("\nLeft/Right: Move cursor within input"),
+        TextChunk.Plain("\nHome/End: Move to start/end of input"),
+        TextChunk.Plain("\nBackspace/Delete: Remove characters"),
+        TextChunk.Plain("\nEnter: Submit current input"),
+        TextChunk.Plain("\nCtrl+F: Toggle focus on active input"),
+        TextChunk.Plain("\nCtrl+C: Clear active input"),
+        TextChunk.Plain("\nCtrl+R: Reset all inputs to defaults"),
+        TextChunk.Plain("\nType: Enter text in focused field"));
+
+    statusDisplay.Content = BuildStatusText(
+        activeInputName,
+        nameInput.Value,
+        emailInput.Value,
+        passwordInput.Value,
+        commentInput.Value,
+        nameInput.Focused,
+        emailInput.Focused,
+        passwordInput.Focused,
+        commentInput.Focused,
+        lastActionText,
+        lastActionColor);
+}
+
+static StyledText BuildStatusText(
+    string activeInputName,
+    string nameValue,
+    string emailValue,
+    string passwordValue,
+    string commentValue,
+    bool nameFocused,
+    bool emailFocused,
+    bool passwordFocused,
+    bool commentFocused,
+    string lastActionText,
+    Rgba lastActionColor) => new(
+        TextChunk.Styled("Input Values:", fg: Rgba.White, attributes: TextAttributes.Bold),
+        TextChunk.Plain("\nName: \""),
+        TextChunk.Plain(nameValue),
+        TextChunk.Plain("\" ("),
+        StatusChunk(nameFocused),
+        TextChunk.Plain(")\nEmail: \""),
+        TextChunk.Plain(emailValue),
+        TextChunk.Plain("\" ("),
+        StatusChunk(emailFocused),
+        TextChunk.Plain(")\nPassword: \""),
+        TextChunk.Plain(new string('*', passwordValue.Length)),
+        TextChunk.Plain("\" ("),
+        StatusChunk(passwordFocused),
+        TextChunk.Plain(")\nComment: \""),
+        TextChunk.Plain(commentValue),
+        TextChunk.Plain("\" ("),
+        StatusChunk(commentFocused),
+        TextChunk.Plain(")\n\n"),
+        TextChunk.Styled($"Active Input: {activeInputName}", fg: Rgba.FromHex("#FFAA00"), attributes: TextAttributes.Bold),
+        TextChunk.Plain("\n\n"),
+        TextChunk.Styled("Validation:", fg: Rgba.FromHex("#CCCCCC"), attributes: TextAttributes.Bold),
+        TextChunk.Plain("\nName: "),
+        ValidationChunk(ValidateName(nameValue), "✓ Valid", "✗ Invalid (min 2 chars)"),
+        TextChunk.Plain("\nEmail: "),
+        ValidationChunk(ValidateEmail(emailValue), "✓ Valid", "✗ Invalid format"),
+        TextChunk.Plain("\nPassword: "),
+        ValidationChunk(ValidatePassword(passwordValue), "✓ Valid", "✗ Invalid (min 6 chars)"),
+        TextChunk.Plain("\n\n"),
+        TextChunk.Styled(lastActionText, fg: lastActionColor));
+
+static TextChunk StatusChunk(bool focused) =>
+    TextChunk.Styled(focused ? "FOCUSED" : "BLURRED", fg: focused ? Rgba.FromHex("#00FF00") : Rgba.FromHex("#FF0000"));
+
+static TextChunk ValidationChunk(bool valid, string validText, string invalidText) =>
+    TextChunk.Styled(valid ? validText : invalidText, fg: valid ? Rgba.FromHex("#00FF00") : Rgba.FromHex("#FF0000"));
+
+static string GetInputName(InputRenderable? input) =>
+    input?.Id switch
+    {
+        "name-input" => "Name",
+        "email-input" => "Email",
+        "password-input" => "Password",
+        "comment-input" => "Comment",
+        _ => "Unknown",
+    };
+
+static bool ValidateName(string value) => value.Length >= 2;
+
+static bool ValidateEmail(string value) =>
+    Regex.IsMatch(value, @"^[^\s@]+@[^\s@]+\.[^\s@]+$");
+
+static bool ValidatePassword(string value) => value.Length >= 6;

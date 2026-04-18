@@ -50,6 +50,7 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         _color = options.Color ?? Rgba.FromInts(255, 255, 255);
         _colors = options.Colors ?? [_color];
         _selectable = options.Selectable;
+        base.Selectable = options.Selectable;
 
         var (w, h) = MeasureText(_text, _font);
         WidthDimension = DimensionValue.Point(w);

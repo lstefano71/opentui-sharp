@@ -1,195 +1,421 @@
-// TextTable Demo — demonstrates TextTableRenderable with data cycling, border styles, and column fitters
 using OpenTui.Core;
 
-using var renderer = CliRenderer.Create(new CliRendererConfig { ExitOnCtrlC = true, TargetFps = 30 });
+using static OpenTui.Core.Style;
 
-int dataSetIndex = 0;
+using var renderer = CliRenderer.Create(new CliRendererConfig
+{
+    BackgroundColor = Rgba.Black,
+    EnableMouseMovement = true,
+    ExitOnCtrlC = true,
+    TargetFps = 30,
+});
+
+var palette = new
+{
+    Bg = Rgba.Black,
+    Panel = Rgba.FromHex("#0d0d0d"),
+    Text = Rgba.FromHex("#f0f0f0"),
+    Muted = Rgba.FromHex("#666666"),
+    Soft = Rgba.FromHex("#bbbbbb"),
+    Rose = Rgba.FromHex("#e8c97a"),
+    Ember = Rgba.FromHex("#b8a0ff"),
+    Flame = Rgba.White,
+    Eye = Rgba.FromHex("#00d4aa"),
+    Border = Rgba.FromHex("#2a2a2a"),
+};
+
+byte[] wrapModes = [0, 2, 1];
+string[] wrapLabels = ["none", "word", "char"];
+BorderStyle[] borderStyles = [BorderStyle.Single, BorderStyle.Rounded, BorderStyle.Double, BorderStyle.Heavy];
+string[] borderLabels = ["single", "rounded", "double", "heavy"];
+string[] columnWidthModes = ["content", "full"];
+string[] columnFitters = ["proportional", "balanced"];
+int[] cellPaddingValues = [0, 1, 2];
+
+int contentIndex = 0;
+int wrapIndex = 1;
 int borderIndex = 0;
-byte wrapMode = 2;
-int fitterIndex = 0;
+int columnWidthModeIndex = 0;
+int columnFitterIndex = 0;
+int cellPaddingIndex = 0;
+bool borderEnabled = true;
+bool outerBorderEnabled = true;
+bool showBordersEnabled = true;
 
-BorderStyle[] borderStyles = [BorderStyle.Single, BorderStyle.Double, BorderStyle.Rounded, BorderStyle.Heavy];
-string[] borderNames = ["Single", "Double", "Rounded", "Heavy"];
-string[] fitters = ["proportional", "balanced"];
-string[] wrapNames = ["none", "char", "word"];
+TextChunk[] Cell(params TextChunk[] chunks) => chunks;
+TextChunk[] Plain(string text) => [TextChunk.Plain(text)];
+TextChunk[] BoldCell(string text) => [TextChunk.Styled(text, attributes: TextAttributes.Bold)];
 
-// --- Data sets ---
-TextChunk[][][] BuildOperationsData()
+var primaryContentSets = new List<TextChunk[][][]>
 {
-    var ok = Rgba.FromHex("#22c55e");
-    var err = Rgba.FromHex("#ef4444");
-    var warn = Rgba.FromHex("#eab308");
-    var hdr = Rgba.FromHex("#ffffff");
-    return [
-        [[TextChunk.Styled("Service", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Region", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Status", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Latency", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Queue", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Notes", hdr, attributes: TextAttributes.Bold)]],
-        [[TextChunk.Plain("api-gateway")],
-         [TextChunk.Plain("us-east-1")],
-         [TextChunk.Styled("Healthy and stable", ok, attributes: TextAttributes.Bold)],
-         [TextChunk.Plain("12 ms p95")],
-         [TextChunk.Plain("18 queued")],
-         [TextChunk.Plain("Serving public traffic and auth callbacks")]],
-        [[TextChunk.Plain("auth-service")],
-         [TextChunk.Plain("eu-west-1")],
-         [TextChunk.Styled("Healthy and stable", ok, attributes: TextAttributes.Bold)],
-         [TextChunk.Plain("8 ms p95")],
-         [TextChunk.Plain("4 queued")],
-         [TextChunk.Plain("Token minting and session refresh")]],
-        [[TextChunk.Plain("db-primary")],
-         [TextChunk.Plain("us-east-1")],
-         [TextChunk.Styled("Degraded after failover", err, attributes: TextAttributes.Bold)],
-         [TextChunk.Plain("timeout after 5 s")],
-         [TextChunk.Plain("lag 12 s")],
-         [TextChunk.Plain("Write traffic paused pending recovery")]],
-        [[TextChunk.Plain("cache-redis")],
-         [TextChunk.Plain("ap-southeast-1")],
-         [TextChunk.Styled("Warning: eviction spikes", warn, attributes: TextAttributes.Bold)],
-         [TextChunk.Plain("45 ms p95")],
-         [TextChunk.Plain("2,304 keys/min")],
-         [TextChunk.Plain("Hot shards rebalancing under peak load")]],
-        [[TextChunk.Plain("msg-queue")],
-         [TextChunk.Plain("us-west-2")],
-         [TextChunk.Styled("Healthy and stable", ok, attributes: TextAttributes.Bold)],
-         [TextChunk.Plain("3 ms p95")],
-         [TextChunk.Plain("124 inflight")],
-         [TextChunk.Plain("Background workers draining normally")]],
-    ];
-}
-
-TextChunk[][][] BuildRegionalData()
-{
-    var hdr = Rgba.FromHex("#ffffff");
-    var num = Rgba.FromHex("#7dd3fc");
-    var pct = Rgba.FromHex("#86efac");
-    return [
-        [[TextChunk.Styled("Region", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Users", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Revenue", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Growth", hdr, attributes: TextAttributes.Bold)]],
-        [[TextChunk.Plain("North America")], [TextChunk.Styled("1,245,000", num)], [TextChunk.Styled("$4.2M", num)], [TextChunk.Styled("+12.3%", pct)]],
-        [[TextChunk.Plain("Europe")],        [TextChunk.Styled("892,000", num)],   [TextChunk.Styled("$2.8M", num)], [TextChunk.Styled("+8.7%", pct)]],
-        [[TextChunk.Plain("Asia Pacific")],  [TextChunk.Styled("2,100,500", num)], [TextChunk.Styled("$5.1M", num)], [TextChunk.Styled("+22.1%", pct)]],
-        [[TextChunk.Plain("Latin America")], [TextChunk.Styled("430,200", num)],   [TextChunk.Styled("$0.9M", num)], [TextChunk.Styled("+15.6%", pct)]],
-    ];
-}
-
-TextChunk[][][] BuildTasksData()
-{
-    var hdr = Rgba.FromHex("#ffffff");
-    return [
-        [[TextChunk.Styled("Task", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Assignee", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Priority", hdr, attributes: TextAttributes.Bold)],
-         [TextChunk.Styled("Status", hdr, attributes: TextAttributes.Bold)]],
-        [[TextChunk.Plain("🐛 Fix login timeout")],     [TextChunk.Plain("Alice")],   [TextChunk.Styled("🔴 High", Rgba.FromHex("#ef4444"))],   [TextChunk.Plain("🔧 In Progress")]],
-        [[TextChunk.Plain("✨ Add dark mode")],          [TextChunk.Plain("Bob")],     [TextChunk.Styled("🟡 Medium", Rgba.FromHex("#eab308"))], [TextChunk.Plain("📋 Backlog")]],
-        [[TextChunk.Plain("🚀 Deploy v2.0")],           [TextChunk.Plain("Charlie")], [TextChunk.Styled("🔴 High", Rgba.FromHex("#ef4444"))],   [TextChunk.Plain("✅ Done")]],
-        [[TextChunk.Plain("📝 Update API docs")],       [TextChunk.Plain("Diana")],   [TextChunk.Styled("🟢 Low", Rgba.FromHex("#22c55e"))],    [TextChunk.Plain("📋 Backlog")]],
-        [[TextChunk.Plain("🔒 Security audit review")], [TextChunk.Plain("Eve")],     [TextChunk.Styled("🔴 High", Rgba.FromHex("#ef4444"))],   [TextChunk.Plain("🔧 In Progress")]],
-    ];
-}
-
-string[] dataSetNames = ["Operations", "Regional", "Tasks"];
-Func<TextChunk[][][]>[] dataSetBuilders = [BuildOperationsData, BuildRegionalData, BuildTasksData];
-
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
-    BorderStyle = BorderStyle.Single,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-    Border = true,
-});
-var headerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "header-text",
-    Content = "TEXT TABLE DEMO",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-header.Add(headerText);
-
-// --- Table ---
-var table = new TextTableRenderable(renderer, new TextTableOptions
-{
-    Id = "table",
-    Content = BuildOperationsData(),
-    WrapMode = wrapMode,
-    ColumnWidthMode = "full",
-    ColumnFitter = "proportional",
-    ShowBorders = true,
-    Border = true,
-    OuterBorder = true,
-    BorderStyle = BorderStyle.Single,
-    BorderColor = Rgba.FromHex("#444444"),
-    Fg = Rgba.FromHex("#cccccc"),
-    Width = DimensionValue.Auto,
-    FlexGrow = 1,
-});
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e293b"),
-    BorderStyle = BorderStyle.Single,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-    Border = true,
-});
-var footerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    Content = "",
-    Fg = Rgba.FromHex("#94a3b8"),
-});
-footer.Add(footerText);
-
-// --- Build tree ---
-renderer.Root.Add(header);
-renderer.Root.Add(table);
-renderer.Root.Add(footer);
-
-void UpdateDisplay()
-{
-    headerText.ContentText = $"TEXT TABLE DEMO — {dataSetNames[dataSetIndex]} ({dataSetIndex + 1}/{dataSetNames.Length})";
-    footerText.ContentText = $"[N] Data ({dataSetNames[dataSetIndex]})  [B] Border ({borderNames[borderIndex]})  [W] Wrap ({wrapNames[wrapMode]})  [F] Fitter ({fitters[fitterIndex]})";
-}
-
-// --- Key handling ---
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
-{
-    switch (e.Name)
+    new TextChunk[][][]
     {
-        case "n":
-            dataSetIndex = (dataSetIndex + 1) % dataSetNames.Length;
-            table.Content = dataSetBuilders[dataSetIndex]();
+        new[] { BoldCell("Service"), BoldCell("Status"), BoldCell("Notes") },
+        new[] { Plain("api"), Cell(TextChunk.Styled("OK", fg: palette.Eye)), Cell(TextChunk.Styled("latency", fg: palette.Muted), TextChunk.Plain(" 28ms")) },
+        new[] { Plain("worker"), Cell(TextChunk.Styled("DEGRADED", fg: palette.Ember)), Plain("queue depth: 124") },
+        new[] { Plain("billing"), Cell(TextChunk.Styled("ERROR", fg: palette.Flame)), Plain("retrying payment provider") },
+    },
+    new TextChunk[][][]
+    {
+        new[] { BoldCell("Region"), BoldCell("Requests"), BoldCell("Trend") },
+        new[] { Plain("us-east-1"), Plain("1.2M"), Cell(TextChunk.Styled("+12.4%", fg: palette.Eye)) },
+        new[] { Plain("eu-west-1"), Plain("890K"), Cell(TextChunk.Styled("+5.1%", fg: palette.Soft)) },
+        new[] { Plain("ap-south-1"), Plain("540K"), Cell(TextChunk.Styled("-2.0%", fg: palette.Flame)) },
+    },
+    new TextChunk[][][]
+    {
+        new[] { BoldCell("Task"), BoldCell("Owner"), BoldCell("ETA") },
+        new[]
+        {
+            Plain("Wrap regression in operational status dashboard with dynamic row heights and constrained layout validation"),
+            Plain("core platform and runtime reliability squad"),
+            Cell(TextChunk.Styled("done after validating none, word, and char wrap modes across narrow, medium, wide, and ultra-wide terminal widths", fg: palette.Eye)),
+        },
+        new[]
+        {
+            Plain("Unicode layout stabilization for mixed Latin, punctuation, symbols, and long identifiers in adjacent columns"),
+            Plain("render pipeline maintainers with fallback shaping support"),
+            Plain("in review with follow-up checks for border style transitions, cell padding variants, and selection range consistency"),
+        },
+        new[]
+        {
+            Plain("Snapshot pass for table rendering in content mode and full mode with heavy and double border combinations"),
+            Plain("qa automation and visual diff triage group"),
+            Plain("today pending final baseline updates for oversized fixtures that intentionally stress wrapping behavior on high-resolution terminals"),
+        },
+        new[]
+        {
+            Plain("Document edge cases where long tokens without spaces force char wrapping and reveal per-cell clipping regressions"),
+            Plain("developer experience and docs tooling"),
+            Plain("planned for this sprint once final reproducible examples are captured and linked to regression tracking tickets"),
+        },
+        new[]
+        {
+            Plain("Performance sweep of wrapping algorithm under large datasets to confirm stable frame times during rapid key toggling"),
+            Plain("runtime performance task force"),
+            Plain("scheduled after review, with benchmark runs on laptop and desktop terminals at 200-plus column widths"),
+        },
+    },
+};
+
+var unicodeContentSets = new List<TextChunk[][][]>
+{
+    new TextChunk[][][]
+    {
+        new[] { BoldCell("Locale"), BoldCell("Sample") },
+        new[] { Plain("ja-JP"), Plain("東京の夜景と絵文字 🌃✨") },
+        new[] { Plain("zh-CN"), Plain("你好世界，布局检查中 🚀") },
+        new[] { Plain("ko-KR"), Plain("한글과 이모지 조합 테스트 😄") },
+    },
+    new TextChunk[][][]
+    {
+        new[] { BoldCell("Expression"), BoldCell("Meaning") },
+        new[] { Plain("山川异域"), Plain("Different lands, shared sky 🌏") },
+        new[] { Plain("꽃길만 걷자"), Plain("Walk only flower paths 🌸") },
+        new[] { Plain("加油"), Plain("Keep pushing forward 💪") },
+    },
+    new TextChunk[][][]
+    {
+        new[] { BoldCell("Column"), BoldCell("Wrapped Text") },
+        new[]
+        {
+            Plain("mixed-languages"),
+            Plain("CJK and emoji wrapping stress case: こんにちは世界 and 안녕하세요 세계 and 你好，世界 followed by long English prose that keeps flowing to test whether each cell wraps naturally even when the terminal is extremely wide and the row still needs multiple visual lines for readability 🌍🚀"),
+        },
+        new[]
+        {
+            Plain("emoji-and-symbols"),
+            Plain("Faces 😀😃😄😁😆 plus symbols 🧪📦🛰️🔧📊 mixed with version tags like release-candidate-build-2026-02-very-long-token-without-breaks to ensure char wrapping remains stable and no glyph alignment issues appear at column boundaries"),
+        },
+        new[]
+        {
+            Plain("long-cjk-phrase"),
+            Plain("長文の日本語テキストと中文段落和한국어문장을連続して配置し、その後に additional English context describing renderer behavior, border intersection handling, and selection extraction so that this single cell remains a reliable wrapping torture test."),
+        },
+        new[]
+        {
+            Plain("mixed-punctuation"),
+            Plain("Wrap behavior with punctuation-heavy content: [alpha]{beta}(gamma)<delta>|epsilon| then repeated fragments, commas, semicolons, and slashes to verify token boundaries do not break border drawing logic or spacing consistency in neighboring columns."),
+        },
+    },
+};
+
+var container = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "text-table-demo-container",
+    Width = DimensionValue.Percent(100),
+    Height = DimensionValue.Percent(100),
+    FlexDirection = FlexDirectionValue.Column,
+    Padding = 1,
+    Gap = 1,
+    BackgroundColor = palette.Bg,
+});
+renderer.Root.Add(container);
+
+var controlsText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "text-table-demo-controls",
+    Content = "",
+    Fg = palette.Text,
+    WrapMode = WrapMode.Word,
+    Selectable = false,
+});
+
+var tableAreaScrollBox = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
+{
+    Id = "text-table-demo-table-area-scroll",
+    Width = DimensionValue.Percent(100),
+    FlexGrow = 1,
+    FlexShrink = 1,
+    ScrollY = true,
+    ScrollX = false,
+    Border = false,
+    BackgroundColor = palette.Bg,
+    ContentOptions = new BoxOptions
+    {
+        FlexDirection = FlexDirectionValue.Column,
+        Gap = 1,
+    },
+});
+
+var primaryLabel = new TextRenderable(renderer, new TextOptions
+{
+    Id = "text-table-demo-primary-label",
+    StyledContent = new StyledText(Bold("Operational Table")),
+    Fg = palette.Ember,
+    Selectable = false,
+});
+
+var primaryTable = new TextTableRenderable(renderer, new TextTableOptions
+{
+    Id = "text-table-demo-primary",
+    Width = DimensionValue.Percent(100),
+    WrapMode = wrapModes[wrapIndex],
+    ColumnFitter = columnFitters[columnFitterIndex],
+    ColumnWidthMode = columnWidthModes[columnWidthModeIndex],
+    BorderStyle = borderStyles[borderIndex],
+    BorderColor = palette.Ember,
+    Fg = palette.Text,
+    Bg = palette.Bg,
+    BackgroundColor = palette.Bg,
+    Content = primaryContentSets[contentIndex],
+});
+
+var unicodeLabel = new TextRenderable(renderer, new TextOptions
+{
+    Id = "text-table-demo-unicode-label",
+    StyledContent = new StyledText(Bold("Unicode/CJK/Emoji Table")),
+    Fg = palette.Rose,
+    Selectable = false,
+});
+
+var unicodeTable = new TextTableRenderable(renderer, new TextTableOptions
+{
+    Id = "text-table-demo-unicode",
+    Width = DimensionValue.Percent(100),
+    WrapMode = wrapModes[wrapIndex],
+    ColumnFitter = columnFitters[columnFitterIndex],
+    ColumnWidthMode = columnWidthModes[columnWidthModeIndex],
+    BorderStyle = borderStyles[borderIndex],
+    BorderColor = palette.Rose,
+    Fg = palette.Text,
+    Bg = palette.Bg,
+    BackgroundColor = palette.Bg,
+    Content = unicodeContentSets[contentIndex],
+});
+
+var selectionBox = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "text-table-demo-selection-box",
+    Width = DimensionValue.Percent(100),
+    Height = 10,
+    Border = true,
+    BorderStyle = BorderStyle.Double,
+    BorderColor = palette.Border,
+    Title = "Selected Text",
+    TitleAlignment = TitleAlignment.Left,
+    Padding = 1,
+    BackgroundColor = palette.Panel,
+});
+
+var selectionMetaText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "text-table-demo-selection-meta",
+    Content = "No selection yet",
+    Fg = palette.Eye,
+    Selectable = false,
+});
+
+var selectionScrollBox = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
+{
+    Id = "text-table-demo-selection-scroll",
+    Width = DimensionValue.Percent(100),
+    FlexGrow = 1,
+    FlexShrink = 1,
+    ScrollY = true,
+    ScrollX = false,
+    Border = false,
+    BackgroundColor = palette.Panel,
+});
+
+var selectionStatusText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "text-table-demo-selection-text",
+    Content = "",
+    Fg = palette.Text,
+    WrapMode = WrapMode.Word,
+    Width = DimensionValue.Percent(100),
+    Selectable = false,
+});
+
+selectionBox.Add(selectionMetaText);
+selectionBox.Add(selectionScrollBox);
+selectionScrollBox.Add(selectionStatusText);
+
+tableAreaScrollBox.Add(controlsText);
+tableAreaScrollBox.Add(primaryLabel);
+tableAreaScrollBox.Add(primaryTable);
+tableAreaScrollBox.Add(unicodeLabel);
+tableAreaScrollBox.Add(unicodeTable);
+
+container.Add(tableAreaScrollBox);
+container.Add(selectionBox);
+
+StyledText BuildControlsText()
+{
+    var builder = new StyledTextBuilder();
+    builder.Bold("TextTable Demo");
+    builder.Add("  ");
+    builder.Styled("1/2/3 dataset • W wrap • B style • M width • F fitter • P padding • N inner • O outer • H draw • drag to select • C clear", fg: palette.Muted);
+    builder.Add("\nCurrent: dataset ");
+    builder.Styled($"{contentIndex + 1}", fg: palette.Soft);
+    builder.Add(" | wrap ");
+    builder.Styled(wrapLabels[wrapIndex], fg: palette.Rose);
+    builder.Add(" | style ");
+    builder.Styled(borderLabels[borderIndex], fg: palette.Ember);
+    builder.Add(" | width ");
+    builder.Styled(columnWidthModes[columnWidthModeIndex], fg: palette.Eye);
+    builder.Add(" | fitter ");
+    builder.Styled(columnFitters[columnFitterIndex], fg: palette.Rose);
+    builder.Add(" | padding ");
+    builder.Styled($"{cellPaddingValues[cellPaddingIndex]}", fg: palette.Soft);
+    builder.Add(" | inner ");
+    builder.Styled(borderEnabled ? "on" : "off", fg: palette.Rose);
+    builder.Add(" | outer ");
+    builder.Styled(outerBorderEnabled ? "on" : "off", fg: palette.Ember);
+    builder.Add(" | draw ");
+    builder.Styled(showBordersEnabled ? "on" : "off", fg: palette.Eye);
+    return builder.Build();
+}
+
+void ClearSelectionStatus(string message)
+{
+    selectionMetaText.ContentText = message;
+    selectionStatusText.ContentText = "";
+    selectionScrollBox.ScrollTop = 0;
+}
+
+void ApplyTableState()
+{
+    primaryTable.Content = primaryContentSets[contentIndex];
+    unicodeTable.Content = unicodeContentSets[contentIndex];
+
+    primaryTable.WrapMode = wrapModes[wrapIndex];
+    unicodeTable.WrapMode = wrapModes[wrapIndex];
+
+    primaryTable.TableBorderStyle = borderStyles[borderIndex];
+    unicodeTable.TableBorderStyle = borderStyles[borderIndex];
+
+    primaryTable.ColumnWidthMode = columnWidthModes[columnWidthModeIndex];
+    unicodeTable.ColumnWidthMode = columnWidthModes[columnWidthModeIndex];
+
+    primaryTable.ColumnFitter = columnFitters[columnFitterIndex];
+    unicodeTable.ColumnFitter = columnFitters[columnFitterIndex];
+
+    primaryTable.CellPadding = cellPaddingValues[cellPaddingIndex];
+    unicodeTable.CellPadding = cellPaddingValues[cellPaddingIndex];
+
+    primaryTable.Border = borderEnabled;
+    unicodeTable.Border = borderEnabled;
+
+    primaryTable.OuterBorder = outerBorderEnabled;
+    unicodeTable.OuterBorder = outerBorderEnabled;
+
+    primaryTable.ShowBorders = showBordersEnabled;
+    unicodeTable.ShowBorders = showBordersEnabled;
+
+    controlsText.Content = BuildControlsText();
+    renderer.RequestRender();
+}
+
+renderer.On<Selection>(RendererEventNames.Selection, selection =>
+{
+    string selectedText = selection.GetSelectedText();
+    if (string.IsNullOrEmpty(selectedText))
+    {
+        ClearSelectionStatus("Empty selection");
+        return;
+    }
+
+    int lineCount = selectedText.Split('\n').Length;
+    int charCount = selectedText.Length;
+    selectionMetaText.ContentText = $"Selected {lineCount} line{(lineCount == 1 ? "" : "s")} ({charCount} chars)";
+    selectionStatusText.ContentText = selectedText;
+    selectionScrollBox.ScrollTop = 0;
+});
+
+renderer.KeyInput.On("keypress", (KeyEvent key) =>
+{
+    if (key.Ctrl || key.Meta)
+        return;
+
+    switch (key.Name)
+    {
+        case "1":
+        case "2":
+        case "3":
+            contentIndex = int.Parse(key.Name) - 1;
+            ApplyTableState();
+            break;
+        case "w":
+            wrapIndex = (wrapIndex + 1) % wrapModes.Length;
+            ApplyTableState();
             break;
         case "b":
             borderIndex = (borderIndex + 1) % borderStyles.Length;
-            table.TableBorderStyle = borderStyles[borderIndex];
+            ApplyTableState();
             break;
-        case "w":
-            wrapMode = (byte)((wrapMode + 1) % 3);
-            table.WrapMode = wrapMode;
+        case "m":
+            columnWidthModeIndex = (columnWidthModeIndex + 1) % columnWidthModes.Length;
+            ApplyTableState();
             break;
         case "f":
-            fitterIndex = (fitterIndex + 1) % fitters.Length;
-            table.ColumnFitter = fitters[fitterIndex];
+            columnFitterIndex = (columnFitterIndex + 1) % columnFitters.Length;
+            ApplyTableState();
+            break;
+        case "p":
+            cellPaddingIndex = (cellPaddingIndex + 1) % cellPaddingValues.Length;
+            ApplyTableState();
+            break;
+        case "n":
+            borderEnabled = !borderEnabled;
+            ApplyTableState();
+            break;
+        case "o":
+            outerBorderEnabled = !outerBorderEnabled;
+            ApplyTableState();
+            break;
+        case "h":
+            showBordersEnabled = !showBordersEnabled;
+            ApplyTableState();
+            break;
+        case "c":
+            renderer.ClearSelection();
+            ClearSelectionStatus("Selection cleared");
+            renderer.RequestRender();
             break;
     }
-    UpdateDisplay();
 });
 
-UpdateDisplay();
-renderer.RequestRender();
+ApplyTableState();
 await Task.Delay(Timeout.Infinite);

@@ -18,6 +18,7 @@ public class TextBufferRenderable : Renderable
     private Rgba? _selectionBg;
     private Rgba? _selectionFg;
     private bool _selectable;
+    private LocalSelectionBounds? _lastLocalSelection;
     private WrapMode _wrapMode;
     private bool _truncate;
 
@@ -29,6 +30,7 @@ public class TextBufferRenderable : Renderable
         _selectionBg = options.SelectionBg;
         _selectionFg = options.SelectionFg;
         _selectable = options.Selectable;
+        base.Selectable = options.Selectable;
         _wrapMode = options.WrapMode;
         _truncate = options.Truncate;
 
@@ -78,19 +80,33 @@ public class TextBufferRenderable : Renderable
     public Rgba? SelectionBg
     {
         get => _selectionBg;
-        set { _selectionBg = value; RequestRender(); }
+        set
+        {
+            _selectionBg = value;
+            RefreshLocalSelection();
+            RequestRender();
+        }
     }
 
     public Rgba? SelectionFg
     {
         get => _selectionFg;
-        set { _selectionFg = value; RequestRender(); }
+        set
+        {
+            _selectionFg = value;
+            RefreshLocalSelection();
+            RequestRender();
+        }
     }
 
     public bool Selectable
     {
         get => _selectable;
-        set => _selectable = value;
+        set
+        {
+            _selectable = value;
+            base.Selectable = value;
+        }
     }
 
     public WrapMode WrapMode
@@ -236,6 +252,58 @@ public class TextBufferRenderable : Renderable
         buffer.DrawTextBufferView(_textBufferView.Handle, (int)_screenX, (int)_screenY);
     }
 
+    public override bool ShouldStartSelection(int x, int y)
+    {
+        if (!_selectable)
+            return false;
+
+        int localX = x - X;
+        int localY = y - Y;
+        return localX >= 0 && localX < Width && localY >= 0 && localY < Height;
+    }
+
+    public override bool OnSelectionChanged(Selection? selection)
+    {
+        var localSelection = SelectionHelpers.ConvertGlobalToLocalSelection(selection, X, Y);
+        _lastLocalSelection = localSelection;
+
+        bool changed;
+        if (localSelection is not { IsActive: true } activeSelection)
+        {
+            _textBufferView.ResetLocalSelection();
+            changed = true;
+        }
+        else if (selection?.IsStart == true)
+        {
+            changed = _textBufferView.SetLocalSelection(
+                activeSelection.AnchorX,
+                activeSelection.AnchorY,
+                activeSelection.FocusX,
+                activeSelection.FocusY,
+                _selectionFg,
+                _selectionBg);
+        }
+        else
+        {
+            changed = _textBufferView.UpdateLocalSelection(
+                activeSelection.AnchorX,
+                activeSelection.AnchorY,
+                activeSelection.FocusX,
+                activeSelection.FocusY,
+                _selectionFg,
+                _selectionBg);
+        }
+
+        if (changed)
+            RequestRender();
+
+        return HasSelection();
+    }
+
+    public override string GetSelectedText() => _textBufferView.GetSelectedText();
+
+    public override bool HasSelection() => _textBufferView.HasSelection();
+
     #endregion
 
     #region Resize
@@ -272,6 +340,24 @@ public class TextBufferRenderable : Renderable
         _textBuffer.Dispose();
         _syntaxStyle.Dispose();
         base.DestroySelf();
+    }
+
+    #endregion
+
+    #region Selection Helpers
+
+    private void RefreshLocalSelection()
+    {
+        if (_lastLocalSelection is not { IsActive: true } localSelection)
+            return;
+
+        _textBufferView.SetLocalSelection(
+            localSelection.AnchorX,
+            localSelection.AnchorY,
+            localSelection.FocusX,
+            localSelection.FocusY,
+            _selectionFg,
+            _selectionBg);
     }
 
     #endregion

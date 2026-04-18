@@ -1,5 +1,16 @@
-// Wide Grapheme Overlay — shows CJK, emoji, and double-width character handling
 using OpenTui.Core;
+
+const int HeaderHeight = 2;
+
+string[] graphemeLines =
+[
+    "東京都  北京市  서울시  大阪府  名古屋  横浜市  上海市",
+    "👨‍👩‍👧‍👦  👩🏽‍💻  🏳️‍🌈  🇺🇸  🇩🇪  🇯🇵  🇮🇳  家族  絵文字  🎉🎊🎈",
+    "こんにちは世界  你好世界  안녕하세요  สวัสดี  مرحبا",
+    "漢字テスト  中文测试  한국어  日本語  繁體中文  简体中文",
+    "🚀 Full-width: ＡＢＣＤＥＦ  Half: abcdef  ½ ⅞ ⅓",
+    "混合テキスト mixed text with 漢字 and emoji 🎯",
+];
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
@@ -7,169 +18,205 @@ using var renderer = CliRenderer.Create(new CliRendererConfig
     TargetFps = 30,
 });
 
-renderer.Native.SetBackgroundColor(Rgba.FromHex("#0f172a"));
+renderer.Native.SetBackgroundColor(Rgba.FromHex("#0A0E14"));
 
-// --- Example sets ---
-string[][] examples =
-[
-    [
-        "CJK Characters",
-        "你好世界",
-        "日本語テスト",
-        "한국어 테스트",
-        "ＡＢＣ全角英字",
-    ],
-    [
-        "Emoji",
-        "🎉🎊🎈🎁🎀",
-        "🚀🌍🌙⭐🔥",
-        "👨‍👩‍👧‍👦 Family",
-        "🏳️‍🌈 Flag",
-    ],
-    [
-        "Mixed Width",
-        "Hello你好World",
-        "ABC🎉DEF🚀GHI",
-        "1️⃣2️⃣3️⃣ Numbers",
-        "café naïve résumé",
-    ],
-    [
-        "Box Drawing + CJK",
-        "┌──────┐",
-        "│ 漢字 │",
-        "│ カナ │",
-        "└──────┘",
-    ],
-    [
-        "Overlay Test",
-        "▓▓漢▓▓字▓▓",
-        "██🎉██🚀██",
-        "░░你░░好░░",
-        "──全──角──",
-    ],
-];
-
-int currentExample = 0;
-
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
+var root = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#7c3aed"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
+    Id = "wg-overlay-root",
+    Width = DimensionValue.Percent(100),
+    Height = DimensionValue.Percent(100),
 });
-var headerText = new TextRenderable(renderer, new TextOptions
+renderer.Root.Add(root);
+
+bool scrimVisible = false;
+
+var headerDisplay = new TextRenderable(renderer, new TextOptions
 {
-    Id = "header-text",
-    StyledContent = new StyledText(
-        TextChunk.Styled("Wide Grapheme Overlay", fg: Rgba.White, attributes: TextAttributes.Bold)),
-    Fg = Rgba.White,
+    Id = "wg-header",
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(2),
+    Top = DimensionValue.Point(0),
+    Height = DimensionValue.Point(HeaderHeight),
+    ZIndex = 200,
+    StyledContent = GetHeaderContent(scrimVisible),
 });
-header.Add(headerText);
+root.Add(headerDisplay);
 
-// --- Content ---
-var content = new BoxRenderable(renderer, new BoxOptions
+var background = new GraphemeBackground(renderer, "wg-background", graphemeLines)
 {
-    Id = "content",
-    Width = DimensionValue.Auto,
-    FlexGrow = 1,
-    FlexDirection = FlexDirectionValue.Column,
-    Padding = DimensionValue.Point(1),
-    BackgroundColor = Rgba.FromHex("#1e293b"),
+    PositionType = PositionValue.Absolute,
+    Left = DimensionValue.Point(0),
+    Top = DimensionValue.Point(HeaderHeight),
+    WidthDimension = DimensionValue.Point(renderer.Width),
+    HeightDimension = DimensionValue.Point(renderer.Height - HeaderHeight),
+};
+root.Add(background);
+
+var scrim = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "wg-scrim",
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(0),
+    Top = DimensionValue.Point(HeaderHeight),
+    Width = DimensionValue.Point(renderer.Width),
+    Height = DimensionValue.Point(renderer.Height - HeaderHeight),
+    BackgroundColor = Rgba.FromInts(0, 0, 0, 150),
+    ZIndex = 50,
 });
+scrim.Visible = false;
+root.Add(scrim);
 
-var titleText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "title",
-    Content = "",
-    Fg = Rgba.FromHex("#38bdf8"),
-    Attributes = TextAttributes.Bold,
-});
-content.Add(titleText);
+root.Add(new DraggableBox(renderer, "wg-box-50", 4, HeaderHeight + 1, 25, 8, Rgba.FromValues(64f / 255f, 176f / 255f, 1f, 128f / 255f), 100));
+root.Add(new DraggableBox(renderer, "wg-box-75", 20, HeaderHeight + 5, 25, 8, Rgba.FromValues(1f, 107f / 255f, 129f / 255f, 192f / 255f), 100));
+root.Add(new DraggableBox(renderer, "wg-box-25", 40, HeaderHeight + 3, 25, 8, Rgba.FromValues(139f / 255f, 69f / 255f, 193f / 255f, 64f / 255f), 100));
+root.Add(new DraggableBox(renderer, "wg-box-opaque", 60, HeaderHeight + 7, 25, 8, Rgba.FromValues(30f / 255f, 30f / 255f, 42f / 255f, 1f), 100));
 
-// Create 4 text lines for the example content
-var lines = new TextRenderable[4];
-for (int i = 0; i < 4; i++)
+renderer.KeyInput.On("keypress", (KeyEvent keyEvent) =>
 {
-    lines[i] = new TextRenderable(renderer, new TextOptions
-    {
-        Id = $"line-{i}",
-        Content = "",
-        Fg = Rgba.FromHex("#e2e8f0"),
-    });
-    content.Add(lines[i]);
-}
+    if (keyEvent.Name != "d")
+        return;
 
-var indexText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "index",
-    Content = "",
-    Fg = Rgba.FromHex("#64748b"),
-});
-content.Add(indexText);
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var footerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    Content = "N: next example | P: previous | Ctrl+C: exit",
-    Fg = Rgba.FromHex("#93c5fd"),
-});
-footer.Add(footerText);
-
-// --- Build tree ---
-renderer.Root.Add(header);
-renderer.Root.Add(content);
-renderer.Root.Add(footer);
-
-void ShowExample(int idx)
-{
-    var ex = examples[idx];
-    titleText.SetContent(ex[0]);
-    for (int i = 0; i < 4; i++)
-        lines[i].SetContent(ex[i + 1]);
-    indexText.SetContent($"\nExample {idx + 1}/{examples.Length}");
-}
-
-// --- Key handling ---
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
-{
-    switch (e.Name)
-    {
-        case "n":
-            currentExample = (currentExample + 1) % examples.Length;
-            ShowExample(currentExample);
-            renderer.RequestRender();
-            break;
-        case "p":
-            currentExample = (currentExample - 1 + examples.Length) % examples.Length;
-            ShowExample(currentExample);
-            renderer.RequestRender();
-            break;
-    }
-});
-
-renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ =>
-{
+    scrimVisible = !scrimVisible;
+    scrim.Visible = scrimVisible;
+    headerDisplay.Content = GetHeaderContent(scrimVisible);
     renderer.RequestRender();
 });
 
-ShowExample(0);
+renderer.On<(int Width, int Height)>(RendererEventNames.Resize, resize =>
+{
+    int backgroundHeight = resize.Height - HeaderHeight;
+    background.WidthDimension = DimensionValue.Point(resize.Width);
+    background.HeightDimension = DimensionValue.Point(backgroundHeight);
+    scrim.WidthDimension = DimensionValue.Point(resize.Width);
+    scrim.HeightDimension = DimensionValue.Point(backgroundHeight);
+    renderer.RequestRender();
+});
+
 renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);
+
+static StyledText GetHeaderContent(bool scrimVisible) => new(
+    TextChunk.Styled("Wide Grapheme Overlay", fg: Rgba.FromHex("#00D4AA"), attributes: TextAttributes.Bold),
+    TextChunk.Styled(
+        $" | {(scrimVisible ? "D: hide scrim" : "D: show scrim")} | Drag boxes over CJK/emoji | Ctrl+C: quit",
+        fg: Rgba.FromHex("#A8A8B2")));
+
+internal static class WideGraphemeOverlayState
+{
+    public static int NextZIndex { get; set; } = 101;
+}
+
+internal sealed class DraggableBox : BoxRenderable
+{
+    private bool _isDragging;
+    private int _dragOffsetX;
+    private int _dragOffsetY;
+    private readonly int _alphaPercentage;
+
+    public DraggableBox(IRenderContext ctx, string id, int x, int y, int width, int height, Rgba backgroundColor, int zIndex)
+        : base(ctx, new BoxOptions
+        {
+            Id = id,
+            Width = DimensionValue.Point(width),
+            Height = DimensionValue.Point(height),
+            ZIndex = zIndex,
+            BackgroundColor = backgroundColor,
+            Position = PositionValue.Absolute,
+            Left = DimensionValue.Point(x),
+            Top = DimensionValue.Point(y),
+        })
+    {
+        _alphaPercentage = (int)MathF.Round(backgroundColor.A * 100f);
+    }
+
+    protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
+    {
+        base.RenderSelf(buffer, deltaTime);
+
+        string alphaText = $"{_alphaPercentage}%";
+        int centerX = X + Math.Max(0, (Width - alphaText.Length) / 2);
+        int centerY = Y + Math.Max(0, Height / 2);
+        buffer.DrawText(alphaText, (uint)centerX, (uint)centerY, Rgba.FromInts(255, 255, 255, 220));
+    }
+
+    protected override void OnMouseEvent(UiMouseEvent evt)
+    {
+        switch (evt.Type)
+        {
+            case MouseEventType.Down:
+                _isDragging = true;
+                _dragOffsetX = evt.X - X;
+                _dragOffsetY = evt.Y - Y;
+                ZIndex = WideGraphemeOverlayState.NextZIndex++;
+                evt.StopPropagation();
+                break;
+
+            case MouseEventType.DragEnd:
+                if (_isDragging)
+                {
+                    _isDragging = false;
+                    evt.StopPropagation();
+                }
+                break;
+
+            case MouseEventType.Drag:
+                if (_isDragging)
+                {
+                    int newX = evt.X - _dragOffsetX;
+                    int newY = evt.Y - _dragOffsetY;
+
+                    X = Math.Max(0, Math.Min(newX, _ctx.Width - Width));
+                    Y = Math.Max(0, Math.Min(newY, _ctx.Height - Height));
+
+                    evt.StopPropagation();
+                }
+                break;
+        }
+    }
+}
+
+internal sealed class GraphemeBackground : FrameBufferRenderable
+{
+    private readonly string[] _graphemeLines;
+    private int _lastFilledWidth = -1;
+    private int _lastFilledHeight = -1;
+
+    public GraphemeBackground(IRenderContext ctx, string id, string[] graphemeLines)
+        : base(ctx, new FrameBufferOptions
+        {
+            Id = id,
+            BackgroundColor = Rgba.FromInts(10, 14, 20),
+        })
+    {
+        _graphemeLines = graphemeLines;
+    }
+
+    protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
+    {
+        EnsureBackground();
+        base.RenderSelf(buffer, deltaTime);
+    }
+
+    private void EnsureBackground()
+    {
+        if (Width <= 0 || Height <= 0 || Buffer is null)
+            return;
+
+        if (_lastFilledWidth == Width && _lastFilledHeight == Height)
+            return;
+
+        Buffer.RespectAlpha = false;
+        Buffer.Clear(Rgba.FromInts(10, 14, 20));
+
+        var fgColor = Rgba.FromInts(220, 220, 220);
+        var bgColor = Rgba.FromInts(10, 14, 20);
+        for (int y = 0; y < Height; y++)
+        {
+            string line = _graphemeLines[y % _graphemeLines.Length];
+            Buffer.DrawText(line, 2, (uint)y, fgColor, bgColor);
+        }
+
+        _lastFilledWidth = Width;
+        _lastFilledHeight = Height;
+    }
+}

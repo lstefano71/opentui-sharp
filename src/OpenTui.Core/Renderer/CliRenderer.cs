@@ -65,10 +65,15 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private readonly double _targetFrameTimeMs;
     private readonly double _minTargetFrameTimeMs;
     private int _liveRequestCounter;
+    private int _latestPointerX;
+    private int _latestPointerY;
 
     private Renderable? _currentFocusedRenderable;
+    private Renderable? _capturedRenderable;
+    private Renderable? _lastOverRenderable;
     private readonly HashSet<Renderable> _lifecyclePasses = [];
     private readonly List<Func<float, Task>> _frameCallbacks = [];
+    private List<Renderable> _selectionContainers = [];
 
     private readonly KeyHandler _keyHandler;
     private StdinParser? _stdinParser;
@@ -82,6 +87,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private readonly List<Action<OptimizedBuffer, float>> _postProcessFns;
 
     private bool _terminalIsSetup;
+    private bool? _terminalFocusState;
+    private bool _shouldRestoreModesOnNextFocus;
     private uint _savedConsoleMode;
     private bool _hasConsoleMode;
     private volatile bool _exitOnDestroy;
@@ -122,6 +129,10 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     public bool IsRunning => _isRunning;
 
+    public int LiveRequestCount => _liveRequestCounter;
+
+    public string CurrentControlState => _liveRequestCounter > 0 ? "auto_started" : "idle";
+
     /// <summary>
     /// Advances the frame counter and renders the tree. For use in tests only —
     /// mirrors the essential steps of the real render loop (frame ID increment +
@@ -131,6 +142,24 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     {
         _frameId++;
         Root.Render(NextRenderBuffer, deltaTime);
+    }
+
+    internal void DispatchTestMouseEvent(RawMouseEvent mouseEvent) => ProcessSingleMouseEvent(mouseEvent);
+
+    internal void DispatchTestResponse(string sequence, string protocol = "csi") =>
+        HandleStdinEvent(new StdinEvent.Response(protocol, sequence));
+
+    internal bool? TerminalFocusState => _terminalFocusState;
+
+    internal bool ShouldRestoreModesOnNextFocus => _shouldRestoreModesOnNextFocus;
+
+    internal void PresentTestFrame(float deltaTime = 16f)
+    {
+        _frameId++;
+        Root.Render(NextRenderBuffer, deltaTime);
+        foreach (var fn in _postProcessFns)
+            fn(NextRenderBuffer, deltaTime);
+        _nativeRenderer.Render();
     }
 
     #endregion
@@ -471,7 +500,51 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             case StdinEvent.Paste pasteEvt:
                 _keyHandler.ProcessPaste(pasteEvt.Bytes, pasteEvt.Metadata);
                 break;
+            case StdinEvent.Response responseEvt:
+                HandleResponseEvent(responseEvt);
+                break;
         }
+    }
+
+    private void HandleResponseEvent(StdinEvent.Response evt)
+    {
+        if (TryHandleFocusResponse(evt.Sequence))
+            return;
+    }
+
+    private bool TryHandleFocusResponse(string sequence)
+    {
+        if (sequence == "\x1b[I")
+        {
+            if (_shouldRestoreModesOnNextFocus)
+            {
+                _nativeRenderer.RestoreTerminalModes();
+                _shouldRestoreModesOnNextFocus = false;
+            }
+
+            if (_terminalFocusState != true)
+            {
+                _terminalFocusState = true;
+                Emit(RendererEventNames.Focus);
+            }
+
+            return true;
+        }
+
+        if (sequence == "\x1b[O")
+        {
+            _shouldRestoreModesOnNextFocus = true;
+
+            if (_terminalFocusState != false)
+            {
+                _terminalFocusState = false;
+                Emit(RendererEventNames.Blur);
+            }
+
+            return true;
+        }
+
+        return false;
     }
 
     #endregion
@@ -480,6 +553,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     private void ProcessSingleMouseEvent(RawMouseEvent mouseEvent)
     {
+        _latestPointerX = mouseEvent.X;
+        _latestPointerY = mouseEvent.Y;
+
         if (mouseEvent.Type == MouseEventType.Scroll)
         {
             var maybeId = HitTest(mouseEvent.X, mouseEvent.Y);
@@ -496,54 +572,166 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             return;
         }
 
-        if (mouseEvent.Type == MouseEventType.Down)
-        {
-            var targetId = HitTest(mouseEvent.X, mouseEvent.Y);
-            var target = Renderable.GetByNumber((int)targetId);
-            if (target is not null)
-            {
-                var evt = CreateMouseEvent(target, mouseEvent);
-                target.ProcessMouseEvent(evt);
+        var targetId = HitTest(mouseEvent.X, mouseEvent.Y);
+        var hitTarget = Renderable.GetByNumber((int)targetId);
 
-                if (_autoFocus && mouseEvent.Button == 0 && !evt.IsDefaultPrevented)
-                {
-                    Renderable? current = target;
-                    while (current is not null)
-                    {
-                        if (current.Focusable)
-                        {
-                            current.Focus();
-                            break;
-                        }
-                        current = current.Parent;
-                    }
-                }
+        if (mouseEvent.Type == MouseEventType.Down
+            && mouseEvent.Button == (int)MouseButton.Left
+            && !(_currentSelection?.IsDragging ?? false)
+            && !mouseEvent.Modifiers.Ctrl)
+        {
+            bool canStartSelection =
+                hitTarget is { Selectable: true, IsDestroyed: false }
+                && hitTarget.ShouldStartSelection(mouseEvent.X, mouseEvent.Y);
+
+            if (canStartSelection)
+            {
+                StartSelection(hitTarget!, mouseEvent.X, mouseEvent.Y);
+                hitTarget!.ProcessMouseEvent(CreateMouseEvent(hitTarget, mouseEvent));
+                return;
             }
+        }
+
+        if (mouseEvent.Type == MouseEventType.Drag && _currentSelection?.IsDragging == true)
+        {
+            UpdateSelection(hitTarget, mouseEvent.X, mouseEvent.Y);
+
+            if (hitTarget is not null)
+                hitTarget.ProcessMouseEvent(CreateMouseEvent(hitTarget, mouseEvent, isDragging: true));
+
             return;
         }
 
-        // Move / up / drag events
-        if (mouseEvent.Type is MouseEventType.Move or MouseEventType.Up or MouseEventType.Drag)
+        if (mouseEvent.Type == MouseEventType.Up && _currentSelection?.IsDragging == true)
         {
-            var targetId = HitTest(mouseEvent.X, mouseEvent.Y);
-            var target = Renderable.GetByNumber((int)targetId);
-            if (target is not null)
+            if (hitTarget is not null)
+                hitTarget.ProcessMouseEvent(CreateMouseEvent(hitTarget, mouseEvent, isDragging: true));
+
+            FinishSelection();
+            return;
+        }
+
+        if (mouseEvent.Type == MouseEventType.Down
+            && mouseEvent.Button == (int)MouseButton.Left
+            && _currentSelection is not null
+            && mouseEvent.Modifiers.Ctrl)
+        {
+            _currentSelection.IsDragging = true;
+            UpdateSelection(hitTarget, mouseEvent.X, mouseEvent.Y);
+            return;
+        }
+
+        bool sameElement = ReferenceEquals(_lastOverRenderable, hitTarget);
+        if (!sameElement && mouseEvent.Type is MouseEventType.Drag or MouseEventType.Move)
+        {
+            if (_lastOverRenderable is { IsDestroyed: false } previousOver
+                && !ReferenceEquals(previousOver, _capturedRenderable))
             {
-                var evt = CreateMouseEvent(target, mouseEvent);
-                target.ProcessMouseEvent(evt);
+                previousOver.ProcessMouseEvent(CreateMouseEvent(previousOver, mouseEvent, overrideType: MouseEventType.Out));
             }
+
+            _lastOverRenderable = hitTarget;
+            if (hitTarget is not null)
+            {
+                hitTarget.ProcessMouseEvent(CreateMouseEvent(
+                    hitTarget,
+                    mouseEvent,
+                    overrideType: MouseEventType.Over,
+                    sourceId: _capturedRenderable?.Id));
+            }
+        }
+
+        if (_capturedRenderable is { IsDestroyed: false } captured && mouseEvent.Type != MouseEventType.Up)
+        {
+            captured.ProcessMouseEvent(CreateMouseEvent(captured, mouseEvent));
+            return;
+        }
+
+        if (_capturedRenderable is { IsDestroyed: false } capturedUp && mouseEvent.Type == MouseEventType.Up)
+        {
+            capturedUp.ProcessMouseEvent(CreateMouseEvent(capturedUp, mouseEvent, overrideType: MouseEventType.DragEnd));
+            capturedUp.ProcessMouseEvent(CreateMouseEvent(capturedUp, mouseEvent));
+
+            if (hitTarget is not null)
+            {
+                hitTarget.ProcessMouseEvent(CreateMouseEvent(
+                    hitTarget,
+                    mouseEvent,
+                    overrideType: MouseEventType.Drop,
+                    sourceId: capturedUp.Id));
+            }
+
+            _lastOverRenderable = capturedUp;
+            SetCapturedRenderable(null);
+            RequestRender();
+        }
+
+        UiMouseEvent? dispatchedEvent = null;
+
+        if (hitTarget is not null)
+        {
+            if (mouseEvent.Type == MouseEventType.Drag && mouseEvent.Button == (int)MouseButton.Left)
+            {
+                SetCapturedRenderable(hitTarget);
+            }
+            else
+            {
+                SetCapturedRenderable(null);
+            }
+
+            dispatchedEvent = CreateMouseEvent(hitTarget, mouseEvent);
+            hitTarget.ProcessMouseEvent(dispatchedEvent);
+        }
+        else
+        {
+            SetCapturedRenderable(null);
+            _lastOverRenderable = null;
+        }
+
+        if (mouseEvent.Type == MouseEventType.Down
+            && hitTarget is not null
+            && _autoFocus
+            && mouseEvent.Button == 0
+            && !(dispatchedEvent?.IsDefaultPrevented ?? false))
+        {
+            Renderable? current = hitTarget;
+            while (current is not null)
+            {
+                if (current.Focusable)
+                {
+                    current.Focus();
+                    break;
+                }
+                current = current.Parent;
+            }
+        }
+
+        if (_currentSelection is not null
+            && mouseEvent.Type == MouseEventType.Down
+            && !(dispatchedEvent?.IsDefaultPrevented ?? false))
+        {
+            ClearSelection();
         }
     }
 
-    private static UiMouseEvent CreateMouseEvent(Renderable target, RawMouseEvent raw) => new()
+    private void SetCapturedRenderable(Renderable? renderable) => _capturedRenderable = renderable is { IsDestroyed: false } ? renderable : null;
+
+    private static UiMouseEvent CreateMouseEvent(
+        Renderable target,
+        RawMouseEvent raw,
+        bool isDragging = false,
+        MouseEventType? overrideType = null,
+        string? sourceId = null) => new()
     {
-        Type = raw.Type,
+        Type = overrideType ?? raw.Type,
         Button = raw.Button,
         X = raw.X,
         Y = raw.Y,
         Modifiers = raw.Modifiers,
         Scroll = raw.Scroll,
+        IsDragging = isDragging,
         Target = target,
+        Source = sourceId,
     };
 
     private uint HitTest(int x, int y) =>
@@ -739,6 +927,15 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     public bool RemoveFrameCallback(Func<float, Task> callback) =>
         _frameCallbacks.Remove(callback);
 
+    public void AddPostProcessFn(Action<OptimizedBuffer, float> callback) =>
+        _postProcessFns.Add(callback);
+
+    public bool RemovePostProcessFn(Action<OptimizedBuffer, float> callback) =>
+        _postProcessFns.Remove(callback);
+
+    public void ClearPostProcessFns() =>
+        _postProcessFns.Clear();
+
     #endregion
 
     #region Focus
@@ -826,28 +1023,169 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     /// <inheritdoc/>
     public Selection? GetSelection() => _currentSelection;
 
+    public Renderable? GetSelectionContainer() => _selectionContainers.Count > 0 ? _selectionContainers[^1] : null;
+
     /// <inheritdoc/>
-    public void RequestSelectionUpdate() { /* TODO */ }
+    public void RequestSelectionUpdate()
+    {
+        if (_currentSelection?.IsDragging != true)
+            return;
+
+        var maybeRenderable = Renderable.GetByNumber((int)HitTest(_latestPointerX, _latestPointerY));
+        UpdateSelection(maybeRenderable, _latestPointerX, _latestPointerY);
+    }
 
     /// <inheritdoc/>
     public void ClearSelection()
     {
+        if (_currentSelection is not null)
+        {
+            foreach (var renderable in _currentSelection.TouchedRenderables)
+            {
+                if (renderable.Selectable && !renderable.IsDestroyed)
+                    renderable.OnSelectionChanged(null);
+            }
+        }
+
         _currentSelection = null;
-        Emit(RendererEventNames.Selection);
+        _selectionContainers.Clear();
     }
 
     /// <inheritdoc/>
     public void StartSelection(Renderable renderable, int x, int y)
     {
-        _currentSelection = new Selection(renderable, x, y);
-        Emit(RendererEventNames.Selection);
+        if (!renderable.Selectable)
+            return;
+
+        ClearSelection();
+        _selectionContainers.Add(renderable.Parent ?? Root);
+        _currentSelection = new Selection(renderable, x, y) { IsStart = true };
+        NotifySelectablesOfSelectionChange();
     }
 
     /// <inheritdoc/>
     public void UpdateSelection(Renderable? currentRenderable, int x, int y, bool finishDragging = false)
     {
-        _currentSelection?.UpdateFocus(x, y);
-        Emit(RendererEventNames.Selection);
+        if (_currentSelection is null)
+            return;
+
+        _currentSelection.IsStart = false;
+        _currentSelection.UpdateFocus(x, y);
+
+        if (finishDragging)
+            _currentSelection.IsDragging = false;
+
+        if (_selectionContainers.Count > 0)
+        {
+            var currentContainer = _selectionContainers[^1];
+
+            if (currentRenderable is null || !IsWithinContainer(currentRenderable, currentContainer))
+            {
+                var parentContainer = currentContainer.Parent ?? Root;
+                if (!ReferenceEquals(parentContainer, currentContainer))
+                    _selectionContainers.Add(parentContainer);
+            }
+            else if (_selectionContainers.Count > 1)
+            {
+                int containerIndex = _selectionContainers.IndexOf(currentRenderable);
+                if (containerIndex == -1)
+                {
+                    var immediateParent = currentRenderable.Parent ?? Root;
+                    containerIndex = _selectionContainers.IndexOf(immediateParent);
+                }
+
+                if (containerIndex != -1 && containerIndex < _selectionContainers.Count - 1)
+                    _selectionContainers.RemoveRange(containerIndex + 1, _selectionContainers.Count - containerIndex - 1);
+            }
+        }
+
+        NotifySelectablesOfSelectionChange();
+    }
+
+    #endregion
+
+    #region Selection Helpers
+
+    private void FinishSelection()
+    {
+        if (_currentSelection is null)
+            return;
+
+        _currentSelection.IsDragging = false;
+        Emit(RendererEventNames.Selection, _currentSelection);
+        NotifySelectablesOfSelectionChange();
+    }
+
+    private bool IsWithinContainer(Renderable renderable, Renderable container)
+    {
+        Renderable? current = renderable;
+        while (current is not null)
+        {
+            if (ReferenceEquals(current, container))
+                return true;
+
+            current = current.Parent;
+        }
+
+        return false;
+    }
+
+    private void NotifySelectablesOfSelectionChange()
+    {
+        if (_currentSelection is null)
+            return;
+
+        var selectedRenderables = new List<Renderable>();
+        var touchedRenderables = new List<Renderable>();
+        var currentContainer = _selectionContainers.Count > 0 ? _selectionContainers[^1] : Root;
+
+        WalkSelectableRenderables(currentContainer, _currentSelection.Bounds, selectedRenderables, touchedRenderables);
+
+        foreach (var renderable in _currentSelection.TouchedRenderables)
+        {
+            if (!touchedRenderables.Contains(renderable) && !renderable.IsDestroyed)
+                renderable.OnSelectionChanged(null);
+        }
+
+        _currentSelection.SetSelectedRenderables(selectedRenderables);
+        _currentSelection.SetTouchedRenderables(touchedRenderables);
+    }
+
+    private void WalkSelectableRenderables(
+        Renderable container,
+        ViewportBounds selectionBounds,
+        List<Renderable> selectedRenderables,
+        List<Renderable> touchedRenderables)
+    {
+        foreach (var child in container.GetChildrenSortedByPrimaryAxis())
+        {
+            if (child.IsDestroyed || !OverlapsSelection(child, selectionBounds))
+                continue;
+
+            if (child.Selectable)
+            {
+                bool hasSelection = child.OnSelectionChanged(_currentSelection);
+                if (hasSelection)
+                    selectedRenderables.Add(child);
+
+                touchedRenderables.Add(child);
+            }
+
+            if (child.GetChildrenCount() > 0)
+                WalkSelectableRenderables(child, selectionBounds, selectedRenderables, touchedRenderables);
+        }
+    }
+
+    private static bool OverlapsSelection(Renderable renderable, ViewportBounds selectionBounds)
+    {
+        var renderableBounds = new ViewportBounds((int)renderable.ScreenX, (int)renderable.ScreenY, renderable.Width, renderable.Height);
+        if (renderableBounds.Width <= 0 || renderableBounds.Height <= 0)
+            return false;
+
+        return renderableBounds.X < selectionBounds.X + selectionBounds.Width
+            && renderableBounds.X + renderableBounds.Width > selectionBounds.X
+            && renderableBounds.Y < selectionBounds.Y + selectionBounds.Height
+            && renderableBounds.Y + renderableBounds.Height > selectionBounds.Y;
     }
 
     #endregion

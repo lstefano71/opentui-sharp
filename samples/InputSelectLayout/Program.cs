@@ -1,306 +1,304 @@
-// Input + Select Layout — filter a list by typing in an input field
 using OpenTui.Core;
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
+    BackgroundColor = Rgba.FromHex("#001122"),
     ExitOnCtrlC = true,
     TargetFps = 30,
 });
 
-renderer.Native.SetBackgroundColor(Rgba.FromHex("#0f172a"));
+var colorOptions = new[]
+{
+    new SelectOption { Name = "Red", Description = "A warm primary color", Value = "#ff0000" },
+    new SelectOption { Name = "Blue", Description = "A cool primary color", Value = "#0066ff" },
+    new SelectOption { Name = "Green", Description = "A natural color", Value = "#00aa00" },
+    new SelectOption { Name = "Purple", Description = "A regal color", Value = "#8a2be2" },
+    new SelectOption { Name = "Orange", Description = "A vibrant color", Value = "#ff8c00" },
+    new SelectOption { Name = "Teal", Description = "A calming color", Value = "#008080" },
+};
 
-// --- Data ---
-string[] allItems =
-[
-    "Apple", "Apricot", "Avocado", "Banana", "Blueberry", "Cherry",
-    "Coconut", "Cranberry", "Date", "Dragonfruit", "Elderberry", "Fig",
-    "Grape", "Guava", "Honeydew", "Jackfruit", "Kiwi", "Lemon",
-    "Lime", "Lychee", "Mango", "Melon", "Nectarine", "Orange",
-    "Papaya", "Peach", "Pear", "Pineapple", "Plum", "Pomegranate",
-    "Raspberry", "Strawberry", "Tangerine", "Watermelon",
-];
+var sizeOptions = new[]
+{
+    new SelectOption { Name = "Small", Description = "Compact size (8px)", Value = 8 },
+    new SelectOption { Name = "Medium", Description = "Standard size (12px)", Value = 12 },
+    new SelectOption { Name = "Large", Description = "Big size (16px)", Value = 16 },
+    new SelectOption { Name = "Extra Large", Description = "Huge size (20px)", Value = 20 },
+};
 
-string? lastSelected = null;
-bool inputFocused = true;
+var headerBox = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "header-box",
+    Width = DimensionValue.Auto,
+    Height = 3,
+    BackgroundColor = Rgba.FromHex("#3b82f6"),
+    BorderStyle = BorderStyle.Single,
+    BorderColor = Rgba.FromHex("#2563eb"),
+    Border = true,
+});
 
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
+var header = new TextRenderable(renderer, new TextOptions
 {
     Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#16a34a"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var headerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "header-text",
-    StyledContent = new StyledText(
-        TextChunk.Styled("Input + Select Layout", fg: Rgba.White, attributes: TextAttributes.Bold)),
+    Content = "INPUT & SELECT LAYOUT DEMO",
     Fg = Rgba.White,
+    FlexGrow = 1,
 });
-header.Add(headerText);
 
-// --- Content ---
-var contentRow = new BoxRenderable(renderer, new BoxOptions
+headerBox.Add(header);
+
+var selectContainerBox = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "content",
+    Id = "select-container-box",
     Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
     FlexGrow = 1,
-    FlexDirection = FlexDirectionValue.Row,
-    Padding = DimensionValue.Point(1),
-    Gap = 1,
-});
-
-// --- Left: filter + select ---
-var leftCol = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "left",
-    FlexGrow = 1,
-    FlexDirection = FlexDirectionValue.Column,
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#22c55e"),
-    Padding = DimensionValue.Point(1),
-});
-
-var filterLabel = new TextRenderable(renderer, new TextOptions
-{
-    Id = "filter-label",
-    StyledContent = new StyledText(
-        TextChunk.Styled("🔍 Filter:", fg: Rgba.FromHex("#4ade80"), attributes: TextAttributes.Bold)),
-});
-
-var input = new InputRenderable(renderer, new InputOptions
-{
-    Id = "filter-input",
-    Value = "",
-    Placeholder = "Type to filter...",
-    PlaceholderColor = Rgba.FromHex("#666666"),
+    FlexShrink = 1,
+    MinHeight = 10,
     BackgroundColor = Rgba.FromHex("#1e293b"),
-    FocusedBackgroundColor = Rgba.FromHex("#334155"),
-    TextColor = Rgba.FromHex("#f1f5f9"),
-    FocusedTextColor = Rgba.White,
-    CursorColor = Rgba.FromHex("#f1f5f9"),
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(1),
-    MaxLength = 40,
-    Buffered = true,
-    MarginBottom = DimensionValue.Point(1),
+    BorderStyle = BorderStyle.Single,
+    BorderColor = Rgba.FromHex("#475569"),
+    Border = true,
 });
 
-var select = new SelectRenderable(renderer, new SelectOptions
+var selectContainer = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "fruit-select",
-    Options = allItems.Select(name => new SelectOption { Name = name, Value = name }).ToArray(),
-    SelectedIndex = 0,
-    ShowDescription = false,
-    ShowScrollIndicator = true,
-    WrapSelection = true,
+    Id = "select-container",
+    Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
+    FlexDirection = FlexDirectionValue.Row,
+    FlexGrow = 1,
+    FlexShrink = 1,
+});
+selectContainerBox.Add(selectContainer);
+
+var leftSelectBox = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "color-select-box",
+    Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
+    MinHeight = 8,
+    BorderStyle = BorderStyle.Single,
+    BorderColor = Rgba.FromHex("#475569"),
+    FocusedBorderColor = Rgba.FromHex("#3b82f6"),
+    Title = "Color Selection",
+    TitleAlignment = TitleAlignment.Center,
+    FlexGrow = 1,
+    FlexShrink = 1,
+    Border = true,
+});
+
+var leftSelect = new SelectRenderable(renderer, new SelectOptions
+{
+    Id = "color-select",
+    Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
+    MinHeight = 6,
+    Options = colorOptions,
     BackgroundColor = Rgba.FromHex("#1e293b"),
     FocusedBackgroundColor = Rgba.FromHex("#2d3748"),
     TextColor = Rgba.FromHex("#e2e8f0"),
     FocusedTextColor = Rgba.FromHex("#f7fafc"),
-    SelectedBackgroundColor = Rgba.FromHex("#334455"),
-    SelectedTextColor = Rgba.FromHex("#facc15"),
+    SelectedBackgroundColor = Rgba.FromHex("#3b82f6"),
+    SelectedTextColor = Rgba.White,
+    DescriptionColor = Rgba.FromHex("#94a3b8"),
+    SelectedDescriptionColor = Rgba.FromHex("#cbd5e1"),
+    ShowScrollIndicator = true,
+    WrapSelection = true,
+    ShowDescription = true,
     FlexGrow = 1,
-    Buffered = true,
-    Border = true,
+    FlexShrink = 1,
+});
+leftSelectBox.Add(leftSelect);
+
+var rightSelectBox = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "size-select-box",
+    Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
+    MinHeight = 8,
     BorderStyle = BorderStyle.Single,
     BorderColor = Rgba.FromHex("#475569"),
-});
-
-leftCol.Add(filterLabel);
-leftCol.Add(input);
-leftCol.Add(select);
-
-// --- Right: status ---
-var rightCol = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "right",
-    Width = DimensionValue.Point(30),
-    FlexDirection = FlexDirectionValue.Column,
+    FocusedBorderColor = Rgba.FromHex("#059669"),
+    Title = "Size Selection",
+    TitleAlignment = TitleAlignment.Center,
+    FlexGrow = 1,
+    FlexShrink = 1,
     Border = true,
-    BorderStyle = BorderStyle.Rounded,
+});
+
+var rightSelect = new SelectRenderable(renderer, new SelectOptions
+{
+    Id = "size-select",
+    Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
+    MinHeight = 6,
+    Options = sizeOptions,
+    BackgroundColor = Rgba.FromHex("#1e293b"),
+    FocusedBackgroundColor = Rgba.FromHex("#2d3748"),
+    TextColor = Rgba.FromHex("#e2e8f0"),
+    FocusedTextColor = Rgba.FromHex("#f7fafc"),
+    SelectedBackgroundColor = Rgba.FromHex("#059669"),
+    SelectedTextColor = Rgba.White,
+    DescriptionColor = Rgba.FromHex("#94a3b8"),
+    SelectedDescriptionColor = Rgba.FromHex("#cbd5e1"),
+    ShowScrollIndicator = true,
+    WrapSelection = true,
+    ShowDescription = true,
+    FlexGrow = 1,
+    FlexShrink = 1,
+});
+rightSelectBox.Add(rightSelect);
+
+var inputContainerBox = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "input-container-box",
+    Width = DimensionValue.Auto,
+    Height = 7,
+    BackgroundColor = Rgba.FromHex("#0f172a"),
+    BorderStyle = BorderStyle.Single,
+    BorderColor = Rgba.FromHex("#334155"),
+    Border = true,
+});
+
+var inputContainer = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "input-container",
+    Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
+    FlexDirection = FlexDirectionValue.Column,
+    FlexGrow = 1,
+    FlexShrink = 1,
+});
+inputContainerBox.Add(inputContainer);
+
+var inputLabel = new TextRenderable(renderer, new TextOptions
+{
+    Id = "input-label",
+    Content = "Enter your text:",
+    Fg = Rgba.FromHex("#f1f5f9"),
+});
+
+var textInputBox = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "text-input-box",
+    Width = DimensionValue.Auto,
+    Height = 3,
+    BorderStyle = BorderStyle.Single,
     BorderColor = Rgba.FromHex("#475569"),
-    Padding = DimensionValue.Point(1),
+    FocusedBorderColor = Rgba.FromHex("#eab308"),
+    MarginTop = 1,
+    Border = true,
 });
 
-var focusText = new TextRenderable(renderer, new TextOptions
+var textInput = new InputRenderable(renderer, new InputOptions
 {
-    Id = "focus-text",
-    Content = "",
-    Fg = Rgba.FromHex("#94a3b8"),
+    Id = "text-input",
+    Width = DimensionValue.Auto,
+    Height = 1,
+    Placeholder = "Type something here...",
+    BackgroundColor = Rgba.FromHex("#1e293b"),
+    FocusedBackgroundColor = Rgba.FromHex("#334155"),
+    TextColor = Rgba.FromHex("#f1f5f9"),
+    FocusedTextColor = Rgba.White,
+    PlaceholderColor = Rgba.FromHex("#64748b"),
+    CursorColor = Rgba.FromHex("#f1f5f9"),
+    MaxLength = 100,
+    FlexGrow = 1,
+    FlexShrink = 1,
 });
+textInputBox.Add(textInput);
 
-var matchText = new TextRenderable(renderer, new TextOptions
+var footerBox = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "match-text",
-    Content = "",
-    Fg = Rgba.FromHex("#e2e8f0"),
+    Id = "footer-box",
+    Width = DimensionValue.Auto,
+    Height = 3,
+    BackgroundColor = Rgba.FromHex("#1e40af"),
+    BorderStyle = BorderStyle.Single,
+    BorderColor = Rgba.FromHex("#1d4ed8"),
+    Border = true,
 });
 
-var selectedText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "selected-text",
-    Content = "",
-    Fg = Rgba.FromHex("#22c55e"),
-});
-
-var highlightText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "highlight-text",
-    Content = "",
-    Fg = Rgba.FromHex("#94a3b8"),
-});
-
-rightCol.Add(focusText);
-rightCol.Add(matchText);
-rightCol.Add(selectedText);
-rightCol.Add(highlightText);
-
-contentRow.Add(leftCol);
-contentRow.Add(rightCol);
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
+var footer = new TextRenderable(renderer, new TextOptions
 {
     Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e293b"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
+    Content = "TAB: focus next | SHIFT+TAB: focus prev | ARROWS/JK: navigate | ESC: quit",
+    Fg = Rgba.FromHex("#dbeafe"),
+    FlexGrow = 1,
 });
-var footerText = new TextRenderable(renderer, new TextOptions
+footerBox.Add(footer);
+
+selectContainer.Add(leftSelectBox);
+selectContainer.Add(rightSelectBox);
+inputContainer.Add(inputLabel);
+inputContainer.Add(textInputBox);
+
+renderer.Root.Add(headerBox);
+renderer.Root.Add(selectContainerBox);
+renderer.Root.Add(inputContainerBox);
+renderer.Root.Add(footerBox);
+
+var focusableElements = new Renderable[] { leftSelect, rightSelect, textInput };
+var focusableBoxes = new BoxRenderable[] { leftSelectBox, rightSelectBox, textInputBox };
+int currentFocusIndex = 0;
+
+void UpdateDisplay()
 {
-    Id = "footer-text",
-    Content = "Type to filter | ↑↓/j/k: navigate | Enter: select | Tab: switch focus | Ctrl+C: exit",
-    Fg = Rgba.FromHex("#64748b"),
-});
-footer.Add(footerText);
+    var selectedColor = leftSelect.GetSelectedOption();
+    var selectedSize = rightSelect.GetSelectedOption();
 
-// --- Build tree ---
-renderer.Root.Add(header);
-renderer.Root.Add(contentRow);
-renderer.Root.Add(footer);
+    string displayText = "Enter your text:";
+    if (!string.IsNullOrEmpty(textInput.Value))
+        displayText += $" \"{textInput.Value}\"";
+    if (selectedColor is not null)
+        displayText += $" in {selectedColor.Name}";
+    if (selectedSize is not null)
+        displayText += $" ({selectedSize.Name})";
 
-// --- Filtering logic ---
-void ApplyFilter()
-{
-    string filter = input.Value.Trim().ToLowerInvariant();
-    var filtered = string.IsNullOrEmpty(filter)
-        ? allItems
-        : allItems.Where(item => item.Contains(filter, StringComparison.OrdinalIgnoreCase)).ToArray();
-
-    select.Options = filtered.Select(name => new SelectOption { Name = name, Value = name }).ToArray();
-    select.SelectedIndex = 0;
-    UpdateStatus();
-}
-
-void UpdateStatus()
-{
-    string focusLabel = inputFocused ? "Input" : "Select";
-    focusText.Content = new StyledText(
-        TextChunk.Styled("Focus: ", fg: Rgba.FromHex("#64748b")),
-        TextChunk.Styled(focusLabel, fg: Rgba.FromHex("#38bdf8"), attributes: TextAttributes.Bold));
-
-    matchText.Content = new StyledText(
-        TextChunk.Styled("Matches: ", fg: Rgba.FromHex("#64748b")),
-        TextChunk.Styled($"{select.Options.Length}/{allItems.Length}", fg: Rgba.FromHex("#e2e8f0")));
-
-    selectedText.Content = lastSelected is not null
-        ? new StyledText(
-            TextChunk.Styled("Selected: ", fg: Rgba.FromHex("#64748b")),
-            TextChunk.Styled(lastSelected, fg: Rgba.FromHex("#22c55e"), attributes: TextAttributes.Bold))
-        : "";
-
-    var current = select.GetSelectedOption();
-    highlightText.Content = current is not null
-        ? new StyledText(
-            TextChunk.Styled("Highlighted: ", fg: Rgba.FromHex("#64748b")),
-            TextChunk.Styled(current.Name, fg: Rgba.FromHex("#fbbf24")))
-        : "";
-
+    inputLabel.ContentText = displayText;
     renderer.RequestRender();
 }
 
-void SetFocus(bool toInput)
+void UpdateFocus()
 {
-    inputFocused = toInput;
-    if (toInput)
-    {
-        select.Blur();
-        input.Focus();
-    }
-    else
-    {
-        input.Blur();
-        select.Focus();
-    }
-    UpdateStatus();
+    foreach (var element in focusableElements)
+        element.Blur();
+
+    foreach (var box in focusableBoxes)
+        box.Blur();
+
+    focusableElements[currentFocusIndex].Focus();
+    focusableBoxes[currentFocusIndex].Focus();
+    renderer.RequestRender();
 }
 
-// --- Events ---
-input.On<string>(InputRenderable.Events.Input, _ =>
-{
-    ApplyFilter();
-});
-
-select.On<(int Index, SelectOption? Option)>(SelectRenderable.Events.SelectionChanged, _ =>
-{
-    UpdateStatus();
-});
-
-select.On<(int Index, SelectOption? Option)>(SelectRenderable.Events.ItemSelected, e =>
-{
-    lastSelected = e.Option?.Name ?? "?";
-    UpdateStatus();
-});
+leftSelect.On<(int Index, SelectOption? Option)>(SelectRenderable.Events.SelectionChanged, _ => UpdateDisplay());
+leftSelect.On<(int Index, SelectOption? Option)>(SelectRenderable.Events.ItemSelected, _ => UpdateDisplay());
+rightSelect.On<(int Index, SelectOption? Option)>(SelectRenderable.Events.SelectionChanged, _ => UpdateDisplay());
+rightSelect.On<(int Index, SelectOption? Option)>(SelectRenderable.Events.ItemSelected, _ => UpdateDisplay());
+textInput.On<string>(InputRenderable.Events.Input, _ => UpdateDisplay());
+textInput.On<string>(InputRenderable.Events.Change, _ => UpdateDisplay());
 
 renderer.KeyInput.On("keypress", (KeyEvent e) =>
 {
-    if (inputFocused)
-    {
-        switch (e.Name)
-        {
-            case "up" or "k":
-                select.MoveUp(e.Shift ? 5 : 1);
-                e.PreventDefault();
-                e.StopPropagation();
-                return;
-            case "down" or "j":
-                select.MoveDown(e.Shift ? 5 : 1);
-                e.PreventDefault();
-                e.StopPropagation();
-                return;
-            case "return" or "linefeed":
-                select.SelectCurrent();
-                e.PreventDefault();
-                e.StopPropagation();
-                return;
-        }
-    }
-
     if (e.Name == "tab")
     {
-        SetFocus(!inputFocused);
+        currentFocusIndex = e.Shift
+            ? (currentFocusIndex - 1 + focusableElements.Length) % focusableElements.Length
+            : (currentFocusIndex + 1) % focusableElements.Length;
+        UpdateFocus();
         e.StopPropagation();
+        return;
+    }
+
+    if (e.Name == "escape")
+    {
+        renderer.Destroy();
+        return;
     }
 });
 
-renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ =>
-{
-    renderer.RequestRender();
-});
+UpdateFocus();
+UpdateDisplay();
 
-// --- Start ---
-SetFocus(true);
-ApplyFilter();
-renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);

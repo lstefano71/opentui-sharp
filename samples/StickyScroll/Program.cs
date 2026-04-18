@@ -1,171 +1,370 @@
-// Sticky Scroll — auto-scrolling list with StickyScroll = true
 using OpenTui.Core;
+
+static Rgba Hex(string value) => Rgba.FromHex(value);
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
     ExitOnCtrlC = true,
-    TargetFps = 30,
+    TargetFps = 60,
 });
 
-renderer.Native.SetBackgroundColor(Rgba.FromHex("#0f172a"));
+renderer.Native.SetBackgroundColor(Hex("#0a0a14"));
 
-int itemCount = 0;
-Rgba colorA = Rgba.FromHex("#1f2937");
-Rgba colorB = Rgba.FromHex("#111827");
-
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
+var mainContainer = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#7c3aed"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
+    Id = "main-container",
+    FlexGrow = 1,
+    MaxHeight = DimensionValue.Percent(100),
+    MaxWidth = DimensionValue.Percent(100),
+    FlexDirection = FlexDirectionValue.Column,
+    BackgroundColor = Hex("#0f0f23"),
 });
-var headerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "header-text",
-    StyledContent = new StyledText(
-        TextChunk.Styled("Sticky Scroll Demo", fg: Rgba.White, attributes: TextAttributes.Bold)),
-    Fg = Rgba.White,
-});
-header.Add(headerText);
 
-// --- ScrollBox with sticky scroll ---
 var scrollBox = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
 {
-    Id = "scroll",
-    ScrollY = true,
-    StickyScroll = true,
-    Width = DimensionValue.Auto,
+    Id = "sticky-scroll-box",
+    BoxFocusable = true,
     FlexGrow = 1,
+    MaxHeight = DimensionValue.Percent(100),
+    MaxWidth = DimensionValue.Percent(100),
+    StickyScroll = true,
+    StickyStart = "bottom",
     Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#6d28d9"),
-    BackgroundColor = Rgba.FromHex("#111827"),
+    BorderColor = Hex("#313244"),
+    FocusedBorderColor = Hex("#7aa2f7"),
+    BackgroundColor = Hex("#1e1e2e"),
+    WrapperOptions = new BoxOptions
+    {
+        BackgroundColor = Hex("#181825"),
+    },
+    ViewportOptions = new BoxOptions
+    {
+        BackgroundColor = Hex("#11111b"),
+    },
+    ContentOptions = new BoxOptions
+    {
+        BackgroundColor = Hex("#0f0f0f"),
+    },
+    VerticalScrollbarOptions = new ScrollBarOptions
+    {
+        Orientation = SliderOrientation.Vertical,
+        TrackOptions = new SliderOptions
+        {
+            Orientation = SliderOrientation.Vertical,
+            ForegroundColor = Hex("#7aa2f7"),
+            BackgroundColor = Hex("#313244"),
+        },
+    },
 });
 
-void AddItem()
+var instructionsBox = new BoxRenderable(renderer, new BoxOptions
 {
-    int i = itemCount++;
-    var row = new BoxRenderable(renderer, new BoxOptions
-    {
-        Id = $"item-{i}",
-        Width = DimensionValue.Auto,
-        Height = DimensionValue.Point(1),
-        BackgroundColor = i % 2 == 0 ? colorA : colorB,
-        FlexDirection = FlexDirectionValue.Row,
-        AlignItems = AlignValue.Center,
-        PaddingLeft = DimensionValue.Point(1),
-    });
-
-    var timestamp = DateTime.Now.ToString("HH:mm:ss.fff");
-    var label = new TextRenderable(renderer, new TextOptions
-    {
-        Id = $"item-text-{i}",
-        StyledContent = new StyledText(
-            TextChunk.Styled($"#{i,4} ", fg: Rgba.FromHex("#6366f1"), attributes: TextAttributes.Bold),
-            TextChunk.Styled($"[{timestamp}] ", fg: Rgba.FromHex("#64748b")),
-            TextChunk.Styled($"Log entry {i}", fg: Rgba.FromHex("#e2e8f0"))),
-    });
-    row.Add(label);
-    scrollBox.Add(row);
-}
-
-// Seed initial 50 items
-for (int i = 0; i < 50; i++) AddItem();
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e293b"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
+    Id = "instructions",
+    Width = DimensionValue.Percent(100),
     FlexDirection = FlexDirectionValue.Column,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
+    FlexShrink = 0,
+    BackgroundColor = Hex("#1e1e2e"),
+    PaddingLeft = DimensionValue.Point(1),
 });
 
-var footerStatus = new TextRenderable(renderer, new TextOptions
+var instructionsText1 = new TextRenderable(renderer, new TextOptions
 {
-    Id = "footer-status",
-    Content = "",
-    Fg = Rgba.FromHex("#94a3b8"),
+    StyledContent = new StyledText(
+        TextChunk.Styled("Sticky Scroll Demo", fg: Hex("#7aa2f7"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("-", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("S", fg: Hex("#9ece6a"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("Toggle sticky scroll", fg: Hex("#c0caf5")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("|", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("T", fg: Hex("#bb9af7"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("Add item at top", fg: Hex("#c0caf5")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("|", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("B", fg: Hex("#f7768e"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("Add item at bottom", fg: Hex("#c0caf5")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("|", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("E", fg: Hex("#e0af68"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("Clear all items", fg: Hex("#c0caf5"))),
 });
 
-var footerHelp = new TextRenderable(renderer, new TextOptions
+var instructionsText2 = new TextRenderable(renderer, new TextOptions
 {
-    Id = "footer-help",
-    Content = "A: add item | A+5: hold Shift+A for 5 | J/K: scroll | T/B: top/bottom | Ctrl+C: exit",
-    Fg = Rgba.FromHex("#64748b"),
+    StyledContent = new StyledText(
+        TextChunk.Styled("Behavior:", fg: Hex("#7aa2f7"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("At TOP/BOTTOM, adding items there keeps the viewport pinned to that edge", fg: Hex("#c0caf5"))),
 });
 
-footer.Add(footerStatus);
-footer.Add(footerHelp);
-
-// --- Build tree ---
-renderer.Root.Add(header);
-renderer.Root.Add(scrollBox);
-renderer.Root.Add(footer);
-
-void UpdateFooter()
+var statusText = new TextRenderable(renderer, new TextOptions
 {
-    footerStatus.Content = new StyledText(
-        TextChunk.Styled($"Items: {itemCount}", fg: Rgba.FromHex("#a78bfa")),
-        TextChunk.Styled($"  Scroll: {scrollBox.ScrollTop:F0}/{scrollBox.ScrollHeight:F0}", fg: Rgba.FromHex("#64748b")),
-        TextChunk.Styled("  Sticky: ON", fg: Rgba.FromHex("#22c55e"), attributes: TextAttributes.Bold));
-}
+    StyledContent = CreateStatusText(scrollBox),
+});
 
-// --- Key handling ---
+instructionsBox.Add(instructionsText1);
+instructionsBox.Add(instructionsText2);
+instructionsBox.Add(statusText);
+
+mainContainer.Add(scrollBox);
+mainContainer.Add(instructionsBox);
+renderer.Root.Add(mainContainer);
+scrollBox.Focus();
+
+int itemCount = 0;
+var animatedItems = new Dictionary<string, AnimatedItem>();
+AnimationTickerRenderable? animationTicker = null;
+animationTicker = new AnimationTickerRenderable(renderer, UpdateAnimations);
+mainContainer.Add(animationTicker);
+
+for (int i = 0; i < 10; i++)
+    AddItem(atTop: false);
+
 renderer.KeyInput.On("keypress", (KeyEvent e) =>
 {
+    if (e.Ctrl || e.Meta)
+        return;
+
     switch (e.Name)
     {
-        case "a" when !e.Shift:
-            AddItem();
-            UpdateFooter();
-            renderer.RequestRender();
-            break;
-        case "a" when e.Shift:
-            for (int n = 0; n < 5; n++) AddItem();
-            UpdateFooter();
-            renderer.RequestRender();
-            break;
-        case "j":
-            scrollBox.ScrollBy(0, 3);
-            UpdateFooter();
-            renderer.RequestRender();
-            break;
-        case "k":
-            scrollBox.ScrollBy(0, -3);
-            UpdateFooter();
+        case "s":
+            scrollBox.StickyScroll = !scrollBox.StickyScroll;
+            statusText.Content = CreateStatusText(scrollBox);
             renderer.RequestRender();
             break;
         case "t":
-            scrollBox.ScrollTo(y: 0);
-            UpdateFooter();
-            renderer.RequestRender();
+            AddItem(atTop: true);
             break;
         case "b":
-            scrollBox.ScrollTo(y: scrollBox.ScrollHeight);
-            UpdateFooter();
+            AddItem(atTop: false);
+            break;
+        case "e":
+            ClearAllItems();
             renderer.RequestRender();
             break;
     }
 });
 
-renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ =>
-{
-    UpdateFooter();
-    renderer.RequestRender();
-});
-
-UpdateFooter();
 renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);
+
+void ClearAllItems()
+{
+    animatedItems.Clear();
+    animationTicker.Live = false;
+
+    foreach (var child in scrollBox.GetChildren().ToArray())
+    {
+        scrollBox.Remove(child.Id);
+        child.DestroyRecursively();
+    }
+
+    itemCount = 0;
+}
+
+void AddItem(bool atTop)
+{
+    itemCount++;
+
+    string boxId = $"item-{itemCount}";
+    var normalBackground = itemCount % 2 == 0 ? Hex("#24283b") : Hex("#1f2335");
+    var createdAt = DateTimeOffset.Now;
+
+    var box = new BoxRenderable(renderer, new BoxOptions
+    {
+        Id = boxId,
+        Width = DimensionValue.Percent(100),
+        Padding = DimensionValue.Point(1),
+        MarginBottom = DimensionValue.Point(1),
+        BackgroundColor = Hex("#4c4f69"),
+    });
+
+    var text = new TextRenderable(renderer, new TextOptions
+    {
+        Width = DimensionValue.Percent(100),
+        WrapMode = WrapMode.None,
+        StyledContent = CreateItemText(itemCount, createdAt, atTop, Hex("#bb9af7")),
+    });
+
+    box.Add(text);
+
+    if (atTop)
+        scrollBox.Add(box, 0);
+    else
+        scrollBox.Add(box);
+
+    animatedItems[boxId] = new AnimatedItem
+    {
+        Box = box,
+        Text = text,
+        ItemNumber = itemCount,
+        CreatedAt = createdAt,
+        AgeMs = 0,
+        NormalBackground = normalBackground,
+        IsAtTop = atTop,
+    };
+
+    animationTicker.Live = true;
+    renderer.RequestRender();
+}
+
+void UpdateAnimations(float deltaTime)
+{
+    statusText.Content = CreateStatusText(scrollBox);
+
+    if (animatedItems.Count == 0)
+    {
+        animationTicker!.Live = false;
+        return;
+    }
+
+    List<string>? completedIds = null;
+
+    foreach (var pair in animatedItems)
+    {
+        string id = pair.Key;
+        var item = pair.Value;
+        item.AgeMs += deltaTime;
+        const float durationMs = 800;
+
+        if (item.AgeMs >= durationMs)
+        {
+            item.Box.BackgroundColor = item.NormalBackground;
+            item.Text.Content = CreateItemText(item.ItemNumber, item.CreatedAt, item.IsAtTop, Hex("#7aa2f7"));
+            completedIds ??= [];
+            completedIds.Add(id);
+            continue;
+        }
+
+        float progress = item.AgeMs / durationMs;
+        float easeProgress = 1f - MathF.Pow(1f - progress, 3f);
+
+        item.Box.BackgroundColor = InterpolateColor(Hex("#4c4f69"), item.NormalBackground, easeProgress);
+        item.Text.Content = CreateItemText(
+            item.ItemNumber,
+            item.CreatedAt,
+            item.IsAtTop,
+            InterpolateColor(Hex("#bb9af7"), Hex("#7aa2f7"), easeProgress));
+    }
+
+    if (completedIds == null)
+        return;
+
+    foreach (string id in completedIds)
+        animatedItems.Remove(id);
+
+    if (animatedItems.Count == 0)
+        animationTicker!.Live = false;
+}
+
+static StyledText CreateStatusText(ScrollBoxRenderable scrollBox)
+{
+    string anchor = GetAnchor(scrollBox);
+    Rgba anchorColor = anchor switch
+    {
+        "TOP" => Hex("#bb9af7"),
+        "BOTTOM" => Hex("#9ece6a"),
+        _ => Hex("#f7768e"),
+    };
+
+    return new StyledText(
+        TextChunk.Styled("Status:", fg: Hex("#7aa2f7"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("Sticky Scroll:", fg: Hex("#c0caf5")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled(
+            scrollBox.StickyScroll ? "ENABLED" : "DISABLED",
+            fg: scrollBox.StickyScroll ? Hex("#9ece6a") : Hex("#f7768e")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("|", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("Anchor:", fg: Hex("#c0caf5")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled(anchor, fg: anchorColor, attributes: TextAttributes.Bold));
+}
+
+static string GetAnchor(ScrollBoxRenderable scrollBox)
+{
+    float maxScroll = Math.Max(0, scrollBox.ScrollHeight - scrollBox.ViewportHeight);
+    if (scrollBox.ScrollTop <= 0)
+        return "TOP";
+    if (scrollBox.ScrollTop >= maxScroll)
+        return "BOTTOM";
+    return "FREE";
+}
+
+static StyledText CreateItemText(int itemNumber, DateTimeOffset createdAt, bool isAtTop, Rgba titleColor)
+{
+    string timeString = createdAt.ToString("T");
+
+    return new StyledText(
+        TextChunk.Styled($"Item #{itemNumber}", fg: titleColor, attributes: TextAttributes.Bold),
+        TextChunk.Plain("\n"),
+        TextChunk.Styled("This is a dynamically added item with enhanced content.", fg: Hex("#9aa5ce")),
+        TextChunk.Plain("\n"),
+        TextChunk.Styled("Contains additional information and styling.", fg: Hex("#c0caf5")),
+        TextChunk.Plain("\n"),
+        TextChunk.Styled("Added at:", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Plain(timeString),
+        TextChunk.Plain("\n"),
+        TextChunk.Styled("Position:", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Plain(isAtTop ? "TOP" : "BOTTOM"),
+        TextChunk.Plain("\n"),
+        TextChunk.Styled("Status:", fg: Hex("#565f89")),
+        TextChunk.Plain(" "),
+        TextChunk.Styled("ACTIVE", fg: Hex("#9ece6a")));
+}
+
+static Rgba InterpolateColor(Rgba start, Rgba end, float factor)
+{
+    return new Rgba(
+        start.R + ((end.R - start.R) * factor),
+        start.G + ((end.G - start.G) * factor),
+        start.B + ((end.B - start.B) * factor),
+        start.A + ((end.A - start.A) * factor));
+}
+
+sealed class AnimatedItem
+{
+    public required BoxRenderable Box { get; init; }
+    public required TextRenderable Text { get; init; }
+    public required int ItemNumber { get; init; }
+    public required DateTimeOffset CreatedAt { get; init; }
+    public required float AgeMs { get; set; }
+    public required Rgba NormalBackground { get; init; }
+    public required bool IsAtTop { get; init; }
+}
+
+sealed class AnimationTickerRenderable : BoxRenderable
+{
+    private readonly Action<float> _onTick;
+
+    public AnimationTickerRenderable(IRenderContext ctx, Action<float> onTick)
+        : base(ctx, new BoxOptions
+        {
+            Id = "animation-ticker",
+            Position = PositionValue.Absolute,
+            Width = DimensionValue.Point(0),
+            Height = DimensionValue.Point(0),
+            ShouldFill = false,
+        })
+    {
+        _onTick = onTick;
+    }
+
+    protected override void OnUpdate(float deltaTime)
+    {
+        base.OnUpdate(deltaTime);
+        _onTick(deltaTime);
+    }
+}

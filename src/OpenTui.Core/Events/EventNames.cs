@@ -24,6 +24,8 @@ public static class RendererEventNames
     public const string Key = "key";
     public const string MemorySnapshot = "memory:snapshot";
     public const string Selection = "selection";
+    public const string Focus = "focus";
+    public const string Blur = "blur";
     public const string FocusedEditor = "focused_editor";
     public const string DebugOverlayToggle = "debugOverlay:toggle";
     public const string ThemeMode = "theme_mode";

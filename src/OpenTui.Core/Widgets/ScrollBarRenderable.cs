@@ -115,6 +115,8 @@ public class ScrollBarRenderable : Renderable
             Orientation = _orientation,
             Min = 0,
             Max = 0,
+            BackgroundColor = options.TrackOptions?.BackgroundColor,
+            ForegroundColor = options.TrackOptions?.ForegroundColor,
             OnChange = OnSliderChange,
         });
         _slider.FlexGrow = 1;

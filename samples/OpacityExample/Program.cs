@@ -1,6 +1,6 @@
-// Opacity Example — overlapping boxes with varying opacity and animation
-// Port of opacity-example.ts
 using OpenTui.Core;
+
+static Rgba Hex(string value) => Rgba.FromHex(value);
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
@@ -8,252 +8,218 @@ using var renderer = CliRenderer.Create(new CliRendererConfig
     TargetFps = 30,
 });
 
-renderer.Native.SetBackgroundColor(Rgba.FromHex("#0a0a1a"));
+renderer.Native.SetBackgroundColor(Hex("#1a1a2e"));
 
-// --- State ---
 bool animating = false;
-bool lowOpacity = false;
-float animTime = 0f;
-float[] baseOpacities = [1.0f, 0.8f, 0.5f, 0.3f];
-float[] currentOpacities = [1.0f, 0.8f, 0.5f, 0.3f];
+float animationPhase = 0f;
+float[] opacityValues = [1.0f, 0.8f, 0.5f, 0.3f];
 
-// --- Header ---
 var header = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "header",
+    Id = "opacity-demo-header",
     Width = DimensionValue.Auto,
     Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#6366f1"),
+    BackgroundColor = Hex("#16213e"),
     Border = true,
-    BorderStyle = BorderStyle.Rounded,
+    BorderStyle = BorderStyle.Single,
     AlignItems = AlignValue.Center,
     JustifyContent = JustifyValue.Center,
 });
-var headerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "header-text",
-    Content = "Opacity Example",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-header.Add(headerText);
 
-// --- Container for the overlapping boxes ---
+var infoText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "info",
+    Content = "OPACITY DEMO | 1-4: Toggle opacity | A: Animate | Ctrl+C: Exit",
+    Fg = Hex("#e94560"),
+    Bg = Rgba.Transparent,
+});
+header.Add(infoText);
+
 var container = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "container",
+    Id = "opacity-demo-container",
     Width = DimensionValue.Auto,
     Height = DimensionValue.Auto,
     FlexGrow = 1,
-    BackgroundColor = Rgba.FromHex("#111827"),
+    FlexDirection = FlexDirectionValue.Row,
+    AlignItems = AlignValue.Center,
+    JustifyContent = JustifyValue.Center,
+    Padding = DimensionValue.Point(2),
 });
 
-// --- Four overlapping absolute-positioned boxes ---
-(string name, string color, float opacity, int xOff, int yOff)[] boxDefs =
-[
-    ("box1", "#ef4444", 1.0f, 2,  1),   // Red    — full opacity
-    ("box2", "#22c55e", 0.8f, 10, 2),   // Green  — 80%
-    ("box3", "#3b82f6", 0.5f, 18, 3),   // Blue   — 50%
-    ("box4", "#eab308", 0.3f, 26, 1),   // Yellow — 30%
-];
-
+string[] colors = ["#e94560", "#0f3460", "#533483", "#16a085"];
+string[] labels = ["Box 1", "Box 2", "Box 3", "Box 4"];
 var boxes = new List<BoxRenderable>(4);
-var boxLabels = new List<TextRenderable>(4);
+var opacityLabels = new List<TextRenderable>(4);
 
-for (int i = 0; i < boxDefs.Length; i++)
+for (int i = 0; i < 4; i++)
 {
-    var (name, color, opacity, xOff, yOff) = boxDefs[i];
-    var rgba = Rgba.FromHex(color);
-
     var box = new BoxRenderable(renderer, new BoxOptions
     {
-        Id = name,
-        Width = DimensionValue.Point(18),
-        Height = DimensionValue.Point(7),
-        BackgroundColor = rgba,
-        Opacity = opacity,
-        Position = PositionValue.Absolute,
-        Left = DimensionValue.Point(xOff),
-        Top = DimensionValue.Point(yOff),
+        Id = $"box-{i}",
+        Width = DimensionValue.Point(20),
+        Height = DimensionValue.Point(8),
+        BackgroundColor = Hex(colors[i]),
         Border = true,
-        BorderStyle = BorderStyle.Rounded,
-        BorderColor = rgba,
+        BorderStyle = BorderStyle.Double,
+        BorderColor = Rgba.White,
+        Position = PositionValue.Absolute,
+        Left = DimensionValue.Point(10 + i * 8),
+        Top = DimensionValue.Point(5 + i * 2),
+        Opacity = opacityValues[i],
         AlignItems = AlignValue.Center,
         JustifyContent = JustifyValue.Center,
         FlexDirection = FlexDirectionValue.Column,
-        ZIndex = 10 + i,
-        ShouldFill = true,
     });
 
     var label = new TextRenderable(renderer, new TextOptions
     {
-        Id = $"{name}-label",
-        Content = $"{opacity:P0} opacity",
-        Fg = Rgba.FromInts(255, 255, 255),
+        Id = $"label-{i}",
+        Content = labels[i],
+        Fg = Rgba.White,
+        Bg = Rgba.Transparent,
+    });
+
+    var opacityLabel = new TextRenderable(renderer, new TextOptions
+    {
+        Id = $"opacity-{i}",
+        Content = $"Opacity: {opacityValues[i]:F1}",
+        Fg = Rgba.White,
+        Bg = Rgba.Transparent,
     });
 
     box.Add(label);
-    container.Add(box);
+    box.Add(opacityLabel);
     boxes.Add(box);
-    boxLabels.Add(label);
+    opacityLabels.Add(opacityLabel);
+    container.Add(box);
 }
 
-// --- Nested opacity demo: parent at 0.7, child at 0.5 ---
-var nestedParent = new BoxRenderable(renderer, new BoxOptions
+var nestedContainer = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "nested-parent",
-    Width = DimensionValue.Point(28),
-    Height = DimensionValue.Point(9),
-    BackgroundColor = Rgba.FromHex("#a855f7"),
-    Opacity = 0.7f,
-    Position = PositionValue.Absolute,
-    Right = DimensionValue.Point(2),
-    Top = DimensionValue.Point(1),
+    Id = "nested-container",
+    Width = DimensionValue.Point(35),
+    Height = DimensionValue.Point(10),
+    BackgroundColor = Hex("#e94560"),
     Border = true,
-    BorderStyle = BorderStyle.Double,
-    BorderColor = Rgba.FromHex("#a855f7"),
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
+    BorderStyle = BorderStyle.Single,
+    Position = PositionValue.Absolute,
+    Right = DimensionValue.Point(5),
+    Top = DimensionValue.Point(5),
+    Opacity = 0.7f,
+    Padding = DimensionValue.Point(1),
     FlexDirection = FlexDirectionValue.Column,
-    ZIndex = 50,
-    ShouldFill = true,
 });
 
-var nestedParentLabel = new TextRenderable(renderer, new TextOptions
+var nestedLabel = new TextRenderable(renderer, new TextOptions
 {
-    Id = "nested-parent-label",
-    Content = "Parent (opacity 0.7)",
-    Fg = Rgba.FromInts(255, 255, 255),
+    Id = "nested-label",
+    Content = "Parent: 0.7 opacity",
+    Fg = Rgba.White,
+    Bg = Rgba.Transparent,
 });
 
 var nestedChild = new BoxRenderable(renderer, new BoxOptions
 {
     Id = "nested-child",
-    Width = DimensionValue.Point(22),
-    Height = DimensionValue.Point(4),
-    BackgroundColor = Rgba.FromHex("#06b6d4"),
-    Opacity = 0.5f,
-    Border = true,
-    BorderStyle = BorderStyle.Single,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-    ShouldFill = true,
-});
-
-var nestedChildLabel = new TextRenderable(renderer, new TextOptions
-{
-    Id = "nested-child-label",
-    Content = "Child (opacity 0.5)",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-
-nestedChild.Add(nestedChildLabel);
-nestedParent.Add(nestedParentLabel);
-nestedParent.Add(nestedChild);
-container.Add(nestedParent);
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
     Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
+    Height = DimensionValue.Point(5),
+    BackgroundColor = Hex("#0f3460"),
     Border = true,
-    BorderStyle = BorderStyle.Rounded,
+    Opacity = 0.5f,
     AlignItems = AlignValue.Center,
     JustifyContent = JustifyValue.Center,
+    FlexDirection = FlexDirectionValue.Column,
 });
-var footerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    Content = "A: toggle animation | SPACE: toggle opacity | Ctrl+C: exit",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-footer.Add(footerText);
 
-// --- Build tree ---
+var childLabel = new TextRenderable(renderer, new TextOptions
+{
+    Id = "child-label",
+    Content = "Child: 0.5 opacity",
+    Fg = Rgba.White,
+    Bg = Rgba.Transparent,
+});
+
+var effectiveLabel = new TextRenderable(renderer, new TextOptions
+{
+    Id = "effective-label",
+    Content = "Effective: 0.35",
+    Fg = Hex("#ffcc00"),
+    Bg = Rgba.Transparent,
+});
+
+nestedChild.Add(childLabel);
+nestedChild.Add(effectiveLabel);
+nestedContainer.Add(nestedLabel);
+nestedContainer.Add(nestedChild);
+container.Add(nestedContainer);
+
 renderer.Root.Add(header);
 renderer.Root.Add(container);
-renderer.Root.Add(footer);
 
-// --- Helpers ---
-void UpdateLabels()
+void UpdateOpacityLabels()
 {
     for (int i = 0; i < boxes.Count; i++)
     {
-        boxLabels[i].ContentText = $"{boxes[i].Opacity:P0} opacity";
+        opacityLabels[i].ContentText = $"Opacity: {boxes[i].Opacity:F1}";
     }
 }
 
-void SetOpacities(float[] values)
+void ToggleAnimation()
 {
-    for (int i = 0; i < boxes.Count; i++)
+    animating = !animating;
+    if (animating)
     {
-        boxes[i].Opacity = values[i];
-        currentOpacities[i] = values[i];
+        animationPhase = 0f;
+        infoText.ContentText = "OPACITY DEMO | Animating... | A: Stop | Ctrl+C: Exit";
+        renderer.RequestLive();
     }
-    UpdateLabels();
+    else
+    {
+        infoText.ContentText = "OPACITY DEMO | 1-4: Toggle opacity | A: Animate | Ctrl+C: Exit";
+        renderer.DropLive();
+    }
 }
 
-// --- Frame callback for animation ---
 renderer.AddFrameCallback(dt =>
 {
-    if (!animating) return Task.CompletedTask;
-
-    animTime += dt;
-
-    // Cycle each box's opacity with a sine wave, offset per box
-    for (int i = 0; i < boxes.Count; i++)
+    if (!animating)
     {
-        float phase = animTime * 0.002f + i * MathF.PI * 0.5f;
-        float opacity = 0.15f + 0.85f * (0.5f + 0.5f * MathF.Sin(phase));
-        boxes[i].Opacity = opacity;
-        currentOpacities[i] = opacity;
+        return Task.CompletedTask;
     }
 
-    UpdateLabels();
+    animationPhase += dt * 0.001f;
+    for (int i = 0; i < boxes.Count; i++)
+    {
+        boxes[i].Opacity = 0.3f + 0.7f * MathF.Abs(MathF.Sin(animationPhase + i * 0.5f));
+    }
+
+    UpdateOpacityLabels();
     renderer.RequestRender();
     return Task.CompletedTask;
 });
 
-// --- Key handling ---
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
+renderer.KeyInput.On("keypress", (KeyEvent key) =>
 {
-    switch (e.Name)
+    switch (key.Name)
     {
-        case "a":
-            animating = !animating;
-            if (animating)
-            {
-                animTime = 0f;
-                headerText.ContentText = "Opacity Example  [animating]";
-            }
-            else
-            {
-                headerText.ContentText = "Opacity Example";
-            }
+        case "1":
+        case "2":
+        case "3":
+        case "4":
+        {
+            int index = key.Name[0] - '1';
+            boxes[index].Opacity = Math.Abs(boxes[index].Opacity - 1.0f) < 0.001f ? 0.3f : 1.0f;
+            opacityValues[index] = boxes[index].Opacity;
+            UpdateOpacityLabels();
+            renderer.RequestRender();
             break;
-
-        case "space":
-            if (animating) break; // don't toggle while animating
-            lowOpacity = !lowOpacity;
-            if (lowOpacity)
-            {
-                SetOpacities([0.15f, 0.15f, 0.15f, 0.15f]);
-            }
-            else
-            {
-                SetOpacities([.. baseOpacities]);
-            }
+        }
+        case "a":
+            ToggleAnimation();
+            renderer.RequestRender();
             break;
     }
-
-    renderer.RequestRender();
-});
-
-renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ =>
-{
-    renderer.RequestRender();
 });
 
 renderer.RequestRender();

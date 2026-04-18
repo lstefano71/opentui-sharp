@@ -1,197 +1,407 @@
-// Live State Demo — renderable lifecycle
-// Port of live-state-demo.ts
 using OpenTui.Core;
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
     ExitOnCtrlC = true,
-    TargetFps = 30,
+    EnableMouseMovement = true,
+    BackgroundColor = Rgba.FromInts(25, 30, 45, 255),
 });
 
-int tickCount = 0;
-bool liveMode = false;
+var exitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+renderer.On(RendererEventNames.Destroy, () => exitTcs.TrySetResult());
 
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
-    Border = true,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var headerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "header-text",
-    Content = "Live State Demo",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-header.Add(headerText);
+BoxRenderable? demoRenderable = null;
+TextRenderable? statusText = null;
+TextRenderable? rendererStateText = null;
+TextRenderable? renderableStateText = null;
 
-// --- State display ---
-var stateArea = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "state-area",
-    Width = DimensionValue.Auto,
-    FlexGrow = 1,
-    FlexDirection = FlexDirectionValue.Column,
-    Padding = DimensionValue.Point(1),
-    BackgroundColor = Rgba.FromHex("#111827"),
-});
+int frameCounter = 0;
+int animationCounter = 0;
 
-var modeLabel = new TextRenderable(renderer, new TextOptions
-{
-    Id = "mode-label",
-    Content = "Mode: IDLE (press L to toggle live)",
-    Fg = Rgba.FromHex("#60a5fa"),
-    Attributes = TextAttributes.Bold,
-});
+string Timestamp() => DateTime.Now.ToString("T");
 
-var counterLabel = new TextRenderable(renderer, new TextOptions
+void UpdateStatusText(string message)
 {
-    Id = "counter-label",
-    Content = "Ticks: 0",
-    Fg = Rgba.FromHex("#34d399"),
-});
-
-var fpsLabel = new TextRenderable(renderer, new TextOptions
-{
-    Id = "fps-label",
-    Content = "FPS: --",
-    Fg = Rgba.FromHex("#fbbf24"),
-});
-
-// Progress bar
-var progressBar = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "progress-bar-bg",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(1),
-    BackgroundColor = Rgba.FromHex("#374151"),
-    FlexDirection = FlexDirectionValue.Row,
-    ShouldFill = true,
-});
-var progressFill = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "progress-fill",
-    Width = DimensionValue.Point(0),
-    Height = DimensionValue.Point(1),
-    BackgroundColor = Rgba.FromHex("#3b82f6"),
-    ShouldFill = true,
-});
-progressBar.Add(progressFill);
-
-// Animated boxes
-var animRow = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "anim-row",
-    FlexDirection = FlexDirectionValue.Row,
-    Gap = 1,
-    Height = DimensionValue.Point(3),
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-
-var animBoxes = new BoxRenderable[8];
-for (int i = 0; i < 8; i++)
-{
-    animBoxes[i] = new BoxRenderable(renderer, new BoxOptions
-    {
-        Id = $"anim-{i}",
-        Width = DimensionValue.Point(4),
-        Height = DimensionValue.Point(2),
-        BackgroundColor = Rgba.FromHex("#3b82f6"),
-        ShouldFill = true,
-    });
-    animRow.Add(animBoxes[i]);
+    if (statusText is not null)
+        statusText.Content = $"[{Timestamp()}] {message}";
+    renderer.RequestRender();
 }
 
-stateArea.Add(modeLabel);
-stateArea.Add(counterLabel);
-stateArea.Add(fpsLabel);
-stateArea.Add(progressBar);
-stateArea.Add(animRow);
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
+void UpdateRendererState()
 {
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
-    Border = true,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var footerText = new TextRenderable(renderer, new TextOptions
+    if (rendererStateText is null)
+        return;
+
+    var liveIndicators = new[] { "\u2598", "\u259D", "\u2597", "\u2596" };
+    string liveIndicator = renderer.LiveRequestCount > 0
+        ? $" {liveIndicators[animationCounter % liveIndicators.Length]}"
+        : "";
+
+    rendererStateText.Content =
+        $"Renderer State: {(renderer.IsRunning ? "RUNNING" : "STOPPED")} | " +
+        $"Live Requests: {renderer.LiveRequestCount}{liveIndicator} | " +
+        $"Control State: {renderer.CurrentControlState.ToUpperInvariant()} | " +
+        $"Frame: {frameCounter}";
+}
+
+void UpdateRenderableState()
 {
-    Id = "footer-text",
-    Content = "L: toggle live mode | R: reset counter | Ctrl+C: exit",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-footer.Add(footerText);
+    if (renderableStateText is null)
+        return;
 
-renderer.Root.Add(header);
-renderer.Root.Add(stateArea);
-renderer.Root.Add(footer);
+    bool exists = demoRenderable is not null;
+    bool live = demoRenderable?.Live ?? false;
+    bool visible = demoRenderable?.Visible ?? false;
 
-// Frame callback for live mode
-float elapsed = 0;
-renderer.AddFrameCallback(dt =>
+    renderableStateText.Content =
+        $"Demo Renderable: {(exists ? "ADDED" : "NOT ADDED")} | " +
+        $"Live: {(live ? "TRUE" : "FALSE")} | " +
+        $"Visible: {(visible ? "TRUE" : "FALSE")}";
+}
+
+Rgba Brighten(Rgba color, float multiplier) =>
+    Rgba.FromValues(
+        Math.Min(1f, color.R * multiplier),
+        Math.Min(1f, color.G * multiplier),
+        Math.Min(1f, color.B * multiplier),
+        color.A);
+
+Rgba Darken(Rgba color, float multiplier) =>
+    Rgba.FromValues(color.R * multiplier, color.G * multiplier, color.B * multiplier, color.A);
+
+BoxRenderable CreateLiveButton(string id, int left, int top, Rgba backgroundColor, string label, Action onPress)
 {
-    if (!liveMode) return Task.CompletedTask;
+    var hoverBackground = Brighten(backgroundColor, 1.4f);
+    var pressBackground = Darken(backgroundColor, 0.6f);
 
-    tickCount++;
-    elapsed += dt;
-
-    counterLabel.ContentText = $"Ticks: {tickCount}";
-    fpsLabel.ContentText = $"FPS: {(tickCount / (elapsed / 1000f)):F1}";
-
-    // Progress bar cycles every 3 seconds
-    float progress = (elapsed % 3000f) / 3000f;
-    int barWidth = Math.Max(0, (int)(renderer.Width * progress));
-    progressFill.WidthDimension = DimensionValue.Point(barWidth);
-
-    // Color wave on animated boxes
-    for (int i = 0; i < animBoxes.Length; i++)
+    var button = new BoxRenderable(renderer, new BoxOptions
     {
-        float phase = (elapsed / 500f) + i * 0.5f;
-        float r = (MathF.Sin(phase) + 1) / 2;
-        float g = (MathF.Sin(phase + 2.094f) + 1) / 2;
-        float b = (MathF.Sin(phase + 4.189f) + 1) / 2;
-        animBoxes[i].BackgroundColor = Rgba.FromValues(r, g, b, 1f);
+        Id = id,
+        Position = PositionValue.Absolute,
+        Left = left,
+        Top = top,
+        Width = 20,
+        Height = 3,
+        BackgroundColor = backgroundColor,
+        Border = true,
+        BorderColor = Brighten(backgroundColor, 1.2f),
+        BorderStyle = BorderStyle.Rounded,
+    });
+
+    button.RenderAfterHook = (buffer, _) =>
+    {
+        int startX = button.X + Math.Max(0, (button.Width - label.Length) / 2);
+        int centerY = button.Y + Math.Max(0, button.Height / 2);
+        buffer.DrawText(label, (uint)Math.Max(0, startX), (uint)Math.Max(0, centerY), Rgba.White, attrs: TextAttributes.Bold);
+    };
+    button.OnMouseOver = _ =>
+    {
+        button.BackgroundColor = hoverBackground;
+        renderer.RequestRender();
+    };
+    button.OnMouseOut = _ =>
+    {
+        button.BackgroundColor = backgroundColor;
+        renderer.RequestRender();
+    };
+    button.OnMouseDown = mouseEvent =>
+    {
+        button.BackgroundColor = pressBackground;
+        onPress();
+        mouseEvent.StopPropagation();
+        renderer.RequestRender();
+    };
+    button.OnMouseUp = mouseEvent =>
+    {
+        button.BackgroundColor = backgroundColor;
+        mouseEvent.StopPropagation();
+        renderer.RequestRender();
+    };
+
+    return button;
+}
+
+void AddDemoRenderable()
+{
+    if (demoRenderable is not null)
+    {
+        UpdateStatusText("Demo renderable already exists!");
+        return;
     }
 
-    renderer.RequestRender();
+    demoRenderable = new BoxRenderable(renderer, new BoxOptions
+    {
+        Id = "demo-renderable",
+        Position = PositionValue.Absolute,
+        Left = 60,
+        Top = 15,
+        Width = 30,
+        Height = 8,
+        BackgroundColor = Rgba.FromInts(100, 200, 150, 255),
+        BorderColor = Rgba.FromInts(150, 255, 200, 255),
+        BorderStyle = BorderStyle.Double,
+        Title = "Demo Renderable",
+        TitleAlignment = TitleAlignment.Center,
+        Border = true,
+    });
+
+    renderer.Root.GetRenderable("live-demo-main-group")?.Add(demoRenderable);
+    UpdateStatusText("Added demo renderable");
+}
+
+void RemoveDemoRenderable()
+{
+    if (demoRenderable is null)
+    {
+        UpdateStatusText("No demo renderable to remove!");
+        return;
+    }
+
+    renderer.Root.GetRenderable("live-demo-main-group")?.Remove(demoRenderable.Id);
+    demoRenderable = null;
+    UpdateStatusText("Removed demo renderable");
+}
+
+var mainGroup = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "live-demo-main-group",
+    Width = DimensionValue.Percent(100),
+    Height = DimensionValue.Percent(100),
+    ZIndex = 10,
+});
+renderer.Root.Add(mainGroup);
+
+mainGroup.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "live-demo-title",
+    Content = "Live State Management Demo",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 1,
+    Fg = Rgba.FromInts(255, 215, 135, 255),
+    Attributes = TextAttributes.Bold,
+    ZIndex = 1000,
+}));
+
+mainGroup.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "live-demo-instructions",
+    Content = "Test the live state management system - Escape: exit",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 2,
+    Fg = Rgba.FromInts(176, 196, 222, 255),
+    ZIndex = 1000,
+}));
+
+statusText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "live-demo-status",
+    Content = "Ready - Click buttons to test live state management",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 4,
+    Fg = Rgba.FromInts(144, 238, 144, 255),
+    Attributes = TextAttributes.Italic,
+    ZIndex = 1000,
+});
+mainGroup.Add(statusText);
+
+rendererStateText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "renderer-state",
+    Content = "",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 6,
+    Fg = Rgba.FromInts(255, 255, 100, 255),
+    ZIndex = 1000,
+});
+mainGroup.Add(rendererStateText);
+
+renderableStateText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "renderable-state",
+    Content = "",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 7,
+    Fg = Rgba.FromInts(255, 255, 100, 255),
+    ZIndex = 1000,
+});
+mainGroup.Add(renderableStateText);
+
+var rendererColor = Rgba.FromInts(100, 140, 180, 255);
+var renderableColor = Rgba.FromInts(180, 100, 140, 255);
+var liveColor = Rgba.FromInts(140, 180, 100, 255);
+var visibilityColor = Rgba.FromInts(180, 140, 100, 255);
+
+const int startY = 10;
+const int spacing = 22;
+
+mainGroup.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "renderer-label",
+    Content = "Renderer Control:",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = startY - 1,
+    Fg = rendererColor,
+    Attributes = TextAttributes.Bold,
+    ZIndex = 500,
+}));
+
+mainGroup.Add(CreateLiveButton("request-live-btn", 2, startY, rendererColor, "REQUEST LIVE", () =>
+{
+    renderer.RequestLive();
+    UpdateStatusText("Manually requested live");
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+mainGroup.Add(CreateLiveButton("drop-live-btn", 2 + spacing, startY, rendererColor, "DROP LIVE", () =>
+{
+    renderer.DropLive();
+    UpdateStatusText("Manually dropped live");
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+mainGroup.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "renderable-label",
+    Content = "Renderable Management:",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = startY + 4,
+    Fg = renderableColor,
+    Attributes = TextAttributes.Bold,
+    ZIndex = 500,
+}));
+
+mainGroup.Add(CreateLiveButton("add-renderable-btn", 2, startY + 5, renderableColor, "ADD RENDERABLE", () =>
+{
+    AddDemoRenderable();
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+mainGroup.Add(CreateLiveButton("remove-renderable-btn", 2 + spacing, startY + 5, renderableColor, "REMOVE RENDERABLE", () =>
+{
+    RemoveDemoRenderable();
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+mainGroup.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "live-label",
+    Content = "Live State Control:",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = startY + 9,
+    Fg = liveColor,
+    Attributes = TextAttributes.Bold,
+    ZIndex = 500,
+}));
+
+mainGroup.Add(CreateLiveButton("set-live-true-btn", 2, startY + 10, liveColor, "LIVE = TRUE", () =>
+{
+    if (demoRenderable is not null)
+    {
+        demoRenderable.Live = true;
+        UpdateStatusText("Set demo renderable live = true");
+    }
+    else
+    {
+        UpdateStatusText("No demo renderable to set live!");
+    }
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+mainGroup.Add(CreateLiveButton("set-live-false-btn", 2 + spacing, startY + 10, liveColor, "LIVE = FALSE", () =>
+{
+    if (demoRenderable is not null)
+    {
+        demoRenderable.Live = false;
+        UpdateStatusText("Set demo renderable live = false");
+    }
+    else
+    {
+        UpdateStatusText("No demo renderable to set live!");
+    }
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+mainGroup.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "visibility-label",
+    Content = "Visibility Control:",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = startY + 14,
+    Fg = visibilityColor,
+    Attributes = TextAttributes.Bold,
+    ZIndex = 500,
+}));
+
+mainGroup.Add(CreateLiveButton("set-visible-true-btn", 2, startY + 15, visibilityColor, "VISIBLE = TRUE", () =>
+{
+    if (demoRenderable is not null)
+    {
+        demoRenderable.Visible = true;
+        UpdateStatusText("Set demo renderable visible = true");
+    }
+    else
+    {
+        UpdateStatusText("No demo renderable to set visible!");
+    }
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+mainGroup.Add(CreateLiveButton("set-visible-false-btn", 2 + spacing, startY + 15, visibilityColor, "VISIBLE = FALSE", () =>
+{
+    if (demoRenderable is not null)
+    {
+        demoRenderable.Visible = false;
+        UpdateStatusText("Set demo renderable visible = false");
+    }
+    else
+    {
+        UpdateStatusText("No demo renderable to set visible!");
+    }
+    UpdateRendererState();
+    UpdateRenderableState();
+}));
+
+Func<float, Task> frameCallback = deltaTime =>
+{
+    frameCounter++;
+    if (frameCounter % 10 == 0)
+    {
+        animationCounter++;
+        UpdateRendererState();
+        UpdateRenderableState();
+        renderer.RequestRender();
+    }
     return Task.CompletedTask;
-});
+};
+renderer.AddFrameCallback(frameCallback);
 
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
+renderer.KeyInput.On("keypress", (KeyEvent keyEvent) =>
 {
-    switch (e.Name)
+    if (keyEvent.Name == "escape")
     {
-        case "l":
-            liveMode = !liveMode;
-            modeLabel.ContentText = liveMode
-                ? "Mode: LIVE (continuous rendering)"
-                : "Mode: IDLE (press L to toggle live)";
-            if (liveMode)
-                renderer.RequestLive();
-            else
-                renderer.DropLive();
-            renderer.RequestRender();
-            break;
-        case "r":
-            tickCount = 0;
-            elapsed = 0;
-            counterLabel.ContentText = "Ticks: 0";
-            fpsLabel.ContentText = "FPS: --";
-            renderer.RequestRender();
-            break;
+        renderer.Destroy();
+        keyEvent.StopPropagation();
     }
 });
 
+UpdateRendererState();
+UpdateRenderableState();
 renderer.RequestRender();
-await Task.Delay(Timeout.Infinite);
+
+await exitTcs.Task;

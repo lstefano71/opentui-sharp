@@ -1,260 +1,373 @@
-// Mouse Interaction — demonstrates mouse events, color changes, coordinate display, and drag
 using OpenTui.Core;
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
+    BackgroundColor = Rgba.FromInts(15, 15, 35),
+    EnableMouseMovement = true,
     ExitOnCtrlC = true,
     TargetFps = 30,
-    EnableMouseMovement = true,
     UseMouse = true,
 });
 
-renderer.Native.SetBackgroundColor(Rgba.FromHex("#0f172a"));
+TimelineEngine.Instance.Attach(renderer);
 
-// --- State ---
-const int TrailSize = 12;
-var trail = new List<(int X, int Y)>();
-bool isDragging = false;
-(int X, int Y) dragStart = (0, 0);
+var trailCells = new Dictionary<string, TrailCell>();
+var activatedCells = new HashSet<string>();
+const int TrailFadeDurationMs = 3000;
+int nextZIndex = 101;
 
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
+var backgroundColor = Rgba.FromInts(15, 15, 35);
+var trailColor = Rgba.FromInts(64, 224, 208);
+var dragColor = Rgba.FromInts(255, 165, 0);
+var activatedColor = Rgba.FromInts(255, 20, 147);
+var cursorColor = Rgba.White;
+
+var mouseBackground = new FrameBufferRenderable(renderer, new FrameBufferOptions
 {
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#059669"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
+    Id = "mouse-demo-buffer",
+    Width = DimensionValue.Percent(100),
+    Height = DimensionValue.Percent(100),
+    ZIndex = 0,
+    BackgroundColor = backgroundColor,
+    OnMouse = evt =>
+    {
+        string key = $"{evt.X},{evt.Y}";
+        switch (evt.Type)
+        {
+            case MouseEventType.Move:
+                trailCells[key] = new TrailCell(evt.X, evt.Y, Environment.TickCount64, false);
+                renderer.RequestRender();
+                break;
+            case MouseEventType.Drag:
+                trailCells[key] = new TrailCell(evt.X, evt.Y, Environment.TickCount64, true);
+                renderer.RequestRender();
+                break;
+            case MouseEventType.Down:
+                if (!activatedCells.Add(key))
+                    activatedCells.Remove(key);
+                renderer.RequestRender();
+                break;
+        }
+    },
 });
-var headerText = new TextRenderable(renderer, new TextOptions
+renderer.Root.Add(mouseBackground);
+
+var titleText = new TextRenderable(renderer, new TextOptions
 {
-    Id = "header-text",
-    StyledContent = new StyledText(
-        TextChunk.Styled("Mouse Interaction Demo", fg: Rgba.White, attributes: TextAttributes.Bold)),
-    Fg = Rgba.White,
+    Id = "mouse-demo-title",
+    Content = "Mouse Interaction Demo with Draggable Objects",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 1,
+    Fg = Rgba.FromInts(72, 209, 204),
+    Attributes = TextAttributes.Bold,
+    ZIndex = 1000,
 });
-header.Add(headerText);
+renderer.Root.Add(titleText);
 
-// --- Interactive boxes row ---
-var boxRow = new BoxRenderable(renderer, new BoxOptions
+var instructionsText = new TextRenderable(renderer, new TextOptions
 {
-    Id = "box-row",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(8),
-    FlexDirection = FlexDirectionValue.Row,
-    Padding = DimensionValue.Point(1),
-    Gap = 2,
-    AlignItems = AlignValue.Stretch,
+    Id = "mouse-demo-instructions",
+    Content = "Drag boxes around • Move mouse: turquoise trails\nHold + move: orange drag trails • Click cells: toggle pink\nScroll on boxes: shows direction • Ctrl+C: quit",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 2,
+    Width = DimensionValue.Percent(100),
+    Height = 3,
+    Fg = Rgba.FromInts(176, 196, 222),
+    ZIndex = 1000,
 });
+renderer.Root.Add(instructionsText);
 
-Rgba[] defaultColors = [Rgba.FromHex("#ef4444"), Rgba.FromHex("#3b82f6"), Rgba.FromHex("#eab308")];
-Rgba[] clickColors = [Rgba.FromHex("#fca5a5"), Rgba.FromHex("#93c5fd"), Rgba.FromHex("#fde68a")];
-string[] boxLabels = ["Red Box", "Blue Box", "Yellow Box"];
-var interactiveBoxes = new BoxRenderable[3];
-var boxTexts = new TextRenderable[3];
-
-for (int i = 0; i < 3; i++)
+BoxRenderable CreateDraggableBox(
+    string id,
+    int x,
+    int y,
+    int width,
+    int height,
+    Rgba baseColor,
+    string label,
+    string? childText = null,
+    OverflowValue? overflow = null)
 {
-    int idx = i;
+    bool isDragging = false;
+    int dragOffsetX = 0;
+    int dragOffsetY = 0;
+    string stateText = "";
+    string scrollText = "";
+    long scrollTimestamp = 0;
+    int baseWidth = width;
+    int baseHeight = height;
+    var normalBackground = Rgba.FromInts((int)(baseColor.R * 255), (int)(baseColor.G * 255), (int)(baseColor.B * 255), 204);
+    var dragBackground = Rgba.FromInts((int)(baseColor.R * 255), (int)(baseColor.G * 255), (int)(baseColor.B * 255), 77);
+    var normalBorder = Rgba.FromInts(
+        Math.Min(255, (int)(baseColor.R * 255 * 1.2f)),
+        Math.Min(255, (int)(baseColor.G * 255 * 1.2f)),
+        Math.Min(255, (int)(baseColor.B * 255 * 1.2f)));
+    var dragBorder = Rgba.FromInts(
+        Math.Min(255, (int)(baseColor.R * 255 * 1.2f)),
+        Math.Min(255, (int)(baseColor.G * 255 * 1.2f)),
+        Math.Min(255, (int)(baseColor.B * 255 * 1.2f)),
+        128);
+
     var box = new BoxRenderable(renderer, new BoxOptions
     {
-        Id = $"ibox-{i}",
-        FlexGrow = 1,
-        Border = true,
+        Id = id,
+        Position = PositionValue.Absolute,
+        Left = x,
+        Top = y,
+        Width = width,
+        Height = height,
+        BackgroundColor = normalBackground,
+        BorderColor = normalBorder,
         BorderStyle = BorderStyle.Rounded,
-        BackgroundColor = defaultColors[i],
-        FlexDirection = FlexDirectionValue.Column,
-        AlignItems = AlignValue.Center,
-        JustifyContent = JustifyValue.Center,
-        OnMouseDown = me =>
-        {
-            interactiveBoxes[idx].BackgroundColor = clickColors[idx];
-            boxTexts[idx].Content = new StyledText(
-                TextChunk.Styled($"CLICKED ({me.X},{me.Y})", fg: Rgba.White, attributes: TextAttributes.Bold));
-            renderer.RequestRender();
-        },
-        OnMouseUp = _ =>
-        {
-            interactiveBoxes[idx].BackgroundColor = defaultColors[idx];
-            boxTexts[idx].SetContent(boxLabels[idx]);
-            renderer.RequestRender();
-        },
-        OnMouseMove = me =>
-        {
-            boxTexts[idx].Content = new StyledText(
-                TextChunk.Styled($"{boxLabels[idx]} ({me.X},{me.Y})", fg: Rgba.White));
-            renderer.RequestRender();
-        },
+        Title = label,
+        TitleAlignment = TitleAlignment.Center,
+        Border = true,
+        ZIndex = 100,
+        Overflow = overflow,
     });
 
-    var text = new TextRenderable(renderer, new TextOptions
+    var content = new TextRenderable(renderer, new TextOptions
     {
-        Id = $"ibox-text-{i}",
-        Content = boxLabels[i],
-        Fg = Rgba.White,
+        Id = $"{id}-content",
+        Content = "",
+        Fg = Rgba.FromInts(147, 226, 255),
+        WrapMode = WrapMode.Word,
+        Width = DimensionValue.Percent(100),
     });
+    box.Add(content);
 
-    box.Add(text);
-    interactiveBoxes[i] = box;
-    boxTexts[i] = text;
-    boxRow.Add(box);
-}
-
-// --- Drag area ---
-var dragText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "drag-text",
-    Content = "Click and drag here",
-    Fg = Rgba.FromHex("#a5b4fc"),
-});
-
-var dragArea = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "drag-area",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(6),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#6366f1"),
-    BackgroundColor = Rgba.FromHex("#1e1b4b"),
-    FlexDirection = FlexDirectionValue.Column,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-    OnMouseDown = me =>
+    if (!string.IsNullOrEmpty(childText))
     {
-        isDragging = true;
-        dragStart = (me.X, me.Y);
-        dragText.Content = new StyledText(
-            TextChunk.Styled($"Drag started at ({me.X},{me.Y})", fg: Rgba.FromHex("#a5b4fc")));
-        renderer.RequestRender();
-    },
-    OnMouseMove = me =>
-    {
-        if (isDragging)
-        {
-            int dx = me.X - dragStart.X;
-            int dy = me.Y - dragStart.Y;
-            dragText.Content = new StyledText(
-                TextChunk.Styled($"Dragging: Δ({dx},{dy}) at ({me.X},{me.Y})", fg: Rgba.FromHex("#818cf8")));
-            renderer.RequestRender();
-        }
-    },
-    OnMouseUp = me =>
-    {
-        if (isDragging)
-        {
-            isDragging = false;
-            int dx = me.X - dragStart.X;
-            int dy = me.Y - dragStart.Y;
-            dragText.Content = new StyledText(
-                TextChunk.Styled($"Drag ended: Δ({dx},{dy})", fg: Rgba.FromHex("#c7d2fe")));
-            renderer.RequestRender();
-        }
-    },
-});
-
-var dragLabel = new TextRenderable(renderer, new TextOptions
-{
-    Id = "drag-label",
-    StyledContent = new StyledText(
-        TextChunk.Styled("Drag Area", fg: Rgba.FromHex("#c7d2fe"), attributes: TextAttributes.Bold)),
-    Fg = Rgba.White,
-});
-dragArea.Add(dragLabel);
-dragArea.Add(dragText);
-
-// --- Mouse trail display ---
-var trailText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "trail-text",
-    Content = "No positions yet",
-    Fg = Rgba.FromHex("#94a3b8"),
-});
-
-var trailBox = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "trail-box",
-    Width = DimensionValue.Auto,
-    FlexGrow = 1,
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#475569"),
-    BackgroundColor = Rgba.FromHex("#111827"),
-    FlexDirection = FlexDirectionValue.Column,
-    Padding = DimensionValue.Point(1),
-    OnMouseMove = me =>
-    {
-        trail.Add((me.X, me.Y));
-        if (trail.Count > TrailSize) trail.RemoveAt(0);
-        UpdateTrail();
-        renderer.RequestRender();
-    },
-});
-
-var trailTitle = new TextRenderable(renderer, new TextOptions
-{
-    Id = "trail-title",
-    StyledContent = new StyledText(
-        TextChunk.Styled("Mouse Trail (move mouse here)", fg: Rgba.FromHex("#38bdf8"), attributes: TextAttributes.Bold)),
-    Fg = Rgba.White,
-});
-trailBox.Add(trailTitle);
-trailBox.Add(trailText);
-
-void UpdateTrail()
-{
-    if (trail.Count == 0)
-    {
-        trailText.SetContent("No positions yet");
-        return;
+        content.ContentText = childText;
     }
 
-    var chunks = new List<TextChunk>();
-    for (int i = 0; i < trail.Count; i++)
+    void RefreshContent()
     {
-        float brightness = (float)(i + 1) / trail.Count;
-        byte g = (byte)(100 + (int)(155 * brightness));
-        var color = Rgba.FromInts(50, g, 255);
-        string marker = i == trail.Count - 1 ? "●" : "○";
-        chunks.Add(TextChunk.Styled($"{marker}({trail[i].X},{trail[i].Y}) ", fg: color));
+        var lines = new List<string>();
+        if (isDragging)
+            lines.Add("drag");
+        if (!string.IsNullOrEmpty(scrollText) && Environment.TickCount64 - scrollTimestamp <= 2000)
+            lines.Add(scrollText);
+        if (!string.IsNullOrEmpty(stateText))
+            lines.Add(stateText);
+        if (!string.IsNullOrEmpty(childText))
+            lines.Add(childText);
+
+        content.ContentText = string.Join('\n', lines);
     }
-    trailText.Content = new StyledText(chunks);
+
+    void Bounce()
+    {
+        var scaleState = new ScaleState(1f);
+        var timeline = TimelineFactory.CreateTimeline(new TimelineOptions { Duration = 600, AutoPlay = false });
+        timeline.Add(new AnimationOptions
+        {
+            Duration = 200,
+            Ease = "outExpo",
+            Properties =
+            [
+                new TweenProperty
+                {
+                    Get = () => scaleState.Value,
+                    Set = value =>
+                    {
+                        scaleState.Value = value;
+                        box.WidthDimension = DimensionValue.Point(Math.Max(4, (int)MathF.Round(baseWidth * value)));
+                        box.HeightDimension = DimensionValue.Point(Math.Max(2, (int)MathF.Round(baseHeight * value)));
+                    },
+                    EndValue = 1.5f,
+                },
+            ],
+        }, 0);
+        timeline.Add(new AnimationOptions
+        {
+            Duration = 400,
+            Ease = "outExpo",
+            Properties =
+            [
+                new TweenProperty
+                {
+                    Get = () => scaleState.Value,
+                    Set = value =>
+                    {
+                        scaleState.Value = value;
+                        box.WidthDimension = DimensionValue.Point(Math.Max(4, (int)MathF.Round(baseWidth * value)));
+                        box.HeightDimension = DimensionValue.Point(Math.Max(2, (int)MathF.Round(baseHeight * value)));
+                    },
+                    EndValue = 1f,
+                },
+            ],
+        }, 200);
+        timeline.Play();
+    }
+
+    box.OnMouse = evt =>
+    {
+        switch (evt.Type)
+        {
+            case MouseEventType.Down:
+                stateText = "";
+                isDragging = true;
+                dragOffsetX = evt.X - box.X;
+                dragOffsetY = evt.Y - box.Y;
+                box.ZIndex = nextZIndex++;
+                box.BackgroundColor = dragBackground;
+                box.BorderColor = dragBorder;
+                evt.StopPropagation();
+                break;
+
+            case MouseEventType.Drag:
+                if (isDragging)
+                {
+                    int newX = evt.X - dragOffsetX;
+                    int newY = evt.Y - dragOffsetY;
+                    int boundedX = Math.Max(0, Math.Min(newX, renderer.Width - box.Width));
+                    int boundedY = Math.Max(4, Math.Min(newY, renderer.Height - box.Height));
+                    box.X = boundedX;
+                    box.Y = boundedY;
+                    evt.StopPropagation();
+                }
+                break;
+
+            case MouseEventType.DragEnd:
+                if (isDragging)
+                {
+                    isDragging = false;
+                    box.ZIndex = 100;
+                    box.BackgroundColor = normalBackground;
+                    box.BorderColor = normalBorder;
+                    evt.StopPropagation();
+                }
+                break;
+
+            case MouseEventType.Over:
+                stateText = $"over {evt.Source ?? ""}".TrimEnd();
+                break;
+
+            case MouseEventType.Out:
+                stateText = "out";
+                break;
+
+            case MouseEventType.Drop:
+                stateText = evt.Source ?? "";
+                Bounce();
+                break;
+
+            case MouseEventType.Scroll:
+                if (evt.Scroll is not null)
+                {
+                    scrollText = $"scroll {evt.Scroll.Value.Direction}";
+                    scrollTimestamp = Environment.TickCount64;
+                    evt.StopPropagation();
+                }
+                break;
+        }
+
+        RefreshContent();
+        renderer.RequestRender();
+    };
+
+    RefreshContent();
+    return box;
 }
 
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var footerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    Content = "Click boxes to change color | Drag in purple area | Move mouse in trail area | Ctrl+C: exit",
-    Fg = Rgba.FromHex("#93c5fd"),
-});
-footer.Add(footerText);
+renderer.Root.Add(CreateDraggableBox(
+    "drag-box-1",
+    10,
+    8,
+    20,
+    10,
+    Rgba.FromInts(200, 100, 150),
+    "Box 1"));
 
-// --- Build tree ---
-renderer.Root.Add(header);
-renderer.Root.Add(boxRow);
-renderer.Root.Add(dragArea);
-renderer.Root.Add(trailBox);
-renderer.Root.Add(footer);
+renderer.Root.Add(CreateDraggableBox(
+    "drag-box-2",
+    30,
+    12,
+    18,
+    10,
+    Rgba.FromInts(100, 200, 150),
+    "Box 2"));
 
-renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ =>
+renderer.Root.Add(CreateDraggableBox(
+    "drag-box-3",
+    50,
+    15,
+    20,
+    11,
+    Rgba.FromInts(150, 150, 200),
+    "Box 3"));
+
+renderer.Root.Add(CreateDraggableBox(
+    "drag-box-4",
+    15,
+    20,
+    18,
+    11,
+    Rgba.FromInts(200, 200, 100),
+    "O hidden",
+    "This should be cut off to the right",
+    OverflowValue.Hidden));
+
+renderer.AddFrameCallback(_ =>
 {
+    var buffer = mouseBackground.Buffer;
+    if (buffer is null)
+        return Task.CompletedTask;
+
+    mouseBackground.Clear();
+
+    long now = Environment.TickCount64;
+    foreach (string key in trailCells.Where(pair => now - pair.Value.Timestamp > TrailFadeDurationMs).Select(pair => pair.Key).ToArray())
+        trailCells.Remove(key);
+
+    foreach (var cell in trailCells.Values)
+    {
+        float fadeRatio = 1f - Math.Clamp((float)(now - cell.Timestamp) / TrailFadeDurationMs, 0f, 1f);
+        if (fadeRatio <= 0f)
+            continue;
+
+        var sourceColor = cell.IsDrag ? dragColor : trailColor;
+        var faded = Rgba.FromValues(sourceColor.R, sourceColor.G, sourceColor.B, fadeRatio);
+        if (cell.X >= 0 && cell.Y >= 0 && cell.X < mouseBackground.Width && cell.Y < mouseBackground.Height)
+            buffer.SetCellWithAlphaBlending((uint)cell.X, (uint)cell.Y, '█', faded, backgroundColor);
+    }
+
+    foreach (string cellKey in activatedCells)
+    {
+        var parts = cellKey.Split(',');
+        if (parts.Length == 2 &&
+            int.TryParse(parts[0], out int x) &&
+            int.TryParse(parts[1], out int y) &&
+            x >= 0 && y >= 0 &&
+            x < mouseBackground.Width && y < mouseBackground.Height)
+        {
+            buffer.DrawText("█", (uint)x, (uint)y, activatedColor, backgroundColor);
+        }
+    }
+
+    var latest = trailCells.Values
+        .Where(cell => now - cell.Timestamp < 100)
+        .OrderByDescending(cell => cell.Timestamp)
+        .FirstOrDefault();
+
+    if (latest is not null &&
+        latest.X >= 0 && latest.Y >= 0 &&
+        latest.X < mouseBackground.Width && latest.Y < mouseBackground.Height)
+    {
+        buffer.SetCellWithAlphaBlending((uint)latest.X, (uint)latest.Y, '+', cursorColor, backgroundColor);
+    }
+
     renderer.RequestRender();
+    return Task.CompletedTask;
 });
 
-renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);
+
+sealed record TrailCell(int X, int Y, long Timestamp, bool IsDrag);
+sealed class ScaleState(float value)
+{
+    public float Value { get; set; } = value;
+}

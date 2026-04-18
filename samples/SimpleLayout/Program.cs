@@ -200,6 +200,10 @@ void ResetElement(BoxRenderable el)
     el.FlexShrink = 0;
     el.WidthDimension = DimensionValue.Auto;
     el.HeightDimension = DimensionValue.Auto;
+    el.MinWidth = DimensionValue.Auto;
+    el.MaxWidth = DimensionValue.Auto;
+    el.MinHeight = DimensionValue.Auto;
+    el.MaxHeight = DimensionValue.Auto;
 }
 
 void SetupHorizontal()
@@ -212,6 +216,7 @@ void SetupHorizontal()
 
     contentArea.FlexDirection = FlexDirectionValue.Row;
     contentArea.AlignItems = AlignValue.Stretch;
+    contentArea.JustifyContent = JustifyValue.FlexStart;
 
     int sidebarWidth = Math.Max(15, renderer.Width / 5);
     sidebar.FlexBasis = DimensionValue.Point(sidebarWidth);
@@ -237,6 +242,7 @@ void SetupVertical()
 
     contentArea.FlexDirection = FlexDirectionValue.Column;
     contentArea.AlignItems = AlignValue.Stretch;
+    contentArea.JustifyContent = JustifyValue.FlexStart;
 
     int contentH = renderer.Height - 6;
     int topBarH = Math.Max(3, contentH / 5);
@@ -284,6 +290,7 @@ void SetupThreeColumn()
 
     contentArea.FlexDirection = FlexDirectionValue.Row;
     contentArea.AlignItems = AlignValue.Stretch;
+    contentArea.JustifyContent = JustifyValue.FlexStart;
 
     int sw = Math.Max(12, renderer.Width * 15 / 100);
     sidebar.FlexBasis = DimensionValue.Point(sw);

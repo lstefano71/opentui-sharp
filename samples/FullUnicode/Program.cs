@@ -1,153 +1,265 @@
 using OpenTui.Core;
 
-using var renderer = CliRenderer.Create(new CliRendererConfig { ExitOnCtrlC = true });
-
-var root = new BoxRenderable(renderer, new BoxOptions
+using var renderer = CliRenderer.Create(new CliRendererConfig
 {
-    Id = "root",
+    ExitOnCtrlC = true,
+    EnableMouseMovement = true,
+    BackgroundColor = Rgba.FromInts(0, 17, 34, 255),
+});
+
+var exitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+renderer.On(RendererEventNames.Destroy, () => exitTcs.TrySetResult());
+
+string[] graphemeLines =
+[
+    "✅ 👩🏽‍💻  👨‍👩‍👧‍👦  🏳️‍🌈  🇺🇸  🇩🇪  🇯🇵  🇮🇳",
+    "a̐éö̲  Z͑͗͛̒͘a̴͈͚̐̓l̷͓̱͉g̶̙̗̓͘o̵͍͈  क्‍ष",
+    "مرحبا  こんにちは  สวัสดี  Здравствуйте",
+    "𝔘𝔫𝔦𝔠𝔬𝔡𝔢  𝒻𝓊𝓁𝓁 𝓌𝒾𝒹𝓉𝒽：ＡＢＣ  ½ ⅞ ⅓",
+];
+
+var vignetteEffect = new VignetteEffect(0.55f);
+bool vignetteEnabled = false;
+bool needsRedraw = true;
+var redrawActions = new List<Action>();
+
+var rootGroup = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "full-unicode-root",
     Width = DimensionValue.Percent(100),
     Height = DimensionValue.Percent(100),
-    FlexDirection = FlexDirectionValue.Column,
-    BackgroundColor = Rgba.FromHex("#0c0c1d"),
-    ShouldFill = true,
+    ZIndex = 1,
 });
+renderer.Root.Add(rootGroup);
 
-// Title
-var titleBox = new BoxRenderable(renderer, new BoxOptions
+var background = new FrameBufferRenderable(renderer, new FrameBufferOptions
 {
-    Id = "title-box",
+    Id = "grapheme-bg",
+    Position = PositionValue.Absolute,
+    Left = 0,
+    Top = 0,
     Width = DimensionValue.Percent(100),
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1a1a3e"),
-    Border = true,
-    BorderStyle = BorderStyle.Double,
-    BorderColor = Rgba.FromHex("#ffd700"),
-    JustifyContent = JustifyValue.Center,
-    AlignItems = AlignValue.Center,
+    Height = DimensionValue.Percent(100),
+    RespectAlpha = false,
 });
-titleBox.Add(new TextRenderable(renderer, new TextOptions
-{
-    Id = "title",
-    Content = "🌍 Full Unicode Demo 🌏",
-    Fg = Rgba.FromHex("#ffd700"),
-    Attributes = TextAttributes.Bold,
-}));
+rootGroup.Add(background);
 
-// Content area
-var content = new BoxRenderable(renderer, new BoxOptions
+void MarkDirty()
 {
-    Id = "content",
-    FlexGrow = 1,
-    Width = DimensionValue.Percent(100),
-    FlexDirection = FlexDirectionValue.Column,
-    Padding = DimensionValue.Point(1),
-    Gap = 1,
-});
-
-// Panel helper
-BoxRenderable MakePanel(string id, string title, Rgba borderColor, StyledText body)
-{
-    var panel = new BoxRenderable(renderer, new BoxOptions
-    {
-        Id = id,
-        Width = DimensionValue.Percent(100),
-        Border = true,
-        BorderStyle = BorderStyle.Rounded,
-        BorderColor = borderColor,
-        BackgroundColor = Rgba.FromHex("#12122a"),
-        ShouldFill = true,
-        FlexDirection = FlexDirectionValue.Column,
-        Padding = DimensionValue.Point(1),
-        Title = $" {title} ",
-    });
-    var text = new TextRenderable(renderer, new TextOptions
-    {
-        Id = $"{id}-text",
-        StyledContent = body,
-    });
-    panel.Add(text);
-    return panel;
+    needsRedraw = true;
+    renderer.RequestRender();
 }
 
-// Panel 1: Emoji
-content.Add(MakePanel("emoji", "Emoji", Rgba.FromHex("#ff6b6b"), new StyledText(
-    TextChunk.Styled("Party: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("🎉 🎊 🎈 🎁 🎆 🎇 🧨 ✨ 🪅", fg: Rgba.White),
-    TextChunk.Styled("  Faces: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("😀 😎 🤩 😈 🥳 🤯 🫠 🫡", fg: Rgba.White)
-)));
-
-// Panel 2: CJK Characters
-content.Add(MakePanel("cjk", "CJK Characters (Wide)", Rgba.FromHex("#4ecdc4"), new StyledText(
-    TextChunk.Styled("Chinese: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("你好世界 ", fg: Rgba.FromHex("#ff6b6b")),
-    TextChunk.Styled("Japanese: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("こんにちは ", fg: Rgba.FromHex("#4ecdc4")),
-    TextChunk.Styled("Korean: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("안녕하세요", fg: Rgba.FromHex("#ffe66d"))
-)));
-
-// Panel 3: Combining marks
-content.Add(MakePanel("combining", "Combining Marks & Diacritics", Rgba.FromHex("#a8e6cf"), new StyledText(
-    TextChunk.Styled("Composed: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("é ñ ü ö ā ǎ ", fg: Rgba.FromHex("#a8e6cf")),
-    TextChunk.Styled("Decomposed: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("é ñ ü ö ", fg: Rgba.FromHex("#ffd3b6")),
-    TextChunk.Styled("Stacked: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("ḁ̴̡̢̛̗̣̙̤̦̩̫̬̮̰̲̈́̃̂̄̅̆̇̈̉̊̋̌̍̎̏", fg: Rgba.FromHex("#ff8b94"))
-)));
-
-// Panel 4: ZWJ sequences and family
-content.Add(MakePanel("zwj", "ZWJ Sequences & Skin Tones", Rgba.FromHex("#ffd3b6"), new StyledText(
-    TextChunk.Styled("Family: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("👨‍👩‍👧‍👦 👩‍👧‍👦 ", fg: Rgba.White),
-    TextChunk.Styled("Professions: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("👨‍💻 👩‍🔬 👨‍🎨 👩‍🚀 ", fg: Rgba.White),
-    TextChunk.Styled("Tones: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("👋🏻 👋🏼 👋🏽 👋🏾 👋🏿", fg: Rgba.White)
-)));
-
-// Panel 5: Box drawing and symbols
-content.Add(MakePanel("symbols", "Box Drawing & Mathematical", Rgba.FromHex("#dcedc1"), new StyledText(
-    TextChunk.Styled("Box: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("┌─┬─┐ │ ├─┼─┤ └─┴─┘ ", fg: Rgba.FromHex("#dcedc1")),
-    TextChunk.Styled("Math: ", fg: Rgba.FromHex("#aaaaaa")),
-    TextChunk.Styled("∑ ∏ ∫ ∂ √ ∞ ≈ ≠ ≤ ≥ ∈ ∉ ⊂ ⊃", fg: Rgba.FromHex("#ffd93d"))
-)));
-
-// Panel 6: Flags
-content.Add(MakePanel("flags", "Regional Flags", Rgba.FromHex("#ff9a9e"), new StyledText(
-    TextChunk.Styled("🇺🇸 🇬🇧 🇫🇷 🇩🇪 🇯🇵 🇰🇷 🇨🇳 🇧🇷 🇮🇳 🇦🇺 🇨🇦 🇪🇸 🇮🇹 🇷🇺 🇲🇽", fg: Rgba.White)
-)));
-
-// Footer
-var footer = new BoxRenderable(renderer, new BoxOptions
+void DrawBackground()
 {
-    Id = "footer",
-    Width = DimensionValue.Percent(100),
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1a1a3e"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#888888"),
-    JustifyContent = JustifyValue.Center,
-    AlignItems = AlignValue.Center,
+    var buffer = background.Buffer;
+    if (buffer is null)
+        return;
+
+    var fg = Rgba.FromInts(220, 220, 220, 255);
+    var bg = Rgba.FromInts(0, 17, 34, 255);
+
+    buffer.Clear(bg);
+    for (uint y = 0; y < buffer.Height; y++)
+    {
+        string line = graphemeLines[y % (uint)graphemeLines.Length];
+        buffer.DrawText(line, 2, y, fg, bg);
+    }
+}
+
+FrameBufferRenderable CreateDraggableGraphemeBox(string id, int x, int y, int width, int height, Rgba bg, bool respectAlpha)
+{
+    var box = new FrameBufferRenderable(renderer, new FrameBufferOptions
+    {
+        Id = id,
+        Position = PositionValue.Absolute,
+        Left = x,
+        Top = y,
+        Width = width,
+        Height = height,
+        RespectAlpha = respectAlpha,
+    });
+
+    bool dragging = false;
+    int dragOffsetX = 0;
+    int dragOffsetY = 0;
+
+    box.OnMouseDown = mouseEvent =>
+    {
+        dragging = true;
+        dragOffsetX = mouseEvent.X - box.X;
+        dragOffsetY = mouseEvent.Y - box.Y;
+        mouseEvent.StopPropagation();
+        MarkDirty();
+    };
+    box.OnMouseDrag = mouseEvent =>
+    {
+        if (!dragging)
+            return;
+
+        box.X = mouseEvent.X - dragOffsetX;
+        box.Y = mouseEvent.Y - dragOffsetY;
+        mouseEvent.StopPropagation();
+        MarkDirty();
+    };
+    box.OnMouseDragEnd = mouseEvent =>
+    {
+        if (!dragging)
+            return;
+
+        dragging = false;
+        mouseEvent.StopPropagation();
+        MarkDirty();
+    };
+
+    void Draw()
+    {
+        var buffer = box.Buffer;
+        if (buffer is null)
+            return;
+
+        buffer.Clear(bg);
+        for (uint row = 0; row < buffer.Height; row++)
+        {
+            string line = graphemeLines[row % (uint)graphemeLines.Length];
+            buffer.DrawText(line, 1, row, Rgba.White, bg);
+        }
+    }
+
+    redrawActions.Add(Draw);
+    return box;
+}
+
+TextRenderable CreateDraggableStyledText(string id, int x, int y, StyledText content)
+{
+    var text = new TextRenderable(renderer, new TextOptions
+    {
+        Id = id,
+        Position = PositionValue.Absolute,
+        Left = x,
+        Top = y,
+        ZIndex = 2,
+        Selectable = false,
+        StyledContent = content,
+        Fg = Rgba.White,
+        Bg = Rgba.Transparent,
+    });
+
+    bool dragging = false;
+    int dragOffsetX = 0;
+    int dragOffsetY = 0;
+
+    text.OnMouseDown = mouseEvent =>
+    {
+        dragging = true;
+        dragOffsetX = mouseEvent.X - text.X;
+        dragOffsetY = mouseEvent.Y - text.Y;
+        mouseEvent.StopPropagation();
+        renderer.RequestRender();
+    };
+    text.OnMouseDrag = mouseEvent =>
+    {
+        if (!dragging)
+            return;
+
+        text.X = mouseEvent.X - dragOffsetX;
+        text.Y = mouseEvent.Y - dragOffsetY;
+        mouseEvent.StopPropagation();
+        renderer.RequestRender();
+    };
+    text.OnMouseDragEnd = mouseEvent =>
+    {
+        if (!dragging)
+            return;
+
+        dragging = false;
+        mouseEvent.StopPropagation();
+        renderer.RequestRender();
+    };
+
+    return text;
+}
+
+redrawActions.Add(DrawBackground);
+
+var box1 = CreateDraggableGraphemeBox("grapheme-box-1", 6, 4, 30, 6, Rgba.FromInts(32, 96, 192, 160), true);
+var box2 = CreateDraggableGraphemeBox("grapheme-box-2", 24, 10, 28, 6, Rgba.FromInts(192, 96, 128, 180), true);
+var box3 = CreateDraggableGraphemeBox("grapheme-box-3", 42, 7, 26, 6, Rgba.FromInts(64, 176, 96, 128), true);
+rootGroup.Add(box1);
+rootGroup.Add(box2);
+rootGroup.Add(box3);
+
+var styledText = CreateDraggableStyledText(
+    "draggable-styled-text",
+    8,
+    12,
+    new StyledText(
+        TextChunk.Styled("Graphemes:", fg: Rgba.FromHex("#77aaff"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" ✅ 👩🏽‍💻  👨‍👩‍👧‍👦  🏳️‍🌈  🇺🇸  🇩🇪  🇯🇵  🇮🇳\n"),
+        TextChunk.Styled("Complex:", fg: Rgba.FromHex("#ffffff"), attributes: TextAttributes.Underline),
+        TextChunk.Plain(" a̐éö̲  Z͑͗͛̒͘a̴͈͚̐̓l̷͓̱͉g̶̙̗̓͘o̵͍͈  क्‍ष")));
+rootGroup.Add(styledText);
+
+var styledText2 = CreateDraggableStyledText(
+    "draggable-styled-text-2",
+    18,
+    16,
+    new StyledText(
+        TextChunk.Styled("Emoji Check:", fg: Rgba.FromHex("#55FF55"), attributes: TextAttributes.Bold),
+        TextChunk.Plain(" ✅ 👩🏽‍💻  👨‍👩‍👧‍👦  🏳️‍🌈\n"),
+        TextChunk.Styled("Drag me too:", fg: Rgba.White, attributes: TextAttributes.Underline),
+        TextChunk.Plain(" 🇺🇸  🇩🇪  🇯🇵  🇮🇳  a̐éö̲")));
+rootGroup.Add(styledText2);
+
+var hintText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "full-unicode-hint",
+    Position = PositionValue.Absolute,
+    Left = 2,
+    Top = 1,
+    ZIndex = 3,
+    Content = "V: Toggle vignette",
+    Fg = Rgba.FromHex("#AAFFAA"),
+    Selectable = false,
 });
-footer.Add(new TextRenderable(renderer, new TextOptions
+rootGroup.Add(hintText);
+
+renderer.AddFrameCallback(_ =>
 {
-    Id = "footer-text",
-    StyledContent = new StyledText(
-        TextChunk.Styled("Displaying: ", fg: Rgba.FromHex("#888888")),
-        TextChunk.Styled("Emoji • CJK • Combining Marks • ZWJ • Box Drawing • Flags", fg: Rgba.FromHex("#ffd700")),
-        TextChunk.Styled("  |  ", fg: Rgba.FromHex("#444444")),
-        TextChunk.Styled("Ctrl+C", fg: Rgba.FromHex("#ff6b6b"), attributes: TextAttributes.Bold),
-        TextChunk.Styled(" exit", fg: Rgba.FromHex("#888888"))
-    ),
-}));
+    if (!needsRedraw)
+        return Task.CompletedTask;
 
-root.Add(titleBox);
-root.Add(content);
-root.Add(footer);
-renderer.Root.Add(root);
+    foreach (var redraw in redrawActions)
+        redraw();
 
-await Task.Delay(Timeout.Infinite);
+    needsRedraw = false;
+    return Task.CompletedTask;
+});
+
+renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ => MarkDirty());
+
+renderer.KeyInput.On("keypress", (KeyEvent keyEvent) =>
+{
+    string? name = keyEvent.Name?.ToLowerInvariant();
+    if (name == "v")
+    {
+        vignetteEnabled = !vignetteEnabled;
+        hintText.Content = $"V: Toggle vignette ({(vignetteEnabled ? "ON" : "OFF")})";
+        renderer.ClearPostProcessFns();
+        if (vignetteEnabled)
+            renderer.AddPostProcessFn(vignetteEffect.Apply);
+        MarkDirty();
+        keyEvent.StopPropagation();
+        return;
+    }
+
+    if (name == "escape")
+    {
+        renderer.Destroy();
+        keyEvent.StopPropagation();
+    }
+});
+
+MarkDirty();
+
+await exitTcs.Task;

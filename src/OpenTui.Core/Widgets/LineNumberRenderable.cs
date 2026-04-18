@@ -5,7 +5,13 @@ namespace OpenTui.Core;
 /// <summary>
 /// Configuration for a line sign (e.g., "+" or "-" in a diff gutter).
 /// </summary>
-public readonly record struct LineSign(string? Before, string? After, Rgba? Fg, Rgba? Bg);
+public readonly record struct LineSign(
+    string? Before = null,
+    string? After = null,
+    Rgba? Fg = null,
+    Rgba? Bg = null,
+    Rgba? BeforeColor = null,
+    Rgba? AfterColor = null);
 
 /// <summary>
 /// Per-line color configuration for the gutter and content backgrounds.
@@ -92,7 +98,14 @@ public class LineNumberRenderable : Renderable
     public bool ShowLineNumbers
     {
         get => _showLineNumbers;
-        set { _showLineNumbers = value; RequestRender(); }
+        set
+        {
+            if (_showLineNumbers == value)
+                return;
+
+            _showLineNumbers = value;
+            DirtyGutterLayout();
+        }
     }
 
     public int LineNumberOffset
@@ -351,7 +364,7 @@ public class LineNumberRenderable : Renderable
                 {
                     int padding = _maxBeforeWidth - before.Length;
                     currentX += padding;
-                    var signFg = sign.Fg ?? fg;
+                    var signFg = sign.BeforeColor ?? sign.Fg ?? fg;
                     buffer.DrawText(before, (uint)currentX, (uint)(startY + i), signFg, sign.Bg);
                     currentX += before.Length;
                 }
@@ -367,7 +380,7 @@ public class LineNumberRenderable : Renderable
                 // Draw sign (after) — always at fixed position
                 if (sign.After is { } after)
                 {
-                    var signFg = sign.Fg ?? fg;
+                    var signFg = sign.AfterColor ?? sign.Fg ?? fg;
                     buffer.DrawText(after, (uint)currentX, (uint)(startY + i), signFg, sign.Bg);
                 }
             }

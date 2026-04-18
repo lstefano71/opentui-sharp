@@ -289,6 +289,137 @@ public sealed class ScrollBoxRenderableTests : IDisposable
         Assert.True(scrollBox.ScrollTop > 0, "Mouse wheel should move the scroll position.");
     }
 
+    [Fact]
+    public void StickyScrollBottom_StaysAnchoredAfterScrollCommandsAndContentGrowth()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "scroll-sticky-bottom",
+            Width = DimensionValue.Point(40),
+            Height = DimensionValue.Point(10),
+            StickyScroll = true,
+            StickyStart = "bottom",
+        });
+
+        _renderer.Root.Add(scrollBox);
+        RenderFrame();
+
+        scrollBox.Add(new TextRenderable(_renderer, new TextOptions
+        {
+            Id = "line-0",
+            Content = "Line 0",
+        }));
+        RenderFrame();
+
+        scrollBox.ScrollBy(0, 100000);
+        RenderFrame();
+
+        scrollBox.ScrollTo(y: scrollBox.ScrollHeight);
+        RenderFrame();
+
+        for (int i = 1; i < 30; i++)
+        {
+            scrollBox.Add(new TextRenderable(_renderer, new TextOptions
+            {
+                Id = $"line-{i}",
+                Content = $"Line {i}",
+            }));
+            RenderFrame();
+
+            float expectedMaxScroll = Math.Max(0, scrollBox.ScrollHeight - scrollBox.ViewportHeight);
+            Assert.Equal(expectedMaxScroll, scrollBox.ScrollTop);
+        }
+    }
+
+    [Fact]
+    public void StickyScrollBottom_ReenablesAfterReturningToBottom()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "scroll-sticky-reset",
+            Width = DimensionValue.Point(40),
+            Height = DimensionValue.Point(10),
+            StickyScroll = true,
+            StickyStart = "bottom",
+        });
+
+        _renderer.Root.Add(scrollBox);
+
+        for (int i = 0; i < 20; i++)
+        {
+            scrollBox.Add(new TextRenderable(_renderer, new TextOptions
+            {
+                Id = $"line-{i}",
+                Content = $"Line {i}",
+            }));
+        }
+
+        RenderFrame();
+
+        float maxScroll = Math.Max(0, scrollBox.ScrollHeight - scrollBox.ViewportHeight);
+        Assert.Equal(maxScroll, scrollBox.ScrollTop);
+
+        scrollBox.ScrollTo(y: 5);
+        RenderFrame();
+        Assert.Equal(5, scrollBox.ScrollTop);
+
+        scrollBox.ScrollTo(y: maxScroll);
+        RenderFrame();
+        Assert.Equal(maxScroll, scrollBox.ScrollTop);
+
+        scrollBox.Add(new TextRenderable(_renderer, new TextOptions
+        {
+            Id = "line-20",
+            Content = "Line 20",
+        }));
+        RenderFrame();
+
+        float expectedMaxScroll = Math.Max(0, scrollBox.ScrollHeight - scrollBox.ViewportHeight);
+        Assert.Equal(expectedMaxScroll, scrollBox.ScrollTop);
+    }
+
+    [Fact]
+    public void StickyScrollTop_StaysAnchoredWhenContentIsInsertedAtTop()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "scroll-sticky-top",
+            Width = DimensionValue.Point(40),
+            Height = DimensionValue.Point(10),
+            StickyScroll = true,
+            StickyStart = "bottom",
+        });
+
+        _renderer.Root.Add(scrollBox);
+
+        for (int i = 0; i < 20; i++)
+        {
+            scrollBox.Add(new TextRenderable(_renderer, new TextOptions
+            {
+                Id = $"line-{i}",
+                Content = $"Line {i}",
+            }));
+        }
+
+        RenderFrame();
+
+        scrollBox.ScrollTo(y: 0);
+        RenderFrame();
+        Assert.Equal(0, scrollBox.ScrollTop);
+
+        for (int i = 0; i < 5; i++)
+        {
+            scrollBox.Add(new TextRenderable(_renderer, new TextOptions
+            {
+                Id = $"new-top-{i}",
+                Content = $"New top {i}",
+            }), 0);
+            RenderFrame();
+
+            Assert.Equal(0, scrollBox.ScrollTop);
+        }
+    }
+
     #endregion
 
     #region Resize

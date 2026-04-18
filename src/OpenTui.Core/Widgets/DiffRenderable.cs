@@ -389,12 +389,12 @@ public class DiffRenderable : Renderable
                 {
                     case DiffLineType.Added:
                         lineColors[lineIdx] = _addedBg;
-                        lineSigns[lineIdx] = new LineSign(null, " +", _addedSignColor, null);
+                        lineSigns[lineIdx] = new LineSign(After: " +", Fg: _addedSignColor);
                         lineNumbers[lineIdx] = newLine++;
                         break;
                     case DiffLineType.Removed:
                         lineColors[lineIdx] = _removedBg;
-                        lineSigns[lineIdx] = new LineSign(null, " -", _removedSignColor, null);
+                        lineSigns[lineIdx] = new LineSign(After: " -", Fg: _removedSignColor);
                         lineNumbers[lineIdx] = oldLine++;
                         break;
                     case DiffLineType.Context:
@@ -488,7 +488,7 @@ public class DiffRenderable : Renderable
                         {
                             AppendLeft(removes[j].Content);
                             leftColors[leftIdx] = _removedBg;
-                            leftSigns[leftIdx] = new LineSign(null, " -", _removedSignColor, null);
+                            leftSigns[leftIdx] = new LineSign(After: " -", Fg: _removedSignColor);
                             leftLineNums[leftIdx] = removes[j].LineNum;
                             leftIdx++;
                         }
@@ -503,7 +503,7 @@ public class DiffRenderable : Renderable
                         {
                             AppendRight(adds[j].Content);
                             rightColors[rightIdx] = _addedBg;
-                            rightSigns[rightIdx] = new LineSign(null, " +", _addedSignColor, null);
+                            rightSigns[rightIdx] = new LineSign(After: " +", Fg: _addedSignColor);
                             rightLineNums[rightIdx] = adds[j].LineNum;
                             rightIdx++;
                         }

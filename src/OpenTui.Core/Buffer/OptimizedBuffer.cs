@@ -285,19 +285,43 @@ public sealed class OptimizedBuffer : IDisposable
 
     #region Color Matrix
 
-    /// <summary>Applies a color matrix transformation to the buffer within a region.</summary>
-    public void ColorMatrix(float[] matrix, uint[] region, float opacity = 1f, TargetChannel channel = TargetChannel.Both)
+    /// <summary>Applies a color matrix transformation to the buffer within a per-cell float mask.</summary>
+    public void ColorMatrix(float[] matrix, float[] cellMask, float opacity = 1f, TargetChannel channel = TargetChannel.Both)
     {
+        if (matrix.Length == 0 || cellMask.Length == 0)
+            return;
+
         unsafe
         {
             fixed (float* matrixPtr = matrix)
-            fixed (uint* regionPtr = region)
+            fixed (float* cellMaskPtr = cellMask)
             {
                 OpenTuiNative.BufferColorMatrix(Handle,
-                    (nint)matrixPtr, (nint)regionPtr, (nuint)region.Length,
+                    (nint)matrixPtr, (nint)cellMaskPtr, (nuint)cellMask.Length,
                     opacity, (byte)channel);
             }
         }
+    }
+
+    /// <summary>
+    /// Applies a color matrix transformation to whole cells identified by x/y pairs.
+    /// Each pair is converted to the native float cell-mask triplet format with strength 1.
+    /// </summary>
+    public void ColorMatrix(float[] matrix, uint[] region, float opacity = 1f, TargetChannel channel = TargetChannel.Both)
+    {
+        if (matrix.Length == 0 || region.Length == 0)
+            return;
+
+        var cellMask = new float[(region.Length / 2) * 3];
+        int destIndex = 0;
+        for (int i = 0; i + 1 < region.Length; i += 2)
+        {
+            cellMask[destIndex++] = region[i];
+            cellMask[destIndex++] = region[i + 1];
+            cellMask[destIndex++] = 1f;
+        }
+
+        ColorMatrix(matrix, cellMask, opacity, channel);
     }
 
     /// <summary>Applies a uniform color matrix transformation to the entire buffer.</summary>

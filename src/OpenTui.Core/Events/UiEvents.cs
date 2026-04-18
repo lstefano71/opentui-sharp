@@ -24,6 +24,8 @@ public sealed class KeyEvent(ParsedKey key) : UiEvent
     public bool Meta => Key.Meta;
     public bool Shift => Key.Shift;
     public bool Option => Key.Option;
+    public bool Super => Key.Super;
+    public bool Hyper => Key.Hyper;
     public string Sequence => Key.Sequence;
     public KeyEventType EventType => Key.EventType;
 }
