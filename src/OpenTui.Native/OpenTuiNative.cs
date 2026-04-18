@@ -63,11 +63,11 @@ internal static partial class OpenTuiNative
     /// <summary>Creates a new terminal renderer with the specified dimensions.</summary>
     /// <param name="cols">Number of terminal columns.</param>
     /// <param name="rows">Number of terminal rows.</param>
-    /// <param name="useStdout">Whether to write to stdout.</param>
-    /// <param name="useAlt">Whether to use the alternate screen buffer.</param>
+    /// <param name="testing">When true, renderer operates in test mode (no terminal I/O).</param>
+    /// <param name="remote">When true, renderer operates in remote mode.</param>
     /// <returns>Handle to the newly created renderer.</returns>
     [LibraryImport(LibName, EntryPoint = "createRenderer")]
-    internal static partial nint CreateRenderer(uint cols, uint rows, [MarshalAs(UnmanagedType.U1)] bool useStdout, [MarshalAs(UnmanagedType.U1)] bool useAlt);
+    internal static partial nint CreateRenderer(uint cols, uint rows, [MarshalAs(UnmanagedType.U1)] bool testing, [MarshalAs(UnmanagedType.U1)] bool remote);
 
     /// <summary>Sets a terminal environment variable on the renderer (UTF-8 key/value as pointer+length).</summary>
     /// <param name="renderer">Handle to the renderer instance.</param>

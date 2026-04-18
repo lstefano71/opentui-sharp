@@ -53,7 +53,7 @@ public sealed class App : IDisposable
         uint rows = _options.Rows > 0 ? (uint)_options.Rows : (uint)Console.WindowHeight;
         int fps = Math.Clamp(_options.TargetFps, 1, 120);
 
-        using var renderer = new NativeRenderer(cols, rows, useStdout: true, useAlternateScreen: _options.AlternateScreen);
+        using var renderer = new NativeRenderer(cols, rows);
         renderer.SetupTerminal(_options.AlternateScreen);
 
         Console.CancelKeyPress += OnCancelKeyPress;

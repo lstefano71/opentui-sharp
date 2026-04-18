@@ -9,9 +9,13 @@ public sealed class NativeRenderer : IDisposable
     private bool _disposed;
 
     /// <summary>Creates a new terminal renderer with the specified dimensions.</summary>
-    public NativeRenderer(uint cols, uint rows, bool useStdout = true, bool useAlternateScreen = true)
+    /// <param name="cols">Number of terminal columns.</param>
+    /// <param name="rows">Number of terminal rows.</param>
+    /// <param name="testing">When true, renderer operates in test mode (no terminal I/O).</param>
+    /// <param name="remote">When true, renderer operates in remote mode.</param>
+    public NativeRenderer(uint cols, uint rows, bool testing = false, bool remote = false)
     {
-        nint ptr = OpenTuiNative.CreateRenderer(cols, rows, useStdout, useAlternateScreen);
+        nint ptr = OpenTuiNative.CreateRenderer(cols, rows, testing, remote);
         _handle = new RendererHandle();
         _handle.SetHandleValue(ptr);
     }
