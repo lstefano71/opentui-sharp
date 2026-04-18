@@ -1,0 +1,222 @@
+using Facebook.Yoga;
+
+namespace OpenTui.Core;
+
+/// <summary>
+/// Intermediate renderable that owns a TextBuffer + TextBufferView + SyntaxStyle.
+/// Integrates with Yoga layout via a measure function.
+/// Matches TypeScript TextBufferRenderable from text-buffer-renderable.ts.
+/// </summary>
+public class TextBufferRenderable : Renderable
+{
+    private TextBuffer _textBuffer;
+    private TextBufferView _textBufferView;
+    private SyntaxStyle _syntaxStyle;
+
+    private Rgba _fg;
+    private Rgba _bg;
+    private Rgba? _selectionBg;
+    private Rgba? _selectionFg;
+    private bool _selectable;
+    private WrapMode _wrapMode;
+    private bool _truncate;
+
+    protected TextBufferRenderable(IRenderContext ctx, TextBufferOptions options)
+        : base(ctx, options)
+    {
+        _fg = options.Fg ?? Rgba.FromInts(255, 255, 255);
+        _bg = options.Bg ?? Rgba.Transparent;
+        _selectionBg = options.SelectionBg;
+        _selectionFg = options.SelectionFg;
+        _selectable = options.Selectable;
+        _wrapMode = options.WrapMode;
+        _truncate = options.Truncate;
+
+        // Create native handles
+        _textBuffer = TextBuffer.Create(ctx.WidthMethod == WidthMethod.Unicode
+            ? WidthMethod.Unicode : WidthMethod.Wcwidth);
+        _textBufferView = TextBufferView.Create(_textBuffer);
+        _syntaxStyle = SyntaxStyle.Create();
+
+        // Apply initial styling
+        _textBuffer.SetForeground(_fg);
+        _textBuffer.SetBackground(_bg);
+        _textBuffer.SetAttributes(options.Attributes);
+        _textBuffer.SetSyntaxStyle(_syntaxStyle.Handle);
+
+        _textBufferView.SetWrapMode(_wrapMode);
+        if (_truncate) _textBufferView.SetTruncate(true);
+
+        // Install Yoga measure function
+        YGNodeAPI.YGNodeSetMeasureFunc(YogaNode, MeasureFunc);
+    }
+
+    #region Properties
+
+    public TextBuffer TextBuffer => _textBuffer;
+    public TextBufferView TextBufferView => _textBufferView;
+    public SyntaxStyle SyntaxStyle => _syntaxStyle;
+
+    public Rgba Fg
+    {
+        get => _fg;
+        set { _fg = value; _textBuffer.SetForeground(value); RequestRender(); }
+    }
+
+    public Rgba Bg
+    {
+        get => _bg;
+        set { _bg = value; _textBuffer.SetBackground(value); RequestRender(); }
+    }
+
+    public Rgba? SelectionBg
+    {
+        get => _selectionBg;
+        set { _selectionBg = value; RequestRender(); }
+    }
+
+    public Rgba? SelectionFg
+    {
+        get => _selectionFg;
+        set { _selectionFg = value; RequestRender(); }
+    }
+
+    public bool Selectable
+    {
+        get => _selectable;
+        set => _selectable = value;
+    }
+
+    public WrapMode WrapMode
+    {
+        get => _wrapMode;
+        set
+        {
+            if (_wrapMode == value) return;
+            _wrapMode = value;
+            _textBufferView.SetWrapMode(value);
+            // Mark yoga dirty when wrap mode changes
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
+    }
+
+    public bool Truncate
+    {
+        get => _truncate;
+        set { _truncate = value; _textBufferView.SetTruncate(value); RequestRender(); }
+    }
+
+    /// <summary>Plain text content.</summary>
+    public string PlainText => _textBuffer.GetPlainText();
+
+    public uint TextLength => _textBuffer.Length;
+    public uint LineCount => _textBuffer.LineCount;
+
+    #endregion
+
+    #region Scroll
+
+    private int _scrollX;
+    private int _scrollY;
+
+    public int ScrollX
+    {
+        get => _scrollX;
+        set
+        {
+            var max = MaxScrollX;
+            _scrollX = Math.Clamp(value, 0, Math.Max(0, max));
+            UpdateViewportOffset();
+        }
+    }
+
+    public int ScrollY
+    {
+        get => _scrollY;
+        set
+        {
+            var max = MaxScrollY;
+            _scrollY = Math.Clamp(value, 0, Math.Max(0, max));
+            UpdateViewportOffset();
+        }
+    }
+
+    public int MaxScrollX
+    {
+        get
+        {
+            // TODO: compute from line info max column width
+            return 0;
+        }
+    }
+
+    public int MaxScrollY
+    {
+        get
+        {
+            int virtualLines = (int)_textBufferView.GetVirtualLineCount();
+            return Math.Max(0, virtualLines - _heightValue);
+        }
+    }
+
+    private void UpdateViewportOffset()
+    {
+        _textBufferView.SetViewport((uint)Math.Max(0, _scrollX), (uint)Math.Max(0, _scrollY),
+            (uint)_widthValue, (uint)_heightValue);
+        RequestRender();
+    }
+
+    #endregion
+
+    #region Yoga Measure
+
+    private YGSize MeasureFunc(Node node, float availableWidth, MeasureMode widthMode,
+        float availableHeight, MeasureMode heightMode)
+    {
+        // Match TS: if width is undefined/NaN, use 0 (signals max-content to Zig)
+        uint effectiveWidth = widthMode == MeasureMode.Undefined || float.IsNaN(availableWidth)
+            ? 0 : (uint)Math.Floor(availableWidth);
+        uint effectiveHeight = heightMode == MeasureMode.Undefined || float.IsNaN(availableHeight)
+            ? 0 : (uint)Math.Floor(availableHeight);
+
+        if (_textBufferView.MeasureForDimensions(effectiveWidth, effectiveHeight, out var result))
+        {
+            float w = Math.Max(1, result.WidthColsMax);
+            float h = Math.Max(1, result.LineCount);
+
+            // In AtMost mode, clamp to available dimensions
+            if (widthMode == MeasureMode.AtMost && effectiveWidth > 0)
+                w = Math.Min(effectiveWidth, w);
+            if (heightMode == MeasureMode.AtMost && effectiveHeight > 0)
+                h = Math.Min(effectiveHeight, h);
+
+            return new YGSize { Width = w, Height = h };
+        }
+
+        return new YGSize { Width = 1, Height = 1 };
+    }
+
+    #endregion
+
+    #region Rendering
+
+    protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
+    {
+        buffer.DrawTextBufferView(_textBufferView.Handle, (int)_screenX, (int)_screenY);
+    }
+
+    #endregion
+
+    #region Lifecycle
+
+    protected override void DestroySelf()
+    {
+        _textBufferView.Dispose();
+        _textBuffer.Dispose();
+        _syntaxStyle.Dispose();
+        base.DestroySelf();
+    }
+
+    #endregion
+}
