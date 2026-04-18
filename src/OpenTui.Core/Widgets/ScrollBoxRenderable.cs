@@ -174,6 +174,8 @@ public class ScrollBoxRenderable : BoxRenderable
     public float MaxScrollLeft => Math.Max(0, ScrollWidth - _viewport.Width);
     public int ViewportHeight => _viewport.Height;
     public int ViewportWidth => _viewport.Width;
+    public ScrollBarRenderable? VerticalScrollBar => _verticalScrollBar;
+    public ScrollBarRenderable? HorizontalScrollBar => _horizontalScrollBar;
 
     public bool StickyScroll
     {

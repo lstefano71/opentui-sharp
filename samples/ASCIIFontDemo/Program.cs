@@ -1,177 +1,233 @@
 using OpenTui.Core;
 
-using var renderer = CliRenderer.Create(new CliRendererConfig { ExitOnCtrlC = true });
-
-var root = new BoxRenderable(renderer, new BoxOptions
+using var renderer = CliRenderer.Create(new CliRendererConfig
 {
-    Id = "root",
+    ExitOnCtrlC = true,
+    TargetFps = 30,
+    BackgroundColor = Rgba.FromHex("#000028"),
+});
+
+int scrollY = 0;
+const int ContentHeight = 56;
+bool needsRedraw = true;
+
+var overlay = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "fonts-container",
+    ZIndex = 15,
+    Visible = true,
+});
+renderer.Root.Add(overlay);
+
+var buffer = new FrameBufferRenderable(renderer, new FrameBufferOptions
+{
+    Id = "ascii-demo",
+    Position = PositionValue.Absolute,
+    Left = 0,
+    Top = 0,
     Width = DimensionValue.Percent(100),
-    Height = DimensionValue.Percent(100),
-    FlexDirection = FlexDirectionValue.Column,
-    BackgroundColor = Rgba.FromHex("#0a0a23"),
-    ShouldFill = true,
+    Height = ContentHeight,
+    ZIndex = 10,
+    BackgroundColor = Rgba.FromHex("#000028"),
 });
+renderer.Root.Add(buffer);
 
-// Title
-var titleBox = new BoxRenderable(renderer, new BoxOptions
+var scrollInstructions = new TextRenderable(renderer, new TextOptions
 {
-    Id = "title-box",
-    Width = DimensionValue.Percent(100),
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1b1b4b"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#f77f00"),
-    JustifyContent = JustifyValue.Center,
-    AlignItems = AlignValue.Center,
+    Id = "scroll-instructions",
+    Position = PositionValue.Absolute,
+    Left = Math.Max(0, renderer.Width - 32),
+    Top = 1,
+    Fg = Rgba.FromInts(255, 255, 0, 255),
+    Content = "USE J/K OR ARROW KEYS TO SCROLL",
+    ZIndex = 25,
 });
-titleBox.Add(new TextRenderable(renderer, new TextOptions
+overlay.Add(scrollInstructions);
+
+void RedrawBuffer()
 {
-    Id = "title",
-    Content = "ASCII Font Demo",
-    Fg = Rgba.FromHex("#f77f00"),
-    Attributes = TextAttributes.Bold,
-}));
+    var surface = buffer.Buffer;
+    if (surface is null)
+        return;
 
-// Display container
-var displayContainer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "display-container",
-    FlexGrow = 1,
-    Width = DimensionValue.Percent(100),
-    FlexDirection = FlexDirectionValue.Column,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-    Gap = 2,
-    Padding = DimensionValue.Point(1),
-});
+    var bg = Rgba.FromInts(0, 0, 40, 255);
+    surface.Clear(bg);
 
-string[] texts = ["HELLO", "WORLD", "OPENTUI", "42!", "ABCDEF"];
-
-
-int currentText = 0;
-
-var fontColors = new[]
-{
-    Rgba.FromHex("#00f5d4"), Rgba.FromHex("#f15bb5"),
-    Rgba.FromHex("#fee440"), Rgba.FromHex("#00bbf9"),
-    Rgba.FromHex("#9b5de5"),
-};
-
-// Tiny font display
-var tinyBox = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "tiny-box",
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#333366"),
-    BackgroundColor = Rgba.FromHex("#0a0a23"),
-    ShouldFill = true,
-    Padding = DimensionValue.Point(1),
-    FlexDirection = FlexDirectionValue.Column,
-    AlignItems = AlignValue.Center,
-    Title = " tiny font ",
-});
-var tinyAscii = new ASCIIFontRenderable(renderer, new ASCIIFontOptions
-{
-    Id = "tiny-ascii",
-    Text = texts[0],
-    Font = "tiny",
-    Color = fontColors[0],
-    BackgroundColor = Rgba.Transparent,
-});
-tinyBox.Add(tinyAscii);
-
-// Small font display
-var smallBox = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "small-box",
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#333366"),
-    BackgroundColor = Rgba.FromHex("#0a0a23"),
-    ShouldFill = true,
-    Padding = DimensionValue.Point(1),
-    FlexDirection = FlexDirectionValue.Column,
-    AlignItems = AlignValue.Center,
-    Title = " small font ",
-});
-var smallAscii = new ASCIIFontRenderable(renderer, new ASCIIFontOptions
-{
-    Id = "small-ascii",
-    Text = texts[0],
-    Font = "small",
-    Color = fontColors[0],
-    BackgroundColor = Rgba.Transparent,
-});
-smallBox.Add(smallAscii);
-
-// Info label
-var infoText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "info",
-    Fg = Rgba.FromHex("#888888"),
-});
-
-displayContainer.Add(tinyBox);
-displayContainer.Add(smallBox);
-displayContainer.Add(infoText);
-
-// Footer
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
-    Width = DimensionValue.Percent(100),
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1b1b4b"),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Rgba.FromHex("#888888"),
-    JustifyContent = JustifyValue.Center,
-    AlignItems = AlignValue.Center,
-});
-footer.Add(new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    StyledContent = new StyledText(
-        TextChunk.Styled("n", fg: Rgba.FromHex("#f77f00"), attributes: TextAttributes.Bold),
-        TextChunk.Styled(" next text  |  ", fg: Rgba.FromHex("#888888")),
-        TextChunk.Styled("Ctrl+C", fg: Rgba.FromHex("#f77f00"), attributes: TextAttributes.Bold),
-        TextChunk.Styled(" exit", fg: Rgba.FromHex("#888888"))
-    ),
-}));
-
-root.Add(titleBox);
-root.Add(displayContainer);
-root.Add(footer);
-renderer.Root.Add(root);
-
-UpdateDisplay();
-
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
-{
-    if (e.Name == "n")
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
     {
-        currentText = (currentText + 1) % texts.Length;
-        UpdateDisplay();
-        renderer.RequestRender();
+        Text = "FONTS",
+        X = 5,
+        Y = 1,
+        Font = "block",
+        Colors = [Rgba.FromInts(255, 100, 100, 255), Rgba.FromInts(100, 100, 255, 255)],
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "TINY FONT DEMO",
+        X = 5,
+        Y = 8,
+        Font = "tiny",
+        Color = Rgba.White,
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "HELLO WORLD",
+        X = 5,
+        Y = 11,
+        Font = "tiny",
+        Color = Rgba.FromInts(255, 255, 0, 255),
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "1234567890",
+        X = 5,
+        Y = 14,
+        Font = "tiny",
+        Color = Rgba.FromInts(0, 255, 0, 255),
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "!@#$%&*()+-=",
+        X = 5,
+        Y = 17,
+        Font = "tiny",
+        Color = Rgba.FromInts(255, 0, 255, 255),
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "BLOCK FONT DEMO",
+        X = 5,
+        Y = 20,
+        Font = "tiny",
+        Color = Rgba.White,
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "HI",
+        X = 5,
+        Y = 23,
+        Font = "block",
+        Colors = [Rgba.FromInts(255, 255, 0, 255), Rgba.FromInts(0, 255, 255, 255)],
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "2025",
+        X = 25,
+        Y = 23,
+        Font = "block",
+        Colors = [Rgba.FromInts(255, 128, 0, 255), Rgba.FromInts(128, 255, 128, 255)],
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "SHADE FONT DEMO",
+        X = 5,
+        Y = 30,
+        Font = "tiny",
+        Color = Rgba.White,
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "COOL",
+        X = 5,
+        Y = 33,
+        Font = "shade",
+        Colors = [Rgba.FromInts(255, 200, 100, 255), Rgba.FromInts(100, 150, 200, 255)],
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "SLICK FONT DEMO",
+        X = 5,
+        Y = 42,
+        Font = "tiny",
+        Color = Rgba.White,
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "STYLE",
+        X = 5,
+        Y = 45,
+        Font = "slick",
+        Colors = [Rgba.FromInts(100, 255, 100, 255), Rgba.FromInts(255, 100, 255, 255)],
+        BackgroundColor = bg,
+    });
+
+    AsciiFont.RenderToBuffer(surface, new AsciiFontRenderOptions
+    {
+        Text = "ESC TO RETURN",
+        X = 5,
+        Y = 53,
+        Font = "tiny",
+        Color = Rgba.FromInts(128, 128, 128, 255),
+        BackgroundColor = bg,
+    });
+
+    needsRedraw = false;
+}
+
+void UpdateScrollPosition()
+{
+    int maxScroll = Math.Max(0, ContentHeight - renderer.Height);
+    scrollY = Math.Clamp(scrollY, 0, maxScroll);
+    buffer.Y = -scrollY;
+    renderer.RequestRender();
+}
+
+renderer.AddFrameCallback(_ =>
+{
+    if (needsRedraw)
+        RedrawBuffer();
+
+    return Task.CompletedTask;
+});
+
+renderer.KeyInput.On("keypress", (KeyEvent key) =>
+{
+    const int scrollAmount = 3;
+
+    switch (key.Name)
+    {
+        case "up":
+        case "k":
+            scrollY -= scrollAmount;
+            UpdateScrollPosition();
+            break;
+        case "down":
+        case "j":
+            scrollY += scrollAmount;
+            UpdateScrollPosition();
+            break;
     }
 });
 
-void UpdateDisplay()
+renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ =>
 {
-    var color = fontColors[currentText % fontColors.Length];
-    tinyAscii.Text = texts[currentText];
-    tinyAscii.Color = color;
-    smallAscii.Text = texts[currentText];
-    smallAscii.Color = color;
+    scrollInstructions.Left = Math.Max(0, renderer.Width - 32);
+    needsRedraw = true;
+    UpdateScrollPosition();
+});
 
-    var (tw, th) = ASCIIFontRenderable.MeasureText(texts[currentText], "tiny");
-    var (sw, sh) = ASCIIFontRenderable.MeasureText(texts[currentText], "small");
-    infoText.Content = new StyledText(
-        TextChunk.Styled($"Text: \"{texts[currentText]}\"", fg: Rgba.FromHex("#cccccc")),
-        TextChunk.Styled($"  |  tiny: {tw}x{th}  small: {sw}x{sh}", fg: Rgba.FromHex("#666666"))
-    );
-}
-
+UpdateScrollPosition();
+renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);
