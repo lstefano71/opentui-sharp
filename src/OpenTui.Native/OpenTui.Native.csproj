@@ -22,6 +22,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="OpenTui" />
+    <InternalsVisibleTo Include="OpenTui.Core" />
   </ItemGroup>
 
   <ItemGroup>
