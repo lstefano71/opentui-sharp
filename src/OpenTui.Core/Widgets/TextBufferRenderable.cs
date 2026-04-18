@@ -47,6 +47,12 @@ public class TextBufferRenderable : Renderable
         _textBufferView.SetWrapMode(_wrapMode);
         if (_truncate) _textBufferView.SetTruncate(true);
 
+        // Text renderables clamp their runtime height to at least one row.
+        // Mirror that in Yoga so flex shrink cannot collapse them to 0 and
+        // cause later siblings to paint over the same row.
+        if (options.MinHeight is null)
+            MinHeight = DimensionValue.Point(1);
+
         // Install Yoga measure function
         YGNodeAPI.YGNodeSetMeasureFunc(YogaNode, MeasureFunc);
     }

@@ -207,4 +207,29 @@ public class ConsoleLayoutBugTests : IDisposable
         Assert.Equal(0, logText.MaxScrollY);
         Assert.Equal(0, logText.ScrollY);
     }
+
+    [Fact]
+    public void TextRenderable_FlexShrink_DoesNotCollapseSiblingRows()
+    {
+        var panel = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "panel",
+            Height = DimensionValue.Point(2),
+            FlexDirection = FlexDirectionValue.Column,
+        });
+
+        var line1 = new TextRenderable(_renderer, new TextOptions { Id = "line-1", Content = "A" });
+        var line2 = new TextRenderable(_renderer, new TextOptions { Id = "line-2", Content = "B" });
+        var line3 = new TextRenderable(_renderer, new TextOptions { Id = "line-3", Content = "C" });
+
+        panel.Add(line1);
+        panel.Add(line2);
+        panel.Add(line3);
+        _renderer.Root.Add(panel);
+
+        RenderFrame();
+
+        Assert.True(line2.ScreenY > line1.ScreenY, $"Expected line2 below line1, got {line1.ScreenY} and {line2.ScreenY}");
+        Assert.True(line3.ScreenY > line2.ScreenY, $"Expected line3 below line2, got {line2.ScreenY} and {line3.ScreenY}");
+    }
 }
