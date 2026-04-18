@@ -80,6 +80,11 @@ var input = new InputRenderable(renderer, new InputOptions
     Value = "",
     Placeholder = "Type to filter...",
     PlaceholderColor = Rgba.FromHex("#666666"),
+    BackgroundColor = Rgba.FromHex("#1e293b"),
+    FocusedBackgroundColor = Rgba.FromHex("#334155"),
+    TextColor = Rgba.FromHex("#f1f5f9"),
+    FocusedTextColor = Rgba.White,
+    CursorColor = Rgba.FromHex("#f1f5f9"),
     Width = DimensionValue.Auto,
     Height = DimensionValue.Point(1),
     MaxLength = 40,
@@ -92,8 +97,15 @@ var select = new SelectRenderable(renderer, new SelectOptions
     Id = "fruit-select",
     Options = allItems.Select(name => new SelectOption { Name = name, Value = name }).ToArray(),
     SelectedIndex = 0,
+    ShowDescription = false,
     ShowScrollIndicator = true,
     WrapSelection = true,
+    BackgroundColor = Rgba.FromHex("#1e293b"),
+    FocusedBackgroundColor = Rgba.FromHex("#2d3748"),
+    TextColor = Rgba.FromHex("#e2e8f0"),
+    FocusedTextColor = Rgba.FromHex("#f7fafc"),
+    SelectedBackgroundColor = Rgba.FromHex("#334455"),
+    SelectedTextColor = Rgba.FromHex("#facc15"),
     FlexGrow = 1,
     Buffered = true,
     Border = true,
@@ -168,7 +180,7 @@ var footer = new BoxRenderable(renderer, new BoxOptions
 var footerText = new TextRenderable(renderer, new TextOptions
 {
     Id = "footer-text",
-    Content = "Tab: switch focus | ↑↓: navigate list | Enter: select | Ctrl+C: exit",
+    Content = "Type to filter | ↑↓/j/k: navigate | Enter: select | Tab: switch focus | Ctrl+C: exit",
     Fg = Rgba.FromHex("#64748b"),
 });
 footer.Add(footerText);
@@ -202,16 +214,18 @@ void UpdateStatus()
         TextChunk.Styled("Matches: ", fg: Rgba.FromHex("#64748b")),
         TextChunk.Styled($"{select.Options.Length}/{allItems.Length}", fg: Rgba.FromHex("#e2e8f0")));
 
-    if (lastSelected is not null)
-        selectedText.Content = new StyledText(
+    selectedText.Content = lastSelected is not null
+        ? new StyledText(
             TextChunk.Styled("Selected: ", fg: Rgba.FromHex("#64748b")),
-            TextChunk.Styled(lastSelected, fg: Rgba.FromHex("#22c55e"), attributes: TextAttributes.Bold));
+            TextChunk.Styled(lastSelected, fg: Rgba.FromHex("#22c55e"), attributes: TextAttributes.Bold))
+        : "";
 
     var current = select.GetSelectedOption();
-    if (current is not null)
-        highlightText.Content = new StyledText(
+    highlightText.Content = current is not null
+        ? new StyledText(
             TextChunk.Styled("Highlighted: ", fg: Rgba.FromHex("#64748b")),
-            TextChunk.Styled(current.Name, fg: Rgba.FromHex("#fbbf24")));
+            TextChunk.Styled(current.Name, fg: Rgba.FromHex("#fbbf24")))
+        : "";
 
     renderer.RequestRender();
 }
@@ -251,6 +265,28 @@ select.On<(int Index, SelectOption? Option)>(SelectRenderable.Events.ItemSelecte
 
 renderer.KeyInput.On("keypress", (KeyEvent e) =>
 {
+    if (inputFocused)
+    {
+        switch (e.Name)
+        {
+            case "up" or "k":
+                select.MoveUp(e.Shift ? 5 : 1);
+                e.PreventDefault();
+                e.StopPropagation();
+                return;
+            case "down" or "j":
+                select.MoveDown(e.Shift ? 5 : 1);
+                e.PreventDefault();
+                e.StopPropagation();
+                return;
+            case "return" or "linefeed":
+                select.SelectCurrent();
+                e.PreventDefault();
+                e.StopPropagation();
+                return;
+        }
+    }
+
     if (e.Name == "tab")
     {
         SetFocus(!inputFocused);

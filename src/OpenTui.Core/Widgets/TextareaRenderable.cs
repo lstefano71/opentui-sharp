@@ -233,7 +233,7 @@ public class TextareaRenderable : EditBufferRenderable
         };
     }
 
-    public bool Submit()
+    public virtual bool Submit()
     {
         _submitListener?.Invoke();
         Emit(Events.Submit);

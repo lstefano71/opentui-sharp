@@ -3,6 +3,8 @@ using OpenTui.Native;
 
 namespace OpenTui.Core;
 
+public readonly record struct SyntaxStyleEntry(Rgba? Fg, Rgba? Bg, TextAttributes Attributes);
+
 /// <summary>
 /// Managed wrapper around the native syntax style registry.
 /// Allows registering named styles (fg/bg/attrs) and resolving them by name.
@@ -11,6 +13,7 @@ public sealed class SyntaxStyle : IDisposable
 {
     private nint _handle;
     private bool _disposed;
+    private readonly Dictionary<string, SyntaxStyleEntry> _stylesByName = new(StringComparer.Ordinal);
 
     private SyntaxStyle(nint handle) => _handle = handle;
 
@@ -40,6 +43,7 @@ public sealed class SyntaxStyle : IDisposable
         utf8.WithPtr((namePtr, nameLen) =>
             RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
                 result = OpenTuiNative.SyntaxStyleRegister(Handle, namePtr, nameLen, fgPtr, bgPtr, (byte)attrs)));
+        _stylesByName[name] = new SyntaxStyleEntry(fg, bg, attrs);
         return result;
     }
 
@@ -56,12 +60,19 @@ public sealed class SyntaxStyle : IDisposable
     /// <summary>Gets the total number of registered styles.</summary>
     public nuint StyleCount => OpenTuiNative.SyntaxStyleGetStyleCount(Handle);
 
+    public bool TryGetStyle(string name, out SyntaxStyleEntry style) =>
+        _stylesByName.TryGetValue(name, out style);
+
+    public SyntaxStyleEntry? GetStyle(string name) =>
+        _stylesByName.TryGetValue(name, out var style) ? style : null;
+
     /// <inheritdoc />
     public void Dispose()
     {
         if (!_disposed)
         {
             _disposed = true;
+            _stylesByName.Clear();
             OpenTuiNative.SyntaxStyleDestroy(_handle);
             _handle = nint.Zero;
         }

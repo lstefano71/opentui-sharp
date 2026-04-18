@@ -156,6 +156,17 @@ public class ScrollBoxRenderable : BoxRenderable
         set => _stickyScroll = value;
     }
 
+    public string? StickyStart
+    {
+        get => _stickyStart;
+        set
+        {
+            _stickyStart = value;
+            if (_stickyScroll && !string.IsNullOrEmpty(value))
+                ApplyStickyStart(value);
+        }
+    }
+
     public bool ViewportCulling
     {
         get => _viewportCulling;

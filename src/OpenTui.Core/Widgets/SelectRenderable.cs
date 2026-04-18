@@ -161,7 +161,14 @@ public class SelectRenderable : BoxRenderable
 
     private int LinesPerItem => (_showDescription ? 2 : 1) + _itemSpacing;
 
-    private int MaxVisibleItems => _heightValue > 0 ? _heightValue / LinesPerItem : 0;
+    private int MaxVisibleItems
+    {
+        get
+        {
+            var (_, _, _, height) = GetContentBounds();
+            return height > 0 ? Math.Max(1, height / LinesPerItem) : 0;
+        }
+    }
 
     private void UpdateScrollOffset()
     {
@@ -209,15 +216,20 @@ public class SelectRenderable : BoxRenderable
         // Draw background
         base.RenderSelf(buffer, deltaTime);
 
-        if (_options.Length == 0 || _widthValue == 0 || _heightValue == 0) return;
+        var (startX, startY, contentWidth, contentHeight) = GetContentBounds();
+        if (_options.Length == 0 || contentWidth <= 0 || contentHeight <= 0) return;
 
         var bgColor = Focused ? _focusedBackgroundColor : BackgroundColor;
         var textColor = Focused ? _focusedTextColor : _textColor;
 
+        if (bgColor.A > 0)
+        {
+            buffer.FillRect((uint)startX, (uint)startY,
+                (uint)contentWidth, (uint)contentHeight, bgColor);
+        }
+
         int linesPerItem = LinesPerItem;
         int maxVisible = MaxVisibleItems;
-        int startX = (int)_screenX;
-        int startY = (int)_screenY;
 
         int endIdx = Math.Min(_scrollOffset + maxVisible, _options.Length);
         for (int i = _scrollOffset; i < endIdx; i++)
@@ -226,12 +238,14 @@ public class SelectRenderable : BoxRenderable
             bool isSelected = i == _selectedIndex;
             int relativeIdx = i - _scrollOffset;
             int y = startY + relativeIdx * linesPerItem;
+            if (y >= startY + contentHeight) break;
 
             // Selection highlight
             if (isSelected)
             {
+                int selectedHeight = Math.Min(linesPerItem - _itemSpacing, startY + contentHeight - y);
                 buffer.FillRect((uint)startX, (uint)y,
-                    (uint)_widthValue, (uint)(linesPerItem - _itemSpacing),
+                    (uint)contentWidth, (uint)selectedHeight,
                     _selectedBackgroundColor);
             }
 
@@ -241,7 +255,7 @@ public class SelectRenderable : BoxRenderable
             buffer.DrawText(prefix + option.Name, (uint)startX, (uint)y, nameColor);
 
             // Description
-            if (_showDescription && option.Description is { } desc)
+            if (_showDescription && option.Description is { } desc && y + 1 < startY + contentHeight)
             {
                 var descColor = isSelected ? _selectedDescriptionColor : _descriptionColor;
                 buffer.DrawText("  " + desc, (uint)startX, (uint)(y + 1), descColor);
@@ -249,14 +263,31 @@ public class SelectRenderable : BoxRenderable
         }
 
         // Scroll indicator
-        if (_showScrollIndicator && _options.Length > maxVisible && _widthValue > 0)
+        if (_showScrollIndicator && _options.Length > maxVisible && contentWidth > 0)
         {
-            int indicatorX = startX + _widthValue - 1;
+            int indicatorX = startX + contentWidth - 1;
             float ratio = maxVisible > 0 ? (float)_scrollOffset / Math.Max(1, _options.Length - maxVisible) : 0;
-            int indicatorY = startY + (int)(ratio * (_heightValue - 1));
+            int indicatorY = startY + (int)(ratio * (contentHeight - 1));
             buffer.DrawText("█", (uint)indicatorX, (uint)indicatorY, textColor);
         }
     }
 
     #endregion
+
+    private (int X, int Y, int Width, int Height) GetContentBounds()
+    {
+        int baseX = _buffered ? 0 : (int)_screenX;
+        int baseY = _buffered ? 0 : (int)_screenY;
+
+        int topInset = (ActiveBorderSides & BorderSides.Top) != 0 ? 1 : 0;
+        int bottomInset = (ActiveBorderSides & BorderSides.Bottom) != 0 ? 1 : 0;
+        int leftInset = (ActiveBorderSides & BorderSides.Left) != 0 ? 1 : 0;
+        int rightInset = (ActiveBorderSides & BorderSides.Right) != 0 ? 1 : 0;
+
+        return (
+            baseX + leftInset,
+            baseY + topInset,
+            Math.Max(0, _widthValue - leftInset - rightInset),
+            Math.Max(0, _heightValue - topInset - bottomInset));
+    }
 }

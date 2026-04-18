@@ -55,7 +55,22 @@ public class TextTableRenderable : Renderable
     private CellState[,]? _cells;
     private int _rowCount;
     private int _colCount;
-    private int[] _columnWidths = [];
+
+    private readonly record struct BorderLayout(
+        bool Left,
+        bool Right,
+        bool Top,
+        bool Bottom,
+        bool InnerVertical,
+        bool InnerHorizontal);
+
+    private sealed record TableLayout(
+        int[] ColumnWidths,
+        int[] RowHeights,
+        int[] ColumnOffsets,
+        int[] RowOffsets,
+        int TableWidth,
+        int TableHeight);
 
     private sealed class CellState : IDisposable
     {
@@ -116,43 +131,79 @@ public class TextTableRenderable : Renderable
     public byte WrapMode
     {
         get => _wrapMode;
-        set { _wrapMode = value; UpdateCellWrapModes(); RequestRender(); }
+        set
+        {
+            _wrapMode = value;
+            UpdateCellWrapModes();
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
     }
 
     public string ColumnWidthMode
     {
         get => _columnWidthMode;
-        set { _columnWidthMode = value; RequestRender(); }
+        set
+        {
+            _columnWidthMode = value;
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
     }
 
     public string ColumnFitter
     {
         get => _columnFitter;
-        set { _columnFitter = value; RequestRender(); }
+        set
+        {
+            _columnFitter = value;
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
     }
 
     public int CellPadding
     {
         get => _cellPadding;
-        set { _cellPadding = value; RequestRender(); }
+        set
+        {
+            _cellPadding = value;
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
     }
 
     public bool ShowBorders
     {
         get => _showBorders;
-        set { _showBorders = value; RequestRender(); }
+        set
+        {
+            _showBorders = value;
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
     }
 
     public bool Border
     {
         get => _border;
-        set { _border = value; RequestRender(); }
+        set
+        {
+            _border = value;
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
     }
 
     public bool OuterBorder
     {
         get => _outerBorder;
-        set { _outerBorder = value; RequestRender(); }
+        set
+        {
+            _outerBorder = value;
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            RequestRender();
+        }
     }
 
     public BorderStyle TableBorderStyle
@@ -234,101 +285,317 @@ public class TextTableRenderable : Renderable
 
     #region Column Width Calculation
 
-    private void CalculateColumnWidths(int availableWidth)
+    private int GetHorizontalCellPadding() => _cellPadding * 2;
+
+    private int GetVerticalCellPadding() => _cellPadding * 2;
+
+    private BorderLayout ResolveBorderLayout()
+    {
+        bool drawOuter = _showBorders && _outerBorder;
+        bool drawInner = _showBorders && _border;
+
+        return new BorderLayout(
+            Left: drawOuter,
+            Right: drawOuter,
+            Top: drawOuter,
+            Bottom: drawOuter,
+            InnerVertical: drawInner && _colCount > 1,
+            InnerHorizontal: drawInner && _rowCount > 1);
+    }
+
+    private static int ComputeBorderCount(bool start, bool end, bool inner, int partCount)
+    {
+        return (start ? 1 : 0) + (end ? 1 : 0) + (inner ? Math.Max(0, partCount - 1) : 0);
+    }
+
+    private int GetVerticalBorderCount(BorderLayout borderLayout) =>
+        ComputeBorderCount(borderLayout.Left, borderLayout.Right, borderLayout.InnerVertical, _colCount);
+
+    private int GetHorizontalBorderCount(BorderLayout borderLayout) =>
+        ComputeBorderCount(borderLayout.Top, borderLayout.Bottom, borderLayout.InnerHorizontal, _rowCount);
+
+    private TableLayout CreateEmptyLayout() => new([], [], [], [], 0, 0);
+
+    private TableLayout ComputeLayout(int? maxTableWidth = null)
     {
         if (_cells == null || _colCount == 0)
         {
-            _columnWidths = [];
-            return;
+            return CreateEmptyLayout();
         }
 
-        int borderOverhead = _showBorders && _border ? (_colCount - 1) : 0;
-        if (_showBorders && _outerBorder) borderOverhead += 2;
-        int paddingOverhead = _cellPadding * 2 * _colCount;
-        int contentWidth = Math.Max(0, availableWidth - borderOverhead - paddingOverhead);
+        var borderLayout = ResolveBorderLayout();
+        var columnWidths = ComputeColumnWidths(maxTableWidth, borderLayout);
+        var rowHeights = ComputeRowHeights(columnWidths);
+        var columnOffsets = ComputeOffsets(columnWidths, borderLayout.Left, borderLayout.Right, borderLayout.InnerVertical);
+        var rowOffsets = ComputeOffsets(rowHeights, borderLayout.Top, borderLayout.Bottom, borderLayout.InnerHorizontal);
 
-        if (_columnWidthMode == "content")
-        {
-            // Measure each cell's natural width
-            var naturalWidths = new int[_colCount];
-            for (int c = 0; c < _colCount; c++)
-            {
-                int maxW = 1;
-                for (int r = 0; r < _rowCount; r++)
-                {
-                    if (_cells[r, c].TextBufferView.MeasureForDimensions(0, 0, out var measure))
-                        maxW = Math.Max(maxW, (int)measure.WidthColsMax);
-                }
-                naturalWidths[c] = maxW;
-            }
-
-            int totalNatural = 0;
-            foreach (var w in naturalWidths) totalNatural += w;
-
-            if (totalNatural <= contentWidth)
-            {
-                _columnWidths = naturalWidths;
-            }
-            else
-            {
-                // Proportional shrink
-                _columnWidths = new int[_colCount];
-                for (int c = 0; c < _colCount; c++)
-                    _columnWidths[c] = Math.Max(1, (int)((float)naturalWidths[c] / totalNatural * contentWidth));
-            }
-        }
-        else // "full" mode
-        {
-            _columnWidths = new int[_colCount];
-            if (_columnFitter == "balanced")
-            {
-                int baseWidth = contentWidth / _colCount;
-                int remainder = contentWidth % _colCount;
-                for (int c = 0; c < _colCount; c++)
-                    _columnWidths[c] = baseWidth + (c < remainder ? 1 : 0);
-            }
-            else // "proportional"
-            {
-                // Measure natural widths and distribute proportionally
-                var weights = new float[_colCount];
-                for (int c = 0; c < _colCount; c++)
-                {
-                    int maxW = 1;
-                    for (int r = 0; r < _rowCount; r++)
-                    {
-                        if (_cells[r, c].TextBufferView.MeasureForDimensions(0, 0, out var measure))
-                            maxW = Math.Max(maxW, (int)measure.WidthColsMax);
-                    }
-                    weights[c] = Math.Max(1, maxW);
-                }
-
-                float totalWeight = 0;
-                foreach (var w in weights) totalWeight += w;
-
-                for (int c = 0; c < _colCount; c++)
-                    _columnWidths[c] = Math.Max(1, (int)(weights[c] / totalWeight * contentWidth));
-            }
-        }
+        return new TableLayout(
+            columnWidths,
+            rowHeights,
+            columnOffsets,
+            rowOffsets,
+            (columnOffsets[^1]) + 1,
+            (rowOffsets[^1]) + 1);
     }
 
-    private int[] CalculateRowHeights()
+    private int[] ComputeColumnWidths(int? maxTableWidth, BorderLayout borderLayout)
+    {
+        if (_cells == null)
+            return [];
+
+        int horizontalPadding = GetHorizontalCellPadding();
+        var intrinsicWidths = Enumerable.Repeat(1 + horizontalPadding, _colCount).ToArray();
+
+        for (int c = 0; c < _colCount; c++)
+        {
+            for (int r = 0; r < _rowCount; r++)
+            {
+                int measuredWidth = 1;
+                if (_cells[r, c].TextBufferView.MeasureForDimensions(0, 0, out var measure))
+                    measuredWidth = Math.Max(1, (int)measure.WidthColsMax);
+                intrinsicWidths[c] = Math.Max(intrinsicWidths[c], measuredWidth + horizontalPadding);
+            }
+        }
+
+        if (maxTableWidth is null || maxTableWidth <= 0)
+            return intrinsicWidths;
+
+        int maxContentWidth = Math.Max(1, maxTableWidth.Value - GetVerticalBorderCount(borderLayout));
+        int currentWidth = intrinsicWidths.Sum();
+
+        if (currentWidth == maxContentWidth)
+            return intrinsicWidths;
+
+        if (currentWidth < maxContentWidth)
+            return _columnWidthMode == "full"
+                ? ExpandColumnWidths(intrinsicWidths, maxContentWidth)
+                : intrinsicWidths;
+
+        return _wrapMode == 0
+            ? intrinsicWidths
+            : FitColumnWidths(intrinsicWidths, maxContentWidth);
+    }
+
+    private static int[] ExpandColumnWidths(int[] widths, int targetContentWidth)
+    {
+        var expanded = widths.Select(width => Math.Max(1, width)).ToArray();
+        int totalBaseWidth = expanded.Sum();
+        if (expanded.Length == 0 || totalBaseWidth >= targetContentWidth)
+            return expanded;
+
+        int extraWidth = targetContentWidth - totalBaseWidth;
+        int sharedWidth = extraWidth / expanded.Length;
+        int remainder = extraWidth % expanded.Length;
+
+        for (int idx = 0; idx < expanded.Length; idx++)
+        {
+            expanded[idx] += sharedWidth;
+            if (idx < remainder)
+                expanded[idx] += 1;
+        }
+
+        return expanded;
+    }
+
+    private int[] FitColumnWidths(int[] widths, int targetContentWidth) =>
+        _columnFitter == "balanced"
+            ? FitColumnWidthsBalanced(widths, targetContentWidth)
+            : FitColumnWidthsProportional(widths, targetContentWidth);
+
+    private int[] FitColumnWidthsProportional(int[] widths, int targetContentWidth)
+    {
+        int minWidth = 1 + GetHorizontalCellPadding();
+        var hardMinWidths = Enumerable.Repeat(minWidth, widths.Length).ToArray();
+        var baseWidths = widths.Select(width => Math.Max(1, width)).ToArray();
+        var preferredMinWidths = baseWidths.Select(width => Math.Min(width, minWidth + 1)).ToArray();
+        int preferredMinTotal = preferredMinWidths.Sum();
+        var floorWidths = preferredMinTotal <= targetContentWidth ? preferredMinWidths : hardMinWidths;
+        int floorTotal = floorWidths.Sum();
+        int clampedTarget = Math.Max(floorTotal, targetContentWidth);
+        int totalBaseWidth = baseWidths.Sum();
+
+        if (totalBaseWidth <= clampedTarget)
+            return baseWidths;
+
+        var shrinkable = baseWidths.Select((width, idx) => width - floorWidths[idx]).ToArray();
+        int totalShrinkable = shrinkable.Sum();
+        if (totalShrinkable <= 0)
+            return [.. floorWidths];
+
+        int targetShrink = totalBaseWidth - clampedTarget;
+        var integerShrink = new int[baseWidths.Length];
+        var fractions = new double[baseWidths.Length];
+        int usedShrink = 0;
+
+        for (int idx = 0; idx < baseWidths.Length; idx++)
+        {
+            if (shrinkable[idx] <= 0)
+                continue;
+
+            double exact = (double)shrinkable[idx] / totalShrinkable * targetShrink;
+            int whole = Math.Min(shrinkable[idx], (int)Math.Floor(exact));
+            integerShrink[idx] = whole;
+            fractions[idx] = exact - whole;
+            usedShrink += whole;
+        }
+
+        for (int remainingShrink = targetShrink - usedShrink; remainingShrink > 0; remainingShrink--)
+        {
+            int bestIdx = -1;
+            double bestFraction = -1;
+            for (int idx = 0; idx < baseWidths.Length; idx++)
+            {
+                if (shrinkable[idx] - integerShrink[idx] <= 0)
+                    continue;
+
+                if (fractions[idx] > bestFraction)
+                {
+                    bestFraction = fractions[idx];
+                    bestIdx = idx;
+                }
+            }
+
+            if (bestIdx == -1)
+                break;
+
+            integerShrink[bestIdx] += 1;
+            fractions[bestIdx] = 0;
+        }
+
+        return baseWidths
+            .Select((width, idx) => Math.Max(floorWidths[idx], width - integerShrink[idx]))
+            .ToArray();
+    }
+
+    private int[] FitColumnWidthsBalanced(int[] widths, int targetContentWidth)
+    {
+        int minWidth = 1 + GetHorizontalCellPadding();
+        var hardMinWidths = Enumerable.Repeat(minWidth, widths.Length).ToArray();
+        var baseWidths = widths.Select(width => Math.Max(1, width)).ToArray();
+        int totalBaseWidth = baseWidths.Sum();
+        int columnCount = baseWidths.Length;
+
+        if (columnCount == 0 || totalBaseWidth <= targetContentWidth)
+            return baseWidths;
+
+        int evenShare = Math.Max(minWidth, targetContentWidth / columnCount);
+        var preferredMinWidths = baseWidths.Select(width => Math.Min(width, evenShare)).ToArray();
+        int preferredMinTotal = preferredMinWidths.Sum();
+        var floorWidths = preferredMinTotal <= targetContentWidth ? preferredMinWidths : hardMinWidths;
+        int floorTotal = floorWidths.Sum();
+        int clampedTarget = Math.Max(floorTotal, targetContentWidth);
+
+        if (totalBaseWidth <= clampedTarget)
+            return baseWidths;
+
+        var shrinkable = baseWidths.Select((width, idx) => width - floorWidths[idx]).ToArray();
+        int totalShrinkable = shrinkable.Sum();
+        if (totalShrinkable <= 0)
+            return [.. floorWidths];
+
+        int targetShrink = totalBaseWidth - clampedTarget;
+        var shrink = AllocateShrinkByWeight(shrinkable, targetShrink, useSquareRoot: true);
+
+        return baseWidths
+            .Select((width, idx) => Math.Max(floorWidths[idx], width - shrink[idx]))
+            .ToArray();
+    }
+
+    private static int[] AllocateShrinkByWeight(int[] shrinkable, int targetShrink, bool useSquareRoot)
+    {
+        var shrink = new int[shrinkable.Length];
+        if (targetShrink <= 0)
+            return shrink;
+
+        var weights = shrinkable
+            .Select(value => value <= 0 ? 0d : useSquareRoot ? Math.Sqrt(value) : value)
+            .ToArray();
+
+        double totalWeight = weights.Sum();
+        if (totalWeight <= 0)
+            return shrink;
+
+        var fractions = new double[shrinkable.Length];
+        int usedShrink = 0;
+
+        for (int idx = 0; idx < shrinkable.Length; idx++)
+        {
+            if (shrinkable[idx] <= 0 || weights[idx] <= 0)
+                continue;
+
+            double exact = weights[idx] / totalWeight * targetShrink;
+            int whole = Math.Min(shrinkable[idx], (int)Math.Floor(exact));
+            shrink[idx] = whole;
+            fractions[idx] = exact - whole;
+            usedShrink += whole;
+        }
+
+        for (int remainingShrink = targetShrink - usedShrink; remainingShrink > 0; remainingShrink--)
+        {
+            int bestIdx = -1;
+            double bestFraction = -1;
+
+            for (int idx = 0; idx < shrinkable.Length; idx++)
+            {
+                if (shrinkable[idx] - shrink[idx] <= 0)
+                    continue;
+
+                if (bestIdx == -1 ||
+                    fractions[idx] > bestFraction ||
+                    (fractions[idx] == bestFraction && shrinkable[idx] > shrinkable[bestIdx]))
+                {
+                    bestIdx = idx;
+                    bestFraction = fractions[idx];
+                }
+            }
+
+            if (bestIdx == -1)
+                break;
+
+            shrink[bestIdx] += 1;
+            fractions[bestIdx] = 0;
+        }
+
+        return shrink;
+    }
+
+    private int[] ComputeRowHeights(int[] columnWidths)
     {
         var heights = new int[_rowCount];
-        if (_cells == null) return heights;
+        if (_cells == null)
+            return heights;
+
+        int horizontalPadding = GetHorizontalCellPadding();
+        int verticalPadding = GetVerticalCellPadding();
+        Array.Fill(heights, 1 + verticalPadding);
 
         for (int r = 0; r < _rowCount; r++)
         {
-            int maxH = 1;
             for (int c = 0; c < _colCount; c++)
             {
-                uint colW = (uint)(_columnWidths.Length > c ? _columnWidths[c] : 1);
-                if (_cells[r, c].TextBufferView.MeasureForDimensions(colW, 0, out var measure))
-                    maxH = Math.Max(maxH, Math.Max(1, (int)measure.LineCount));
+                uint contentWidth = (uint)Math.Max(1, (columnWidths.Length > c ? columnWidths[c] : 1) - horizontalPadding);
+                if (_cells[r, c].TextBufferView.MeasureForDimensions(contentWidth, 0, out var measure))
+                    heights[r] = Math.Max(heights[r], Math.Max(1, (int)measure.LineCount) + verticalPadding);
             }
-            heights[r] = maxH;
         }
 
         return heights;
+    }
+
+    private static int[] ComputeOffsets(int[] parts, bool startBoundary, bool endBoundary, bool includeInnerBoundaries)
+    {
+        var offsets = new int[parts.Length + 1];
+        int cursor = startBoundary ? 0 : -1;
+        offsets[0] = cursor;
+
+        for (int idx = 0; idx < parts.Length; idx++)
+        {
+            bool hasBoundaryAfter = idx < parts.Length - 1 ? includeInnerBoundaries : endBoundary;
+            cursor += parts[idx] + (hasBoundaryAfter ? 1 : 0);
+            offsets[idx + 1] = cursor;
+        }
+
+        return offsets;
     }
 
     #endregion
@@ -341,26 +608,17 @@ public class TextTableRenderable : Renderable
         if (_cells == null || _rowCount == 0)
             return new YGSize { Width = 0, Height = 0 };
 
-        int width = widthMode == MeasureMode.Undefined || float.IsNaN(availableWidth)
-            ? 80 : (int)availableWidth;
+        bool hasWidthConstraint = widthMode != MeasureMode.Undefined && !float.IsNaN(availableWidth);
+        int? widthConstraint = hasWidthConstraint ? Math.Max(1, (int)availableWidth) : null;
+        var layout = ComputeLayout(widthConstraint);
 
-        CalculateColumnWidths(width);
-        var rowHeights = CalculateRowHeights();
+        int measuredWidth = layout.TableWidth > 0 ? layout.TableWidth : 1;
+        int measuredHeight = layout.TableHeight > 0 ? layout.TableHeight : 1;
 
-        int totalHeight = 0;
-        foreach (var h in rowHeights) totalHeight += h;
+        if (widthMode == MeasureMode.AtMost && widthConstraint is not null && _positionType != PositionValue.Absolute)
+            measuredWidth = Math.Min(widthConstraint.Value, measuredWidth);
 
-        // Add border heights
-        if (_showBorders && _border)
-            totalHeight += _rowCount - 1; // inner horizontal borders
-        if (_showBorders && _outerBorder)
-            totalHeight += 2; // top and bottom borders
-
-        float w = width;
-        if (widthMode == MeasureMode.AtMost)
-            w = Math.Min(w, availableWidth);
-
-        return new YGSize { Width = w, Height = totalHeight };
+        return new YGSize { Width = measuredWidth, Height = measuredHeight };
     }
 
     #endregion
@@ -371,141 +629,78 @@ public class TextTableRenderable : Renderable
     {
         if (_cells == null || _widthValue == 0 || _heightValue == 0) return;
 
+        int baseX = _buffered ? 0 : (int)_screenX;
+        int baseY = _buffered ? 0 : (int)_screenY;
+
         // Fill background
-        buffer.FillRect((uint)_screenX, (uint)_screenY,
+        buffer.FillRect((uint)baseX, (uint)baseY,
             (uint)_widthValue, (uint)_heightValue, _backgroundColor);
 
-        CalculateColumnWidths(_widthValue);
-        var rowHeights = CalculateRowHeights();
+        var layout = ComputeLayout(_widthValue);
+        ApplyLayoutToViews(layout);
 
         // Draw borders
-        if (_showBorders)
-            DrawBorders(buffer, rowHeights);
+        DrawBorders(buffer, layout, baseX, baseY);
 
         // Draw cells
-        DrawCells(buffer, rowHeights);
+        DrawCells(buffer, layout, baseX, baseY);
     }
 
-    private void DrawBorders(OptimizedBuffer buffer, int[] rowHeights)
+    private void ApplyLayoutToViews(TableLayout layout)
     {
-        var borderChars = BorderCharacters.ForStyle(_borderStyle);
-        int startX = (int)_screenX;
-        int startY = (int)_screenY;
+        if (_cells == null)
+            return;
 
-        // For now, draw simple border lines. Full grid drawing would use
-        // buffer.DrawGrid() when the grid definition format is known.
-
-        if (_outerBorder)
-        {
-            // Top border
-            DrawHorizontalBorder(buffer, startX, startY, _widthValue,
-                borderChars.TopLeft, borderChars.TopRight, borderChars.Horizontal,
-                _border ? borderChars.TopT : borderChars.Horizontal);
-
-            // Bottom border
-            int bottomY = startY + _heightValue - 1;
-            DrawHorizontalBorder(buffer, startX, bottomY, _widthValue,
-                borderChars.BottomLeft, borderChars.BottomRight, borderChars.Horizontal,
-                _border ? borderChars.BottomT : borderChars.Horizontal);
-
-            // Left border
-            int y = startY + 1;
-            for (int r = 0; r < _rowCount; r++)
-            {
-                for (int h = 0; h < rowHeights[r]; h++)
-                {
-                    buffer.SetCell((uint)startX, (uint)y, borderChars.Vertical,
-                        _borderColor, _borderBgColor);
-                    y++;
-                }
-                if (_border && r < _rowCount - 1) y++; // skip inner border row
-            }
-
-            // Right border
-            int rightX = startX + _widthValue - 1;
-            y = startY + 1;
-            for (int r = 0; r < _rowCount; r++)
-            {
-                for (int h = 0; h < rowHeights[r]; h++)
-                {
-                    buffer.SetCell((uint)rightX, (uint)y, borderChars.Vertical,
-                        _borderColor, _borderBgColor);
-                    y++;
-                }
-                if (_border && r < _rowCount - 1) y++;
-            }
-        }
-
-        // Inner horizontal borders
-        if (_border)
-        {
-            int y = (int)_screenY + (_outerBorder ? 1 : 0);
-            for (int r = 0; r < _rowCount - 1; r++)
-            {
-                y += rowHeights[r];
-                uint leftChar = _outerBorder ? borderChars.LeftT : borderChars.Horizontal;
-                uint rightChar = _outerBorder ? borderChars.RightT : borderChars.Horizontal;
-                DrawHorizontalBorder(buffer, startX, y, _widthValue,
-                    leftChar, rightChar, borderChars.Horizontal, borderChars.Cross);
-                y++;
-            }
-        }
-    }
-
-    private void DrawHorizontalBorder(OptimizedBuffer buffer, int x, int y, int width,
-        uint leftChar, uint rightChar, uint fillChar, uint crossChar)
-    {
-        if (width <= 0) return;
-
-        buffer.SetCell((uint)x, (uint)y, leftChar, _borderColor, _borderBgColor);
-
-        int pos = 1;
-        for (int c = 0; c < _colCount; c++)
-        {
-            int colW = (_columnWidths.Length > c ? _columnWidths[c] : 1) + _cellPadding * 2;
-            for (int i = 0; i < colW && pos < width - 1; i++)
-            {
-                buffer.SetCell((uint)(x + pos), (uint)y, fillChar, _borderColor, _borderBgColor);
-                pos++;
-            }
-            if (_border && c < _colCount - 1 && pos < width - 1)
-            {
-                buffer.SetCell((uint)(x + pos), (uint)y, crossChar, _borderColor, _borderBgColor);
-                pos++;
-            }
-        }
-
-        if (pos < width)
-            buffer.SetCell((uint)(x + width - 1), (uint)y, rightChar, _borderColor, _borderBgColor);
-    }
-
-    private void DrawCells(OptimizedBuffer buffer, int[] rowHeights)
-    {
-        if (_cells == null) return;
-
-        int startX = (int)_screenX + (_outerBorder ? 1 : 0);
-        int cellY = (int)_screenY + (_outerBorder ? 1 : 0);
+        int horizontalPadding = GetHorizontalCellPadding();
+        int verticalPadding = GetVerticalCellPadding();
 
         for (int r = 0; r < _rowCount; r++)
         {
-            int cellX = startX;
             for (int c = 0; c < _colCount; c++)
             {
-                int colW = _columnWidths.Length > c ? _columnWidths[c] : 1;
-                int padX = cellX + _cellPadding;
+                uint contentWidth = (uint)Math.Max(1, layout.ColumnWidths[c] - horizontalPadding);
+                uint contentHeight = (uint)Math.Max(1, layout.RowHeights[r] - verticalPadding);
 
-                // Set viewport for this cell
-                _cells[r, c].TextBufferView.SetViewport(0, 0, (uint)colW, (uint)rowHeights[r]);
-
-                // Draw cell content
-                buffer.DrawTextBufferView(_cells[r, c].TextBufferView.Handle, padX, cellY);
-
-                cellX += colW + _cellPadding * 2;
-                if (_border && c < _colCount - 1) cellX++; // border column
+                _cells[r, c].TextBufferView.SetWrapWidth(contentWidth);
+                _cells[r, c].TextBufferView.SetViewport(0, 0, contentWidth, contentHeight);
             }
+        }
+    }
 
-            cellY += rowHeights[r];
-            if (_border && r < _rowCount - 1) cellY++; // border row
+    private void DrawBorders(OptimizedBuffer buffer, TableLayout layout, int baseX, int baseY)
+    {
+        var borderLayout = ResolveBorderLayout();
+        if (!borderLayout.Left && !borderLayout.Right && !borderLayout.Top && !borderLayout.Bottom &&
+            !borderLayout.InnerVertical && !borderLayout.InnerHorizontal)
+        {
+            return;
+        }
+
+        int[] columnOffsets = baseX == 0 ? layout.ColumnOffsets : layout.ColumnOffsets.Select(offset => offset + baseX).ToArray();
+        int[] rowOffsets = baseY == 0 ? layout.RowOffsets : layout.RowOffsets.Select(offset => offset + baseY).ToArray();
+
+        buffer.DrawGrid(
+            columnOffsets,
+            rowOffsets,
+            BorderCharacters.ForStyle(_borderStyle),
+            _borderColor,
+            _borderBgColor,
+            drawInner: _border,
+            drawOuter: _outerBorder);
+    }
+
+    private void DrawCells(OptimizedBuffer buffer, TableLayout layout, int baseX, int baseY)
+    {
+        if (_cells == null) return;
+
+        for (int r = 0; r < _rowCount; r++)
+        {
+            int cellY = baseY + layout.RowOffsets[r] + 1 + _cellPadding;
+            for (int c = 0; c < _colCount; c++)
+            {
+                int cellX = baseX + layout.ColumnOffsets[c] + 1 + _cellPadding;
+                buffer.DrawTextBufferView(_cells[r, c].TextBufferView.Handle, cellX, cellY);
+            }
         }
     }
 

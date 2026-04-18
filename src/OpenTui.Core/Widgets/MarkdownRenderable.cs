@@ -1,3 +1,8 @@
+using Markdig;
+using Markdig.Extensions.Tables;
+using Markdig.Syntax;
+using Markdig.Syntax.Inlines;
+
 namespace OpenTui.Core;
 
 /// <summary>
@@ -60,15 +65,14 @@ public sealed class MarkdownTableData
 }
 
 /// <summary>
-/// Markdown rendering widget.
-/// Parses markdown content and builds child renderables:
-/// - Paragraphs/headings → CodeRenderable (filetype: "markdown")
-/// - Fenced code blocks → CodeRenderable (with block language)
-/// - Tables → TextTableRenderable
-/// Matches TypeScript MarkdownRenderable from Markdown.ts.
+/// Markdown rendering widget backed by Markdig.
 /// </summary>
 public class MarkdownRenderable : Renderable
 {
+    private static readonly MarkdownPipeline s_pipeline = new MarkdownPipelineBuilder()
+        .UseAdvancedExtensions()
+        .Build();
+
     private string _content;
     private SyntaxStyle? _syntaxStyle;
     private Rgba _fg;
@@ -78,12 +82,11 @@ public class MarkdownRenderable : Renderable
     private bool _streaming;
     private MarkdownTableOptions? _tableOptions;
     private Func<MarkdownToken, Renderable?>? _renderNode;
-    private List<BlockState> _blockStates = [];
+    private readonly List<BlockState> _blockStates = [];
 
     private sealed class BlockState
     {
-        public MarkdownToken Token { get; init; } = null!;
-        public Renderable Renderable { get; init; } = null!;
+        public required Renderable Renderable { get; init; }
     }
 
     public MarkdownRenderable(IRenderContext ctx, MarkdownOptions? options = null)
@@ -120,219 +123,661 @@ public class MarkdownRenderable : Renderable
         }
     }
 
-    public SyntaxStyle? MdSyntaxStyle
+    public SyntaxStyle? SyntaxStyle
     {
         get => _syntaxStyle;
         set
         {
+            if (ReferenceEquals(_syntaxStyle, value)) return;
             _syntaxStyle = value;
-            RefreshStyles();
+            ParseAndBuild();
             RequestRender();
         }
+    }
+
+    public SyntaxStyle? MdSyntaxStyle
+    {
+        get => SyntaxStyle;
+        set => SyntaxStyle = value;
     }
 
     public Rgba Fg
     {
         get => _fg;
-        set { _fg = value; RefreshStyles(); RequestRender(); }
+        set
+        {
+            if (_fg == value) return;
+            _fg = value;
+            ParseAndBuild();
+            RequestRender();
+        }
     }
 
     public Rgba Bg
     {
         get => _bg;
-        set { _bg = value; RefreshStyles(); RequestRender(); }
+        set
+        {
+            if (_bg == value) return;
+            _bg = value;
+            ParseAndBuild();
+            RequestRender();
+        }
     }
 
     public bool Conceal
     {
         get => _conceal;
-        set { _conceal = value; RequestRender(); }
+        set
+        {
+            if (_conceal == value) return;
+            _conceal = value;
+            ParseAndBuild();
+            RequestRender();
+        }
     }
 
     public bool ConcealCode
     {
         get => _concealCode;
-        set { _concealCode = value; RequestRender(); }
+        set
+        {
+            if (_concealCode == value) return;
+            _concealCode = value;
+            ParseAndBuild();
+            RequestRender();
+        }
     }
 
     public bool Streaming
     {
         get => _streaming;
-        set { _streaming = value; }
+        set => _streaming = value;
     }
 
     public MarkdownTableOptions? TableOptions
     {
         get => _tableOptions;
-        set { _tableOptions = value; ParseAndBuild(); RequestRender(); }
+        set
+        {
+            _tableOptions = value;
+            ParseAndBuild();
+            RequestRender();
+        }
+    }
+
+    #endregion
+
+    #region Public API
+
+    public void ClearCache()
+    {
+        ParseAndBuild();
+        RequestRender();
+    }
+
+    public void RefreshStyles()
+    {
+        ParseAndBuild();
+        RequestRender();
     }
 
     #endregion
 
     #region Parsing & Building
 
-    /// <summary>
-    /// Clears all cached state and re-parses.
-    /// </summary>
-    public void ClearCache()
-    {
-        ClearBlocks();
-        ParseAndBuild();
-        RequestRender();
-    }
-
-    /// <summary>
-    /// Re-renders existing blocks without re-parsing.
-    /// </summary>
-    public void RefreshStyles()
-    {
-        foreach (var block in _blockStates)
-        {
-            if (block.Renderable is CodeRenderable code)
-            {
-                code.CodeSyntaxStyle = _syntaxStyle;
-            }
-        }
-    }
-
     private void ParseAndBuild()
     {
         ClearBlocks();
-        var tokens = ParseMarkdown(_content);
-        BuildRenderables(tokens);
+
+        if (string.IsNullOrEmpty(_content))
+            return;
+
+        var document = Markdown.Parse(_content, s_pipeline);
+        BuildRenderables(document);
     }
 
-    private void BuildRenderables(List<MarkdownToken> tokens)
+    private void BuildRenderables(MarkdownDocument document)
     {
-        var textGroup = new System.Text.StringBuilder();
-        List<MarkdownToken> groupTokens = [];
-
-        void FlushTextGroup()
+        for (int i = 0; i < document.Count; i++)
         {
-            if (textGroup.Length == 0) return;
+            var renderable = BuildRenderable(document[i], i, i < document.Count - 1);
+            if (renderable is null)
+                continue;
 
-            var code = new CodeRenderable(_ctx, new CodeOptions
-            {
-                Content = textGroup.ToString(),
-                Filetype = "markdown",
-                SyntaxStyle = _syntaxStyle,
-                Conceal = _conceal,
-            });
-            Add(code);
-            foreach (var t in groupTokens)
-                _blockStates.Add(new BlockState { Token = t, Renderable = code });
-
-            textGroup.Clear();
-            groupTokens.Clear();
+            Add(renderable);
+            _blockStates.Add(new BlockState { Renderable = renderable });
         }
-
-        foreach (var token in tokens)
-        {
-            // Check custom renderer first
-            if (_renderNode != null)
-            {
-                var custom = _renderNode(token);
-                if (custom != null)
-                {
-                    FlushTextGroup();
-                    Add(custom);
-                    _blockStates.Add(new BlockState { Token = token, Renderable = custom });
-                    continue;
-                }
-            }
-
-            switch (token.Type)
-            {
-                case "code":
-                    FlushTextGroup();
-                    var codeBlock = new CodeRenderable(_ctx, new CodeOptions
-                    {
-                        Content = token.Text,
-                        Filetype = token.Lang,
-                        SyntaxStyle = _syntaxStyle,
-                        Conceal = _concealCode,
-                    });
-                    Add(codeBlock);
-                    _blockStates.Add(new BlockState { Token = token, Renderable = codeBlock });
-                    break;
-
-                case "table":
-                    FlushTextGroup();
-                    var table = BuildTable(token);
-                    if (table != null)
-                    {
-                        Add(table);
-                        _blockStates.Add(new BlockState { Token = token, Renderable = table });
-                    }
-                    break;
-
-                case "hr":
-                    FlushTextGroup();
-                    // Horizontal rule — render as a styled text line
-                    var hr = new TextRenderable(_ctx, new TextOptions
-                    {
-                        Content = "───────────────────────────────────────",
-                    });
-                    Add(hr);
-                    _blockStates.Add(new BlockState { Token = token, Renderable = hr });
-                    break;
-
-                default:
-                    // Group consecutive text-like tokens (paragraphs, headings, lists)
-                    if (textGroup.Length > 0) textGroup.Append('\n');
-                    textGroup.Append(token.Raw);
-                    groupTokens.Add(token);
-                    break;
-            }
-        }
-
-        FlushTextGroup();
     }
 
-    private TextTableRenderable? BuildTable(MarkdownToken token)
+    private Renderable? BuildRenderable(Block block, int index, bool hasNext)
     {
-        if (token.Table == null) return null;
+        var token = CreateToken(block);
+        var custom = _renderNode?.Invoke(token);
+        if (custom is not null)
+        {
+            ApplyBlockSpacing(custom, hasNext);
+            return custom;
+        }
 
-        var tOpts = _tableOptions ?? new MarkdownTableOptions();
+        Renderable? renderable = block switch
+        {
+            HeadingBlock heading => BuildHeadingRenderable(heading, index),
+            ParagraphBlock paragraph => BuildParagraphRenderable(paragraph, index),
+            QuoteBlock quote => BuildQuoteRenderable(quote, index),
+            ListBlock list => BuildListRenderable(list, index),
+            Table table => BuildTableRenderable(table, index),
+            FencedCodeBlock fenced => BuildCodeBlockRenderable(fenced, index),
+            CodeBlock code => BuildCodeBlockRenderable(code, index),
+            ThematicBreakBlock thematicBreak => BuildThematicBreakRenderable(thematicBreak, index),
+            _ => BuildFallbackRenderable(block, index),
+        };
+
+        if (renderable is not null)
+            ApplyBlockSpacing(renderable, hasNext);
+
+        return renderable;
+    }
+
+    private void ApplyBlockSpacing(Renderable renderable, bool hasNext)
+    {
+        renderable.MarginBottom = DimensionValue.Point(hasNext ? 1 : 0);
+    }
+
+    private TextRenderable BuildHeadingRenderable(HeadingBlock heading, int index)
+    {
+        var chunks = new List<TextChunk>();
+        string styleGroup = $"markup.heading.{heading.Level}";
+
+        if (!_conceal)
+            chunks.Add(CreateChunk(new string('#', Math.Max(1, heading.Level)) + " ", styleGroup));
+
+        RenderInlineContainer(heading.Inline, chunks, styleGroup);
+        return CreateTextRenderable(chunks, $"{Id}-heading-{index}");
+    }
+
+    private TextRenderable BuildParagraphRenderable(ParagraphBlock paragraph, int index)
+    {
+        var chunks = new List<TextChunk>();
+        RenderInlineContainer(paragraph.Inline, chunks, null);
+        return CreateTextRenderable(chunks, $"{Id}-paragraph-{index}");
+    }
+
+    private TextRenderable BuildQuoteRenderable(QuoteBlock quote, int index)
+    {
+        var chunks = new List<TextChunk>();
+        bool first = true;
+
+        foreach (var child in quote)
+        {
+            if (!first)
+                chunks.Add(CreateDefaultChunk("\n"));
+
+            chunks.Add(CreateChunk("> ", "markup.quote"));
+            AppendBlockTextChunks(child, chunks);
+            first = false;
+        }
+
+        return CreateTextRenderable(chunks, $"{Id}-quote-{index}");
+    }
+
+    private TextRenderable BuildListRenderable(ListBlock list, int index)
+    {
+        var chunks = new List<TextChunk>();
+        int position = 0;
+
+        foreach (var child in list)
+        {
+            if (child is not ListItemBlock item)
+                continue;
+
+            if (position > 0)
+                chunks.Add(CreateDefaultChunk("\n"));
+
+            string marker = list.IsOrdered
+                ? $"{(item.Order > 0 ? item.Order : position + 1)}. "
+                : $"{(list.BulletType == '\0' ? '-' : list.BulletType)} ";
+
+            chunks.Add(CreateChunk(marker, "markup.list"));
+            AppendListItemChunks(item, chunks);
+            position++;
+        }
+
+        return CreateTextRenderable(chunks, $"{Id}-list-{index}");
+    }
+
+    private Renderable? BuildTableRenderable(Table table, int index)
+    {
+        if (table.Count == 0)
+            return null;
+
         var rows = new List<TextChunk[][]>();
 
-        // Header row
-        if (token.Table.Header.Length > 0)
+        foreach (var rowBlock in table)
         {
-            var headerRow = new TextChunk[token.Table.Header.Length][];
-            for (int i = 0; i < token.Table.Header.Length; i++)
+            if (rowBlock is not TableRow row)
+                continue;
+
+            var renderedRow = new TextChunk[row.Count][];
+            for (int i = 0; i < row.Count; i++)
             {
-                var headerText = string.Join("", token.Table.Header[i]);
-                headerRow[i] = [TextChunk.Styled(headerText, _fg, null, TextAttributes.Bold)];
+                renderedRow[i] = BuildTableCellChunks((TableCell)row[i], row.IsHeader);
             }
-            rows.Add(headerRow);
+
+            rows.Add(renderedRow);
         }
 
-        // Data rows
-        foreach (var row in token.Table.Rows)
-        {
-            var dataRow = new TextChunk[row.Length][];
-            for (int i = 0; i < row.Length; i++)
-            {
-                var cellText = string.Join("", row[i]);
-                dataRow[i] = [TextChunk.Plain(cellText)];
-            }
-            rows.Add(dataRow);
-        }
-
+        var tableOptions = ResolveTableOptions();
         return new TextTableRenderable(_ctx, new TextTableOptions
         {
+            Id = $"{Id}-table-{index}",
+            Width = DimensionValue.Percent(100),
             Content = [.. rows],
-            ColumnWidthMode = tOpts.ColumnWidthMode,
-            ColumnFitter = tOpts.ColumnFitter,
-            WrapMode = tOpts.WrapMode,
-            CellPadding = tOpts.CellPadding,
-            Border = tOpts.Border,
-            OuterBorder = tOpts.OuterBorder,
-            BorderStyle = tOpts.BorderStyle,
-            BorderColor = tOpts.BorderColor,
-            Selectable = tOpts.Selectable,
+            ColumnWidthMode = tableOptions.ColumnWidthMode,
+            ColumnFitter = tableOptions.ColumnFitter,
+            WrapMode = tableOptions.WrapMode,
+            CellPadding = tableOptions.CellPadding,
+            Border = tableOptions.Border,
+            OuterBorder = tableOptions.OuterBorder,
+            BorderStyle = tableOptions.BorderStyle,
+            BorderColor = tableOptions.BorderColor ?? ResolveStyle("conceal")?.Fg ?? _fg,
+            Selectable = tableOptions.Selectable,
         });
+    }
+
+    private Renderable BuildCodeBlockRenderable(CodeBlock codeBlock, int index)
+    {
+        string content = NormalizeLineEndings(codeBlock.Lines.ToString());
+
+        if (codeBlock is FencedCodeBlock fenced && IsMarkdownCodeFence(fenced.Info) && _concealCode)
+        {
+            var markdownCodeChunks = BuildMarkdownCodeChunks(content);
+            return CreateTextRenderable(markdownCodeChunks, $"{Id}-code-md-{index}",
+                GetCodeBlockForeground(), GetCodeBlockBackground());
+        }
+
+        return new CodeRenderable(_ctx, new CodeOptions
+        {
+            Id = $"{Id}-code-{index}",
+            Content = content,
+            Filetype = codeBlock is FencedCodeBlock fencedCode ? ExtractFenceInfo(fencedCode.Info) : null,
+            SyntaxStyle = _syntaxStyle,
+            Conceal = _concealCode,
+            Fg = GetCodeBlockForeground(),
+            Bg = GetCodeBlockBackground(),
+            Width = DimensionValue.Percent(100),
+        });
+    }
+
+    private TextRenderable BuildThematicBreakRenderable(ThematicBreakBlock thematicBreak, int index)
+    {
+        string content = _conceal
+            ? "───────────────────────────────────────"
+            : new string(thematicBreak.ThematicChar == '\0' ? '-' : thematicBreak.ThematicChar,
+                Math.Max(3, thematicBreak.ThematicCharCount));
+
+        return CreateTextRenderable(
+            [CreateChunk(content, "conceal")],
+            $"{Id}-hr-{index}");
+    }
+
+    private TextRenderable BuildFallbackRenderable(Block block, int index)
+    {
+        var chunks = new List<TextChunk>();
+        AppendBlockTextChunks(block, chunks);
+        return CreateTextRenderable(chunks, $"{Id}-fallback-{index}");
+    }
+
+    private TextRenderable CreateTextRenderable(
+        IEnumerable<TextChunk> chunks,
+        string id,
+        Rgba? fg = null,
+        Rgba? bg = null)
+    {
+        return new TextRenderable(_ctx, new TextOptions
+        {
+            Id = id,
+            Width = DimensionValue.Percent(100),
+            WrapMode = WrapMode.Word,
+            Fg = fg ?? _fg,
+            Bg = bg ?? _bg,
+            StyledContent = new StyledText(chunks.ToArray()),
+        });
+    }
+
+    private void AppendListItemChunks(ListItemBlock item, List<TextChunk> chunks)
+    {
+        bool first = true;
+        foreach (var child in item)
+        {
+            if (!first)
+                chunks.Add(CreateDefaultChunk("\n"));
+
+            AppendBlockTextChunks(child, chunks);
+            first = false;
+        }
+    }
+
+    private TextChunk[] BuildTableCellChunks(TableCell cell, bool isHeader)
+    {
+        var chunks = new List<TextChunk>();
+        bool first = true;
+
+        foreach (var child in cell)
+        {
+            if (!first)
+                chunks.Add(CreateDefaultChunk("\n"));
+
+            AppendBlockTextChunks(child, chunks);
+            first = false;
+        }
+
+        if (!isHeader)
+            return [.. chunks];
+
+        return chunks.Select(chunk => TextChunk.Styled(
+            chunk.Text,
+            chunk.Fg ?? ResolveStyle("label")?.Fg ?? ResolveStyle("markup.strong")?.Fg ?? _fg,
+            chunk.Bg,
+            chunk.Attributes | TextAttributes.Bold,
+            chunk.Link)).ToArray();
+    }
+
+    private void AppendBlockTextChunks(Block block, List<TextChunk> chunks)
+    {
+        switch (block)
+        {
+            case ParagraphBlock paragraph:
+                RenderInlineContainer(paragraph.Inline, chunks, null);
+                break;
+
+            case HeadingBlock heading:
+                string styleGroup = $"markup.heading.{heading.Level}";
+                if (!_conceal)
+                    chunks.Add(CreateChunk(new string('#', Math.Max(1, heading.Level)) + " ", styleGroup));
+                RenderInlineContainer(heading.Inline, chunks, styleGroup);
+                break;
+
+            case QuoteBlock quote:
+                bool firstQuoteChild = true;
+                foreach (var child in quote)
+                {
+                    if (!firstQuoteChild)
+                        chunks.Add(CreateDefaultChunk("\n"));
+                    chunks.Add(CreateChunk("> ", "markup.quote"));
+                    AppendBlockTextChunks(child, chunks);
+                    firstQuoteChild = false;
+                }
+                break;
+
+            case ListBlock list:
+                int position = 0;
+                foreach (var child in list)
+                {
+                    if (child is not ListItemBlock item)
+                        continue;
+
+                    if (position > 0)
+                        chunks.Add(CreateDefaultChunk("\n"));
+
+                    string marker = list.IsOrdered
+                        ? $"{(item.Order > 0 ? item.Order : position + 1)}. "
+                        : $"{(list.BulletType == '\0' ? '-' : list.BulletType)} ";
+
+                    chunks.Add(CreateChunk(marker, "markup.list"));
+                    AppendListItemChunks(item, chunks);
+                    position++;
+                }
+                break;
+
+            case CodeBlock codeBlock:
+                chunks.Add(CreateChunk(NormalizeLineEndings(codeBlock.Lines.ToString()), "markup.raw.block"));
+                break;
+
+            case ThematicBreakBlock thematicBreak:
+                chunks.Add(CreateChunk(
+                    _conceal
+                        ? "───────────────────────────────────────"
+                        : new string(thematicBreak.ThematicChar == '\0' ? '-' : thematicBreak.ThematicChar,
+                            Math.Max(3, thematicBreak.ThematicCharCount)),
+                    "conceal"));
+                break;
+
+            default:
+                if (block is LeafBlock leafBlock)
+                {
+                    string text = NormalizeLineEndings(leafBlock.Lines.ToString());
+                    if (!string.IsNullOrEmpty(text))
+                        chunks.Add(CreateDefaultChunk(text));
+                }
+                break;
+        }
+    }
+
+    private TextChunk[] BuildMarkdownCodeChunks(string content)
+    {
+        var document = Markdown.Parse(content, s_pipeline);
+        var chunks = new List<TextChunk>();
+        bool first = true;
+
+        foreach (var block in document)
+        {
+            if (!first)
+                chunks.Add(CreateDefaultChunk("\n"));
+
+            AppendBlockTextChunks(block, chunks);
+            first = false;
+        }
+
+        return [.. chunks];
+    }
+
+    private void RenderInlineContainer(ContainerInline? inline, List<TextChunk> chunks, string? literalStyleGroup)
+    {
+        if (inline is null)
+            return;
+
+        for (var child = inline.FirstChild; child is not null; child = child.NextSibling)
+            RenderInlineToken(child, chunks, literalStyleGroup, null);
+    }
+
+    private void RenderInlineToken(Inline inline, List<TextChunk> chunks, string? literalStyleGroup, string? link)
+    {
+        switch (inline)
+        {
+            case LiteralInline literal:
+                var text = literal.Content.ToString();
+                if (!string.IsNullOrEmpty(text))
+                    chunks.Add(CreateChunk(text, literalStyleGroup, link));
+                break;
+
+            case CodeInline code:
+                if (!_conceal)
+                    chunks.Add(CreateChunk(new string(code.Delimiter == '\0' ? '`' : code.Delimiter, Math.Max(1, code.DelimiterCount)), "markup.raw.inline", link));
+                chunks.Add(CreateChunk(code.Content, "markup.raw.inline", link));
+                if (!_conceal)
+                    chunks.Add(CreateChunk(new string(code.Delimiter == '\0' ? '`' : code.Delimiter, Math.Max(1, code.DelimiterCount)), "markup.raw.inline", link));
+                break;
+
+            case EmphasisInline emphasis:
+                RenderEmphasisInline(emphasis, chunks, link);
+                break;
+
+            case LinkInline linkInline:
+                RenderLinkInline(linkInline, chunks);
+                break;
+
+            case AutolinkInline autoLink:
+                chunks.Add(CreateChunk(autoLink.Url ?? string.Empty, "markup.link.url", autoLink.Url));
+                break;
+
+            case LineBreakInline:
+                chunks.Add(CreateChunk("\n", literalStyleGroup, link));
+                break;
+
+            case HtmlInline html:
+                if (!string.IsNullOrEmpty(html.Tag))
+                    chunks.Add(CreateChunk(html.Tag, literalStyleGroup, link));
+                break;
+
+            case ContainerInline container:
+                for (var child = container.FirstChild; child is not null; child = child.NextSibling)
+                    RenderInlineToken(child, chunks, literalStyleGroup, link);
+                break;
+
+            default:
+                var fallback = inline.ToString();
+                if (!string.IsNullOrEmpty(fallback))
+                    chunks.Add(CreateChunk(fallback, literalStyleGroup, link));
+                break;
+        }
+    }
+
+    private void RenderEmphasisInline(EmphasisInline emphasis, List<TextChunk> chunks, string? link)
+    {
+        string styleGroup = emphasis.DelimiterChar switch
+        {
+            '~' => "markup.strikethrough",
+            _ when emphasis.DelimiterCount >= 2 => "markup.strong",
+            _ => "markup.italic",
+        };
+
+        string delimiter = new string(emphasis.DelimiterChar == '\0' ? '*' : emphasis.DelimiterChar, Math.Max(1, emphasis.DelimiterCount));
+        if (!_conceal)
+            chunks.Add(CreateChunk(delimiter, styleGroup, link));
+
+        for (var child = emphasis.FirstChild; child is not null; child = child.NextSibling)
+            RenderInlineToken(child, chunks, styleGroup, link);
+
+        if (!_conceal)
+            chunks.Add(CreateChunk(delimiter, styleGroup, link));
+    }
+
+    private void RenderLinkInline(LinkInline linkInline, List<TextChunk> chunks)
+    {
+        string url = linkInline.GetDynamicUrl?.Invoke() ?? linkInline.Url ?? string.Empty;
+
+        if (linkInline.IsImage)
+        {
+            if (_conceal)
+            {
+                string label = !string.IsNullOrWhiteSpace(linkInline.Label) ? linkInline.Label! : "image";
+                chunks.Add(CreateChunk(label, "markup.link.label", url));
+            }
+            else
+            {
+                chunks.Add(CreateChunk("![", "markup.link", url));
+                AppendLinkLabel(linkInline, chunks, url);
+                chunks.Add(CreateChunk("](", "markup.link", url));
+                chunks.Add(CreateChunk(url, "markup.link.url", url));
+                chunks.Add(CreateChunk(")", "markup.link", url));
+            }
+
+            return;
+        }
+
+        if (_conceal)
+        {
+            AppendLinkLabel(linkInline, chunks, url);
+            if (!string.IsNullOrEmpty(url))
+            {
+                chunks.Add(CreateChunk(" (", "markup.link", url));
+                chunks.Add(CreateChunk(url, "markup.link.url", url));
+                chunks.Add(CreateChunk(")", "markup.link", url));
+            }
+        }
+        else
+        {
+            chunks.Add(CreateChunk("[", "markup.link", url));
+            AppendLinkLabel(linkInline, chunks, url);
+            chunks.Add(CreateChunk("](", "markup.link", url));
+            chunks.Add(CreateChunk(url, "markup.link.url", url));
+            chunks.Add(CreateChunk(")", "markup.link", url));
+        }
+    }
+
+    private void AppendLinkLabel(LinkInline linkInline, List<TextChunk> chunks, string? url)
+    {
+        if (linkInline.FirstChild is null)
+        {
+            if (!string.IsNullOrEmpty(linkInline.Label))
+                chunks.Add(CreateChunk(linkInline.Label!, "markup.link.label", url));
+            return;
+        }
+
+        for (var child = linkInline.FirstChild; child is not null; child = child.NextSibling)
+            RenderInlineToken(child, chunks, "markup.link.label", url);
+    }
+
+    private TextChunk CreateChunk(string text, string? styleGroup, string? link = null)
+    {
+        if (string.IsNullOrEmpty(text))
+            return TextChunk.Plain(string.Empty);
+
+        var style = ResolveStyle(styleGroup);
+        return TextChunk.Styled(
+            text,
+            style?.Fg ?? _fg,
+            style?.Bg ?? _bg,
+            style?.Attributes ?? TextAttributes.None,
+            link);
+    }
+
+    private TextChunk CreateDefaultChunk(string text) => CreateChunk(text, "default");
+
+    private SyntaxStyleEntry? ResolveStyle(string? group)
+    {
+        if (_syntaxStyle is null)
+            return null;
+
+        if (group is null)
+            return _syntaxStyle.GetStyle("default");
+
+        var current = group;
+        while (!string.IsNullOrEmpty(current))
+        {
+            var style = _syntaxStyle.GetStyle(current);
+            if (style is not null)
+                return style;
+
+            int lastDot = current.LastIndexOf('.');
+            if (lastDot < 0)
+                break;
+            current = current[..lastDot];
+        }
+
+        return _syntaxStyle.GetStyle("default");
+    }
+
+    private Rgba GetCodeBlockForeground() =>
+        ResolveStyle("markup.raw.block")?.Fg
+        ?? ResolveStyle("markup.raw")?.Fg
+        ?? _fg;
+
+    private Rgba GetCodeBlockBackground() =>
+        ResolveStyle("markup.raw.block")?.Bg
+        ?? ResolveStyle("markup.raw")?.Bg
+        ?? _bg;
+
+    private MarkdownTableOptions ResolveTableOptions() =>
+        _tableOptions ?? new MarkdownTableOptions();
+
+    private static string NormalizeLineEndings(string value) =>
+        value.Replace("\r\n", "\n").Replace('\r', '\n');
+
+    private static string? ExtractFenceInfo(string? info)
+    {
+        if (string.IsNullOrWhiteSpace(info))
+            return null;
+
+        var token = info.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries)[0];
+        return token.Length == 0 ? null : token.ToLowerInvariant();
+    }
+
+    private static bool IsMarkdownCodeFence(string? info)
+    {
+        var lang = ExtractFenceInfo(info);
+        return lang is "markdown" or "md";
     }
 
     private void ClearBlocks()
@@ -342,178 +787,57 @@ public class MarkdownRenderable : Renderable
         _blockStates.Clear();
     }
 
-    #endregion
-
-    #region Markdown Parsing
-
-    /// <summary>
-    /// Simple markdown tokenizer.
-    /// Handles headings, paragraphs, code blocks, lists, tables, and horizontal rules.
-    /// </summary>
-    public static List<MarkdownToken> ParseMarkdown(string content)
-    {
-        var tokens = new List<MarkdownToken>();
-        if (string.IsNullOrEmpty(content)) return tokens;
-
-        var lines = content.Split('\n');
-        int i = 0;
-
-        while (i < lines.Length)
+    private MarkdownToken CreateToken(Block block) =>
+        block switch
         {
-            var line = lines[i];
-
-            // Blank line
-            if (string.IsNullOrWhiteSpace(line))
+            HeadingBlock heading => new MarkdownToken
             {
-                i++;
-                continue;
-            }
-
-            // Fenced code block
-            if (line.StartsWith("```"))
-            {
-                string lang = line.Length > 3 ? line[3..].Trim() : "";
-                var codeSb = new System.Text.StringBuilder();
-                i++;
-                while (i < lines.Length && !lines[i].StartsWith("```"))
-                {
-                    if (codeSb.Length > 0) codeSb.Append('\n');
-                    codeSb.Append(lines[i]);
-                    i++;
-                }
-                if (i < lines.Length) i++; // skip closing ```
-
-                tokens.Add(new MarkdownToken
-                {
-                    Type = "code",
-                    Raw = codeSb.ToString(),
-                    Text = codeSb.ToString(),
-                    Lang = string.IsNullOrEmpty(lang) ? null : lang,
-                });
-                continue;
-            }
-
-            // Heading
-            if (line.StartsWith('#'))
-            {
-                int depth = 0;
-                while (depth < line.Length && line[depth] == '#') depth++;
-                string text = line[depth..].TrimStart();
-                tokens.Add(new MarkdownToken
-                {
-                    Type = "heading",
-                    Raw = line,
-                    Text = text,
-                    Depth = depth,
-                });
-                i++;
-                continue;
-            }
-
-            // Horizontal rule
-            if (line.Length >= 3 && (line.All(c => c == '-') || line.All(c => c == '*') || line.All(c => c == '_')))
-            {
-                tokens.Add(new MarkdownToken { Type = "hr", Raw = line });
-                i++;
-                continue;
-            }
-
-            // Table (detect by | character)
-            if (line.Contains('|') && i + 1 < lines.Length && lines[i + 1].Contains('|') &&
-                lines[i + 1].Replace(" ", "").Replace("|", "").Replace("-", "").Replace(":", "").Length == 0)
-            {
-                var tableToken = ParseTable(lines, ref i);
-                if (tableToken != null)
-                {
-                    tokens.Add(tableToken);
-                    continue;
-                }
-            }
-
-            // List item
-            if (line.TrimStart().StartsWith("- ") || line.TrimStart().StartsWith("* ") ||
-                (line.TrimStart().Length > 2 && char.IsDigit(line.TrimStart()[0]) && line.TrimStart().Contains(". ")))
-            {
-                tokens.Add(new MarkdownToken
-                {
-                    Type = "list_item",
-                    Raw = line,
-                    Text = line,
-                });
-                i++;
-                continue;
-            }
-
-            // Paragraph — collect consecutive non-blank lines
-            var paraSb = new System.Text.StringBuilder();
-            while (i < lines.Length && !string.IsNullOrWhiteSpace(lines[i])
-                && !lines[i].StartsWith('#') && !lines[i].StartsWith("```")
-                && !(lines[i].Length >= 3 && lines[i].All(c => c == '-')))
-            {
-                if (paraSb.Length > 0) paraSb.Append('\n');
-                paraSb.Append(lines[i]);
-                i++;
-            }
-
-            tokens.Add(new MarkdownToken
+                Type = "heading",
+                Raw = heading.Lines.ToString(),
+                Text = heading.Inline?.ToString() ?? heading.Lines.ToString(),
+                Depth = heading.Level,
+            },
+            ParagraphBlock paragraph => new MarkdownToken
             {
                 Type = "paragraph",
-                Raw = paraSb.ToString(),
-                Text = paraSb.ToString(),
-            });
-        }
-
-        return tokens;
-    }
-
-    private static MarkdownToken? ParseTable(string[] lines, ref int i)
-    {
-        // Header row
-        var headerLine = lines[i];
-        var headerCells = SplitTableRow(headerLine);
-        if (headerCells.Length == 0) return null;
-
-        i++; // skip to separator
-        var separatorLine = lines[i];
-        var aligns = SplitTableRow(separatorLine)
-            .Select(s =>
+                Raw = paragraph.Lines.ToString(),
+                Text = paragraph.Inline?.ToString() ?? paragraph.Lines.ToString(),
+            },
+            FencedCodeBlock fenced => new MarkdownToken
             {
-                s = s.Trim();
-                if (s.StartsWith(':') && s.EndsWith(':')) return "center";
-                if (s.EndsWith(':')) return "right";
-                return "left";
-            }).ToArray();
-        i++; // skip separator
-
-        // Data rows
-        var rows = new List<string[][]>();
-        while (i < lines.Length && lines[i].Contains('|'))
-        {
-            var cells = SplitTableRow(lines[i]);
-            rows.Add(cells.Select(c => new[] { c.Trim() }).ToArray());
-            i++;
-        }
-
-        return new MarkdownToken
-        {
-            Type = "table",
-            Raw = string.Join('\n', lines.Skip(i - rows.Count - 2).Take(rows.Count + 2)),
-            Table = new MarkdownTableData
+                Type = "code",
+                Raw = fenced.Lines.ToString(),
+                Text = fenced.Lines.ToString(),
+                Lang = ExtractFenceInfo(fenced.Info),
+            },
+            Table table => new MarkdownToken
             {
-                Header = headerCells.Select(h => new[] { h.Trim() }).ToArray(),
-                Align = aligns,
-                Rows = [.. rows],
-            }
+                Type = "table",
+                Raw = table.ToString() ?? string.Empty,
+            },
+            ListBlock list => new MarkdownToken
+            {
+                Type = "list",
+                Raw = list.ToString() ?? string.Empty,
+                Ordered = list.IsOrdered,
+            },
+            QuoteBlock quote => new MarkdownToken
+            {
+                Type = "blockquote",
+                Raw = quote.ToString() ?? string.Empty,
+            },
+            ThematicBreakBlock thematicBreak => new MarkdownToken
+            {
+                Type = "hr",
+                Raw = new string(thematicBreak.ThematicChar == '\0' ? '-' : thematicBreak.ThematicChar,
+                    Math.Max(3, thematicBreak.ThematicCharCount)),
+            },
+            _ => new MarkdownToken
+            {
+                Type = "block",
+                Raw = block.ToString() ?? string.Empty,
+            },
         };
-    }
-
-    private static string[] SplitTableRow(string line)
-    {
-        line = line.Trim();
-        if (line.StartsWith('|')) line = line[1..];
-        if (line.EndsWith('|')) line = line[..^1];
-        return line.Split('|');
-    }
 
     #endregion
 

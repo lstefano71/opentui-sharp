@@ -201,9 +201,11 @@ public class BoxRenderable : Renderable
         var currentBorderColor = hasFocusWithin ? _focusedBorderColor : _borderColor;
 
         var borderChars = _customBorderChars ?? BorderCharacters.ForStyle(_borderStyle);
+        int baseX = _buffered ? 0 : (int)_screenX;
+        int baseY = _buffered ? 0 : (int)_screenY;
 
         buffer.DrawBox(
-            (int)_screenX, (int)_screenY,
+            baseX, baseY,
             (uint)_widthValue, (uint)_heightValue,
             borderChars: borderChars,
             sides: _borderSides,

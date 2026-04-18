@@ -241,20 +241,42 @@ public sealed class OptimizedBuffer : IDisposable
     public void DrawEditorView(nint editorView, int x, int y) =>
         OpenTuiNative.BufferDrawEditorView(Handle, editorView, x, y);
 
-    /// <summary>Draws a grid with specified dimensions, colors, and border characters.</summary>
-    public void DrawGrid(nint gridDef, nint widths, nint heights, Rgba[] colors, BorderCharacters borderChars, Rgba borderColor)
+    /// <summary>Draws a border grid using precomputed column and row boundary offsets.</summary>
+    public void DrawGrid(
+        int[] columnOffsets,
+        int[] rowOffsets,
+        BorderCharacters borderChars,
+        Rgba borderFg,
+        Rgba borderBg,
+        bool drawInner,
+        bool drawOuter)
     {
+        if (columnOffsets.Length < 2 || rowOffsets.Length < 2 || (!drawInner && !drawOuter))
+            return;
+
         uint[] codePoints = borderChars.ToCodePoints();
+        var options = new OpenTuiNative.ExternalGridDrawOptions(drawInner, drawOuter);
+        Span<float> borderFgFloats = [borderFg.R, borderFg.G, borderFg.B, borderFg.A];
+        Span<float> borderBgFloats = [borderBg.R, borderBg.G, borderBg.B, borderBg.A];
+
         unsafe
         {
             fixed (uint* charsPtr = codePoints)
+            fixed (int* columnOffsetsPtr = columnOffsets)
+            fixed (int* rowOffsetsPtr = rowOffsets)
+            fixed (float* borderFgPtr = borderFgFloats)
+            fixed (float* borderBgPtr = borderBgFloats)
             {
-                nint cPtr = (nint)charsPtr;
-                RgbaMarshalling.WithColorArrayPtr(colors, colorsPtr =>
-                    RgbaMarshalling.WithColorPtr(borderColor, borderPtr =>
-                        OpenTuiNative.BufferDrawGrid(Handle, gridDef, widths, heights,
-                            colorsPtr, (uint)colors.Length,
-                            cPtr, (uint)codePoints.Length, borderPtr)));
+                OpenTuiNative.BufferDrawGrid(
+                    Handle,
+                    (nint)charsPtr,
+                    (nint)borderFgPtr,
+                    (nint)borderBgPtr,
+                    (nint)columnOffsetsPtr,
+                    (uint)(columnOffsets.Length - 1),
+                    (nint)rowOffsetsPtr,
+                    (uint)(rowOffsets.Length - 1),
+                    options);
             }
         }
     }

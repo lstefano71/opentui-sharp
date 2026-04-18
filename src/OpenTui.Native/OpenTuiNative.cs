@@ -535,18 +535,40 @@ internal static partial class OpenTuiNative
     [LibraryImport(LibName, EntryPoint = "bufferDrawGrayscaleBufferSupersampled")]
     internal static partial void BufferDrawGrayscaleBufferSupersampled(nint buffer, int x, int y, nint data, uint w, uint h, nint fg, nint bg);
 
-    /// <summary>Draws a grid with specified dimensions, colors, and border characters.</summary>
+    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential)]
+    internal readonly struct ExternalGridDrawOptions
+    {
+        public readonly byte DrawInner;
+        public readonly byte DrawOuter;
+
+        public ExternalGridDrawOptions(bool drawInner, bool drawOuter)
+        {
+            DrawInner = drawInner ? (byte)1 : (byte)0;
+            DrawOuter = drawOuter ? (byte)1 : (byte)0;
+        }
+    }
+
+    /// <summary>Draws a border grid using column and row boundary offsets.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>
-    /// <param name="gridDef">Pointer to the grid definition struct.</param>
-    /// <param name="widths">Pointer to the column widths array.</param>
-    /// <param name="heights">Pointer to the row heights array.</param>
-    /// <param name="colors">Pointer to the cell color array.</param>
-    /// <param name="colorCount">Number of colors in the array.</param>
-    /// <param name="borderChars">Pointer to the border character array.</param>
-    /// <param name="borderCharCount">Number of border characters.</param>
-    /// <param name="borderColor">Pointer to the border RGBA color.</param>
+    /// <param name="borderChars">Pointer to a uint[11] array of border codepoints.</param>
+    /// <param name="borderFg">Pointer to the border foreground RGBA float[4].</param>
+    /// <param name="borderBg">Pointer to the border background RGBA float[4].</param>
+    /// <param name="columnOffsets">Pointer to an int[columnCount + 1] array of column boundary offsets.</param>
+    /// <param name="columnCount">Number of table columns.</param>
+    /// <param name="rowOffsets">Pointer to an int[rowCount + 1] array of row boundary offsets.</param>
+    /// <param name="rowCount">Number of table rows.</param>
+    /// <param name="options">Grid drawing options controlling inner and outer borders.</param>
     [LibraryImport(LibName, EntryPoint = "bufferDrawGrid")]
-    internal static partial void BufferDrawGrid(nint buffer, nint gridDef, nint widths, nint heights, nint colors, uint colorCount, nint borderChars, uint borderCharCount, nint borderColor);
+    internal static partial void BufferDrawGrid(
+        nint buffer,
+        nint borderChars,
+        nint borderFg,
+        nint borderBg,
+        nint columnOffsets,
+        uint columnCount,
+        nint rowOffsets,
+        uint rowCount,
+        in ExternalGridDrawOptions options);
 
     /// <summary>Draws a box with borders, background fill, and optional title text.</summary>
     /// <param name="buffer">Handle to the optimized buffer.</param>

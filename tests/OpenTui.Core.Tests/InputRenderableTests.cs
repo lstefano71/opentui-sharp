@@ -165,4 +165,55 @@ public sealed class InputRenderableTests : IDisposable
         Assert.Equal("abc", input.Value);
         Assert.Equal("abc", entered);
     }
+
+    [Fact]
+    public void InputRenderable_Keypress_EmitsInputAndUpdatesValue()
+    {
+        var input = new InputRenderable(_renderer, new InputOptions
+        {
+            Id = "input-keypress",
+            Width = DimensionValue.Point(12),
+        });
+
+        string? lastValue = null;
+        input.On<string>(InputRenderable.Events.Input, value => lastValue = value);
+
+        _renderer.Root.Add(input);
+        input.Focus();
+
+        _renderer.InternalKeyInput.ProcessParsedKey(new ParsedKey
+        {
+            Name = "l",
+            Sequence = "l",
+        });
+
+        Assert.Equal("l", input.Value);
+        Assert.Equal("l", lastValue);
+    }
+
+    [Fact]
+    public void InputRenderable_Backspace_DeletesTextAndEmitsInput()
+    {
+        var input = new InputRenderable(_renderer, new InputOptions
+        {
+            Id = "input-backspace",
+            Width = DimensionValue.Point(12),
+            Value = "lime",
+        });
+
+        string? lastValue = null;
+        input.On<string>(InputRenderable.Events.Input, value => lastValue = value);
+
+        _renderer.Root.Add(input);
+        input.Focus();
+
+        _renderer.InternalKeyInput.ProcessParsedKey(new ParsedKey
+        {
+            Name = "backspace",
+            Sequence = "\b",
+        });
+
+        Assert.Equal("lim", input.Value);
+        Assert.Equal("lim", lastValue);
+    }
 }

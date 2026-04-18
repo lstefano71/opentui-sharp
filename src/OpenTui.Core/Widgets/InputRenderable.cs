@@ -149,6 +149,7 @@ public partial class InputRenderable : TextareaRenderable
             if (PlainText != newValue)
             {
                 SetText(newValue);
+                EditBuffer.SetCursorByOffset((uint)System.Text.Encoding.UTF8.GetByteCount(newValue));
                 Emit<string>(Events.Input, newValue);
             }
         }
@@ -171,7 +172,7 @@ public partial class InputRenderable : TextareaRenderable
 
     public override bool NewLine() => false; // No newlines in single-line input
 
-    public new bool Submit()
+    public override bool Submit()
     {
         string currentValue = PlainText;
         if (currentValue != _lastCommittedValue)
@@ -185,7 +186,7 @@ public partial class InputRenderable : TextareaRenderable
         return true;
     }
 
-    public new void InsertText(string text)
+    public override void InsertText(string text)
     {
         string sanitized = StripNewlines(text);
         if (string.IsNullOrEmpty(sanitized)) return;
@@ -200,63 +201,63 @@ public partial class InputRenderable : TextareaRenderable
         Emit<string>(Events.Input, PlainText);
     }
 
-    public new bool DeleteCharBackward()
+    public override bool DeleteCharBackward()
     {
         bool result = base.DeleteCharBackward();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool DeleteChar()
+    public override bool DeleteChar()
     {
         bool result = base.DeleteChar();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool DeleteLine()
+    public override bool DeleteLine()
     {
         bool result = base.DeleteLine();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool DeleteWordForward()
+    public override bool DeleteWordForward()
     {
         bool result = base.DeleteWordForward();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool DeleteWordBackward()
+    public override bool DeleteWordBackward()
     {
         bool result = base.DeleteWordBackward();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool DeleteToLineStart()
+    public override bool DeleteToLineStart()
     {
         bool result = base.DeleteToLineStart();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool DeleteToLineEnd()
+    public override bool DeleteToLineEnd()
     {
         bool result = base.DeleteToLineEnd();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool Undo()
+    public override bool Undo()
     {
         bool result = base.Undo();
         Emit<string>(Events.Input, PlainText);
         return result;
     }
 
-    public new bool Redo()
+    public override bool Redo()
     {
         bool result = base.Redo();
         Emit<string>(Events.Input, PlainText);
