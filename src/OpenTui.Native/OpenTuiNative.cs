@@ -1,3 +1,4 @@
+using System.Reflection;
 using System.Runtime.InteropServices;
 
 namespace OpenTui.Native;
@@ -9,6 +10,39 @@ namespace OpenTui.Native;
 internal static partial class OpenTuiNative
 {
     private const string LibName = "opentui";
+
+    // The managed assembly OpenTui.dll collides with the native opentui.dll on
+    // case-insensitive filesystems. Register a resolver that loads from the
+    // runtimes/<rid>/native/ directory so the right binary is found.
+    static OpenTuiNative()
+    {
+        NativeLibrary.SetDllImportResolver(typeof(OpenTuiNative).Assembly, ResolveNativeLibrary);
+    }
+
+    private static nint ResolveNativeLibrary(string libraryName, Assembly assembly, DllImportSearchPath? searchPath)
+    {
+        if (!libraryName.Equals(LibName, StringComparison.OrdinalIgnoreCase))
+            return nint.Zero;
+
+        // Try the standard runtime-specific path first
+        var assemblyDir = Path.GetDirectoryName(assembly.Location) ?? ".";
+        var rid = RuntimeInformation.RuntimeIdentifier;
+        var candidate = Path.Combine(assemblyDir, "runtimes", rid, "native", $"{LibName}.dll");
+
+        if (NativeLibrary.TryLoad(candidate, out nint handle))
+            return handle;
+
+        // Fallback: try common RID patterns (e.g. win-x64 when running under win10-x64)
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            candidate = Path.Combine(assemblyDir, "runtimes", "win-x64", "native", $"{LibName}.dll");
+            if (NativeLibrary.TryLoad(candidate, out handle))
+                return handle;
+        }
+
+        // Final fallback: let the default resolver try
+        return nint.Zero;
+    }
 
     #region Callbacks
 

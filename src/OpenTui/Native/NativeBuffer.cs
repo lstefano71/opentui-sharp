@@ -58,13 +58,11 @@ public sealed class NativeBuffer : IDisposable
     /// <summary>Gets the current effective opacity value.</summary>
     public float CurrentOpacity => OpenTuiNative.BufferGetCurrentOpacity(Handle);
 
-    /// <summary>Clears the entire buffer, optionally filling with the specified background color.</summary>
+    /// <summary>Clears the entire buffer, filling with the specified background color (default: transparent).</summary>
     public void Clear(Rgba? bgColor = null)
     {
-        if (bgColor is { } color)
-            RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.BufferClear(Handle, ptr));
-        else
-            OpenTuiNative.BufferClear(Handle, nint.Zero);
+        var color = bgColor ?? Rgba.Transparent;
+        RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.BufferClear(Handle, ptr));
     }
 
     /// <summary>Sets a single cell in the buffer.</summary>
