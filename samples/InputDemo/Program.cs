@@ -81,6 +81,11 @@ for (int i = 0; i < fieldNames.Length; i++)
         Value = "",
         Placeholder = placeholders[i],
         PlaceholderColor = Rgba.FromHex("#666666"),
+        BackgroundColor = Rgba.FromHex("#0f172a"),
+        TextColor = Rgba.FromHex("#f8fafc"),
+        FocusedBackgroundColor = Rgba.FromHex("#111827"),
+        FocusedTextColor = Rgba.FromHex("#f8fafc"),
+        CursorColor = Rgba.FromHex("#fbbf24"),
         Width = DimensionValue.Auto,
         Height = DimensionValue.Point(1),
         MaxLength = 50,
@@ -165,6 +170,7 @@ void FocusField(int index)
 for (int i = 0; i < inputs.Length; i++)
 {
     inputs[i].On<string>(InputRenderable.Events.Input, _ => UpdateStatus());
+    inputs[i].On<string>(InputRenderable.Events.Enter, _ => UpdateStatus("✓ Submitted!"));
 }
 
 // --- Key handling (tab navigation + enter submit) ---
@@ -178,10 +184,6 @@ renderer.KeyInput.On("keypress", (KeyEvent e) =>
             break;
         case "tab" when e.Shift:
             FocusField((focusedIndex - 1 + fieldNames.Length) % fieldNames.Length);
-            e.StopPropagation();
-            break;
-        case "return" or "linefeed":
-            UpdateStatus("✓ Submitted!");
             e.StopPropagation();
             break;
     }

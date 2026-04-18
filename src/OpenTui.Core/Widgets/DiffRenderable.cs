@@ -60,6 +60,11 @@ public enum DiffLineType { Context, Added, Removed }
 /// </summary>
 public class DiffRenderable : Renderable
 {
+    public static class Events
+    {
+        public const string Scroll = "scroll";
+    }
+
     private string _diff;
     private string _viewMode;
     private bool _syncScroll;
@@ -152,6 +157,16 @@ public class DiffRenderable : Renderable
         set { _showLineNumbers = value; RequestRender(); }
     }
 
+    public int ScrollTop
+    {
+        get => GetScrollAnchor()?.ScrollY ?? 0;
+        set => SetScrollTop(value);
+    }
+
+    public int MaxScrollTop => GetScrollAnchor()?.MaxScrollY ?? 0;
+    public int ViewportHeight => GetScrollAnchor()?.Height ?? 0;
+    public int ScrollHeight => MaxScrollTop + ViewportHeight;
+
     #endregion
 
     #region View Building
@@ -214,7 +229,7 @@ public class DiffRenderable : Renderable
     private void BuildSplitView(List<DiffHunk> hunks)
     {
         var (leftContent, rightContent, leftColors, rightColors, leftSigns, rightSigns,
-             leftLineNums, rightLineNums) = BuildSplitContent(hunks);
+             leftLineNums, rightLineNums, leftHide, rightHide) = BuildSplitContent(hunks);
 
         _leftCode = new CodeRenderable(_ctx, new CodeOptions
         {
@@ -222,7 +237,7 @@ public class DiffRenderable : Renderable
             Filetype = _filetype,
             SyntaxStyle = _syntaxStyle,
             Conceal = _conceal,
-            Width = DimensionValue.Percent(50),
+            FlexGrow = 1,
         });
         _leftCode.LineBackgrounds = leftColors;
 
@@ -232,7 +247,7 @@ public class DiffRenderable : Renderable
             Filetype = _filetype,
             SyntaxStyle = _syntaxStyle,
             Conceal = _conceal,
-            Width = DimensionValue.Percent(50),
+            FlexGrow = 1,
         });
         _rightCode.LineBackgrounds = rightColors;
 
@@ -244,9 +259,11 @@ public class DiffRenderable : Renderable
                 Fg = _lineNumberFg,
                 Bg = _lineNumberBg,
                 Width = DimensionValue.Percent(50),
+                FlexShrink = 1,
             });
             _leftLineNumbers.SetLineSigns(leftSigns);
             _leftLineNumbers.SetLineNumbers(leftLineNums);
+            _leftLineNumbers.SetHideLineNumbers(leftHide);
 
             _rightLineNumbers = new LineNumberRenderable(_ctx, new LineNumberOptions
             {
@@ -254,9 +271,11 @@ public class DiffRenderable : Renderable
                 Fg = _lineNumberFg,
                 Bg = _lineNumberBg,
                 Width = DimensionValue.Percent(50),
+                FlexShrink = 1,
             });
             _rightLineNumbers.SetLineSigns(rightSigns);
             _rightLineNumbers.SetLineNumbers(rightLineNums);
+            _rightLineNumbers.SetHideLineNumbers(rightHide);
 
             Add(_leftLineNumbers);
             Add(_rightLineNumbers);
@@ -370,12 +389,12 @@ public class DiffRenderable : Renderable
                 {
                     case DiffLineType.Added:
                         lineColors[lineIdx] = _addedBg;
-                        lineSigns[lineIdx] = new LineSign("+", null, _addedSignColor, null);
+                        lineSigns[lineIdx] = new LineSign(null, " +", _addedSignColor, null);
                         lineNumbers[lineIdx] = newLine++;
                         break;
                     case DiffLineType.Removed:
                         lineColors[lineIdx] = _removedBg;
-                        lineSigns[lineIdx] = new LineSign("-", null, _removedSignColor, null);
+                        lineSigns[lineIdx] = new LineSign(null, " -", _removedSignColor, null);
                         lineNumbers[lineIdx] = oldLine++;
                         break;
                     case DiffLineType.Context:
@@ -396,7 +415,8 @@ public class DiffRenderable : Renderable
     private (string LeftContent, string RightContent,
         Dictionary<int, Rgba> LeftColors, Dictionary<int, Rgba> RightColors,
         Dictionary<int, LineSign> LeftSigns, Dictionary<int, LineSign> RightSigns,
-        Dictionary<int, int> LeftLineNums, Dictionary<int, int> RightLineNums)
+        Dictionary<int, int> LeftLineNums, Dictionary<int, int> RightLineNums,
+        HashSet<int> LeftHide, HashSet<int> RightHide)
         BuildSplitContent(List<DiffHunk> hunks)
     {
         var leftSb = new System.Text.StringBuilder();
@@ -407,61 +427,158 @@ public class DiffRenderable : Renderable
         var rightSigns = new Dictionary<int, LineSign>();
         var leftLineNums = new Dictionary<int, int>();
         var rightLineNums = new Dictionary<int, int>();
+        var leftHide = new HashSet<int>();
+        var rightHide = new HashSet<int>();
         int leftIdx = 0, rightIdx = 0;
+
+        void AppendLeft(string content) { if (leftIdx > 0) leftSb.Append('\n'); leftSb.Append(content); }
+        void AppendRight(string content) { if (rightIdx > 0) rightSb.Append('\n'); rightSb.Append(content); }
 
         foreach (var hunk in hunks)
         {
             int oldLine = hunk.OldStart;
             int newLine = hunk.NewStart;
+            int i = 0;
 
-            foreach (var line in hunk.Lines)
+            while (i < hunk.Lines.Count)
             {
-                switch (line.Type)
-                {
-                    case DiffLineType.Added:
-                        if (rightIdx > 0) rightSb.Append('\n');
-                        rightSb.Append(line.Content);
-                        rightColors[rightIdx] = _addedBg;
-                        rightSigns[rightIdx] = new LineSign("+", null, _addedSignColor, null);
-                        rightLineNums[rightIdx] = newLine++;
-                        rightIdx++;
-                        // Pad left
-                        if (leftIdx > 0) leftSb.Append('\n');
-                        leftSb.Append("");
-                        leftIdx++;
-                        break;
-                    case DiffLineType.Removed:
-                        if (leftIdx > 0) leftSb.Append('\n');
-                        leftSb.Append(line.Content);
-                        leftColors[leftIdx] = _removedBg;
-                        leftSigns[leftIdx] = new LineSign("-", null, _removedSignColor, null);
-                        leftLineNums[leftIdx] = oldLine++;
-                        leftIdx++;
-                        // Pad right
-                        if (rightIdx > 0) rightSb.Append('\n');
-                        rightSb.Append("");
-                        rightIdx++;
-                        break;
-                    case DiffLineType.Context:
-                        if (leftIdx > 0) leftSb.Append('\n');
-                        leftSb.Append(line.Content);
-                        leftColors[leftIdx] = _contextBg;
-                        leftLineNums[leftIdx] = oldLine++;
-                        leftIdx++;
+                var line = hunk.Lines[i];
 
-                        if (rightIdx > 0) rightSb.Append('\n');
-                        rightSb.Append(line.Content);
-                        rightColors[rightIdx] = _contextBg;
-                        rightLineNums[rightIdx] = newLine++;
-                        rightIdx++;
-                        break;
+                if (line.Type == DiffLineType.Context)
+                {
+                    // Context line — appears on both sides
+                    AppendLeft(line.Content);
+                    leftColors[leftIdx] = _contextBg;
+                    leftLineNums[leftIdx] = oldLine++;
+                    leftIdx++;
+
+                    AppendRight(line.Content);
+                    rightColors[rightIdx] = _contextBg;
+                    rightLineNums[rightIdx] = newLine++;
+                    rightIdx++;
+                    i++;
+                }
+                else
+                {
+                    // Collect contiguous change block (removes + adds)
+                    var removes = new List<(string Content, int LineNum)>();
+                    var adds = new List<(string Content, int LineNum)>();
+
+                    while (i < hunk.Lines.Count)
+                    {
+                        var cur = hunk.Lines[i];
+                        if (cur.Type == DiffLineType.Context) break;
+
+                        if (cur.Type == DiffLineType.Removed)
+                        {
+                            removes.Add((cur.Content, oldLine++));
+                        }
+                        else if (cur.Type == DiffLineType.Added)
+                        {
+                            adds.Add((cur.Content, newLine++));
+                        }
+                        i++;
+                    }
+
+                    // Zip removes/adds with padding for the shorter side
+                    int maxLen = Math.Max(removes.Count, adds.Count);
+                    for (int j = 0; j < maxLen; j++)
+                    {
+                        if (j < removes.Count)
+                        {
+                            AppendLeft(removes[j].Content);
+                            leftColors[leftIdx] = _removedBg;
+                            leftSigns[leftIdx] = new LineSign(null, " -", _removedSignColor, null);
+                            leftLineNums[leftIdx] = removes[j].LineNum;
+                            leftIdx++;
+                        }
+                        else
+                        {
+                            AppendLeft("");
+                            leftHide.Add(leftIdx);
+                            leftIdx++;
+                        }
+
+                        if (j < adds.Count)
+                        {
+                            AppendRight(adds[j].Content);
+                            rightColors[rightIdx] = _addedBg;
+                            rightSigns[rightIdx] = new LineSign(null, " +", _addedSignColor, null);
+                            rightLineNums[rightIdx] = adds[j].LineNum;
+                            rightIdx++;
+                        }
+                        else
+                        {
+                            AppendRight("");
+                            rightHide.Add(rightIdx);
+                            rightIdx++;
+                        }
+                    }
                 }
             }
         }
 
         return (leftSb.ToString(), rightSb.ToString(),
             leftColors, rightColors, leftSigns, rightSigns,
-            leftLineNums, rightLineNums);
+            leftLineNums, rightLineNums, leftHide, rightHide);
+    }
+
+    #endregion
+
+    #region Scroll
+
+    /// <summary>
+    /// Scrolls the diff view by the given number of lines.
+    /// In split view, scrolls both panels (sync scroll always active).
+    /// </summary>
+    public void ScrollBy(int lines)
+    {
+        SetScrollTop(ScrollTop + lines);
+    }
+
+    /// <summary>
+    /// Scrolls to the top of the diff.
+    /// </summary>
+    public void ScrollToTop()
+    {
+        SetScrollTop(0);
+    }
+
+    protected override void OnMouseEvent(UiMouseEvent evt)
+    {
+        if (evt.Type != MouseEventType.Scroll || evt.Scroll is not { } scroll)
+            return;
+
+        int delta = scroll.Direction == "up" ? -3 : 3;
+        ScrollBy(delta);
+    }
+
+    #endregion
+
+    #region Scroll Internals
+
+    private CodeRenderable? GetScrollAnchor() =>
+        _viewMode == "split" ? _leftCode ?? _rightCode : _unifiedCode;
+
+    private void SetScrollTop(int value)
+    {
+        int oldScrollTop = ScrollTop;
+
+        if (_viewMode == "split")
+        {
+            if (_leftCode != null) _leftCode.ScrollY = value;
+            if (_rightCode != null) _rightCode.ScrollY = value;
+        }
+        else if (_unifiedCode != null)
+        {
+            _unifiedCode.ScrollY = value;
+        }
+
+        int newScrollTop = ScrollTop;
+        if (newScrollTop == oldScrollTop)
+            return;
+
+        Emit<int>(Events.Scroll, newScrollTop);
     }
 
     #endregion

@@ -35,6 +35,12 @@ public partial class InputRenderable : TextareaRenderable
         options ??= new InputOptions();
         _maxLength = options.MaxLength;
         _lastCommittedValue = PlainText;
+
+        string initialValue = StripNewlines(options.Value ?? "");
+        if (initialValue.Length > _maxLength)
+            initialValue = initialValue[.._maxLength];
+        if (initialValue.Length > 0)
+            EditBuffer.SetCursorByOffset((uint)System.Text.Encoding.UTF8.GetByteCount(initialValue));
     }
 
     private static TextareaOptions BuildBaseOptions(InputOptions? options)
@@ -47,8 +53,64 @@ public partial class InputRenderable : TextareaRenderable
 
         return new TextareaOptions
         {
+            Width = options.Width,
             Id = options.Id,
+            ZIndex = options.ZIndex,
+            Visible = options.Visible,
             Buffered = options.Buffered,
+            Live = options.Live,
+            Opacity = options.Opacity,
+            EnableLayout = options.EnableLayout,
+            RenderBefore = options.RenderBefore,
+            RenderAfter = options.RenderAfter,
+            OnMouse = options.OnMouse,
+            OnMouseDown = options.OnMouseDown,
+            OnMouseUp = options.OnMouseUp,
+            OnMouseMove = options.OnMouseMove,
+            OnMouseDrag = options.OnMouseDrag,
+            OnMouseDragEnd = options.OnMouseDragEnd,
+            OnMouseDrop = options.OnMouseDrop,
+            OnMouseOver = options.OnMouseOver,
+            OnMouseOut = options.OnMouseOut,
+            OnMouseScroll = options.OnMouseScroll,
+            OnPaste = options.OnPaste,
+            OnKeyDown = options.OnKeyDown,
+            OnSizeChange = options.OnSizeChange,
+            MinWidth = options.MinWidth,
+            MinHeight = options.MinHeight,
+            MaxWidth = options.MaxWidth,
+            MaxHeight = options.MaxHeight,
+            FlexGrow = options.FlexGrow,
+            FlexShrink = options.FlexShrink,
+            FlexBasis = options.FlexBasis,
+            FlexDirection = options.FlexDirection,
+            FlexWrap = options.FlexWrap,
+            AlignItems = options.AlignItems,
+            JustifyContent = options.JustifyContent,
+            AlignSelf = options.AlignSelf,
+            Position = options.Position,
+            Overflow = options.Overflow,
+            Top = options.Top,
+            Right = options.Right,
+            Bottom = options.Bottom,
+            Left = options.Left,
+            Margin = options.Margin,
+            MarginX = options.MarginX,
+            MarginY = options.MarginY,
+            MarginTop = options.MarginTop,
+            MarginRight = options.MarginRight,
+            MarginBottom = options.MarginBottom,
+            MarginLeft = options.MarginLeft,
+            Padding = options.Padding,
+            PaddingX = options.PaddingX,
+            PaddingY = options.PaddingY,
+            PaddingTop = options.PaddingTop,
+            PaddingRight = options.PaddingRight,
+            PaddingBottom = options.PaddingBottom,
+            PaddingLeft = options.PaddingLeft,
+            Gap = options.Gap,
+            RowGap = options.RowGap,
+            ColumnGap = options.ColumnGap,
             InitialValue = sanitized,
             Placeholder = options.Placeholder ?? "",
             PlaceholderColor = options.PlaceholderColor,
@@ -57,6 +119,18 @@ public partial class InputRenderable : TextareaRenderable
             FocusedBackgroundColor = options.FocusedBackgroundColor,
             FocusedTextColor = options.FocusedTextColor,
             OnSubmit = options.OnSubmit,
+            SelectionBg = options.SelectionBg,
+            SelectionFg = options.SelectionFg,
+            Selectable = options.Selectable,
+            Attributes = options.Attributes,
+            ScrollMargin = options.ScrollMargin,
+            ScrollSpeed = options.ScrollSpeed,
+            ShowCursor = options.ShowCursor,
+            CursorColor = options.CursorColor,
+            CursorStyle = options.CursorStyle,
+            SyntaxStyle = options.SyntaxStyle,
+            OnCursorChange = options.OnCursorChange,
+            OnContentChange = options.OnContentChange,
             Height = DimensionValue.Point(1),
             WrapMode = 0, // 0 = none
         };
@@ -95,7 +169,21 @@ public partial class InputRenderable : TextareaRenderable
 
     #region Overrides
 
-    public new bool NewLine() => false; // No newlines in single-line input
+    public override bool NewLine() => false; // No newlines in single-line input
+
+    public new bool Submit()
+    {
+        string currentValue = PlainText;
+        if (currentValue != _lastCommittedValue)
+        {
+            _lastCommittedValue = currentValue;
+            Emit<string>(Events.Change, currentValue);
+        }
+
+        base.Submit();
+        Emit<string>(Events.Enter, currentValue);
+        return true;
+    }
 
     public new void InsertText(string text)
     {
@@ -190,6 +278,18 @@ public partial class InputRenderable : TextareaRenderable
             Emit<string>(Events.Change, currentValue);
         }
         base.Blur();
+    }
+
+    protected override void HandleKeyPress(KeyEvent key)
+    {
+        if (key.Name is "return" or "linefeed")
+        {
+            Submit();
+            key.StopPropagation();
+            return;
+        }
+
+        base.HandleKeyPress(key);
     }
 
     #endregion

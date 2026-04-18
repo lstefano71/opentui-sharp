@@ -102,7 +102,7 @@ var footer = new BoxRenderable(renderer, new BoxOptions
 var footerText = new TextRenderable(renderer, new TextOptions
 {
     Id = "footer-text",
-    Content = "[a] Add 10 items  [j/k] Scroll down/up  [t/b] Top/Bottom  [Ctrl+C] Quit",
+    Content = "[a] Add 10 items  [j/k/🖱] Scroll  [t/b] Top/Bottom  [Ctrl+C] Quit",
     Fg = Rgba.FromHex("#93c5fd"),
 });
 footer.Add(footerText);

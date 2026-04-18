@@ -70,10 +70,9 @@ public abstract class EditBufferRenderable : Renderable
 
         EditorView.SetWrapMode(_wrapMode);
         EditorView.SetScrollMargin(_scrollMargin);
-
-        // EditBuffer foreground/background/attributes are set on the underlying
-        // TextBuffer via the native API — EditBuffer doesn't expose them directly
-        // The EditorView will use them during rendering
+        EditBuffer.SetForeground(_ebTextColor);
+        EditBuffer.SetBackground(_ebBackgroundColor);
+        EditBuffer.SetAttributes(_defaultAttributes);
 
         SetupMeasureFunc();
     }
@@ -83,13 +82,23 @@ public abstract class EditBufferRenderable : Renderable
     public virtual Rgba TextColor
     {
         get => _ebTextColor;
-        set { _ebTextColor = value; RequestRender(); }
+        set
+        {
+            _ebTextColor = value;
+            EditBuffer.SetForeground(value);
+            RequestRender();
+        }
     }
 
     public virtual Rgba BackgroundColor
     {
         get => _ebBackgroundColor;
-        set { _ebBackgroundColor = value; RequestRender(); }
+        set
+        {
+            _ebBackgroundColor = value;
+            EditBuffer.SetBackground(value);
+            RequestRender();
+        }
     }
 
     public string PlainText => EditBuffer.GetText();
@@ -301,22 +310,25 @@ public abstract class EditBufferRenderable : Renderable
     {
         if (_widthValue == 0 || _heightValue == 0) return;
 
+        var baseX = _buffered ? 0 : (int)_screenX;
+        var baseY = _buffered ? 0 : (int)_screenY;
+
         // Update editor view dimensions if they changed
         EditorView.SetViewportSize((uint)_widthValue, (uint)_heightValue);
 
         // Draw background
-        buffer.FillRect((uint)_screenX, (uint)_screenY,
+        buffer.FillRect((uint)baseX, (uint)baseY,
             (uint)_widthValue, (uint)_heightValue, _ebBackgroundColor);
 
         // Draw the editor view via native handle
-        buffer.DrawEditorView(EditorView.Handle, (int)_screenX, (int)_screenY);
+        buffer.DrawEditorView(EditorView.Handle, baseX, baseY);
 
         // Cursor
         if (_showCursor && Focused)
         {
             var vc = EditorView.GetVisualCursor();
-            int cx = (int)_screenX + (int)vc.VisualCol;
-            int cy = (int)_screenY + (int)vc.VisualRow;
+            int cx = (int)_screenX + (int)vc.VisualCol + 1;
+            int cy = (int)_screenY + (int)vc.VisualRow + 1;
             _ctx?.SetCursorPosition(cx, cy, true);
             _ctx?.SetCursorStyle(new CursorStyleOptions { Style = (byte)_cursorStyle });
             _ctx?.SetCursorColor(_cursorColor);

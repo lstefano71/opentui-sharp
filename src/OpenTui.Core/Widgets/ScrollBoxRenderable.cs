@@ -145,6 +145,10 @@ public class ScrollBoxRenderable : BoxRenderable
 
     public float ScrollHeight => _verticalScrollBar?.ScrollSize ?? 0;
     public float ScrollWidth => _horizontalScrollBar?.ScrollSize ?? 0;
+    public float MaxScrollTop => Math.Max(0, ScrollHeight - _viewport.Height);
+    public float MaxScrollLeft => Math.Max(0, ScrollWidth - _viewport.Width);
+    public int ViewportHeight => _viewport.Height;
+    public int ViewportWidth => _viewport.Width;
 
     public bool StickyScroll
     {
@@ -221,6 +225,63 @@ public class ScrollBoxRenderable : BoxRenderable
     private void OnHorizontalScroll(float position)
     {
         _content.TranslateX = -position;
+    }
+
+    #endregion
+
+    #region Mouse
+
+    protected override void OnMouseEvent(UiMouseEvent evt)
+    {
+        if (evt.Type != MouseEventType.Scroll || evt.Scroll is not { } scroll)
+            return;
+
+        string direction = evt.Modifiers.Shift
+            ? scroll.Direction switch
+            {
+                "up" => "left",
+                "down" => "right",
+                "left" => "down",
+                "right" => "up",
+                _ => scroll.Direction,
+            }
+            : scroll.Direction;
+
+        float scrollAmount = Math.Max(0, scroll.Delta);
+        bool handled = direction switch
+        {
+            "up" when _scrollY => ApplyAccumulatedScroll(ref _scrollAccumulatorY, -scrollAmount, vertical: true),
+            "down" when _scrollY => ApplyAccumulatedScroll(ref _scrollAccumulatorY, scrollAmount, vertical: true),
+            "left" when _scrollX => ApplyAccumulatedScroll(ref _scrollAccumulatorX, -scrollAmount, vertical: false),
+            "right" when _scrollX => ApplyAccumulatedScroll(ref _scrollAccumulatorX, scrollAmount, vertical: false),
+            _ => false,
+        };
+
+        if (!handled)
+            return;
+
+        if (MaxScrollTop > 1 || MaxScrollLeft > 1)
+        {
+            _hasManualScroll = true;
+            evt.StopPropagation();
+        }
+    }
+
+    private bool ApplyAccumulatedScroll(ref float accumulator, float delta, bool vertical)
+    {
+        accumulator += delta;
+        int integerScroll = (int)MathF.Truncate(accumulator);
+
+        if (integerScroll == 0)
+            return false;
+
+        if (vertical)
+            ScrollTop += integerScroll;
+        else
+            ScrollLeft += integerScroll;
+
+        accumulator -= integerScroll;
+        return true;
     }
 
     #endregion

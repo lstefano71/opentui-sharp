@@ -9,6 +9,7 @@ using var renderer = CliRenderer.Create(new CliRendererConfig
 
 var logLines = new List<string>();
 int maxLines = 50;
+bool autoScroll = true;
 
 void Log(string message)
 {
@@ -38,16 +39,17 @@ var headerText = new TextRenderable(renderer, new TextOptions
 header.Add(headerText);
 
 // --- Log area ---
-var logArea = new BoxRenderable(renderer, new BoxOptions
+var logArea = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
 {
     Id = "log-area",
     Width = DimensionValue.Auto,
     FlexGrow = 1,
+    ScrollY = true,
+    ScrollX = false,
     BackgroundColor = Rgba.FromHex("#0d1117"),
     Border = true,
     BorderColor = Rgba.FromHex("#30363d"),
     FlexDirection = FlexDirectionValue.Column,
-    Overflow = OverflowValue.Hidden,
 });
 var logText = new TextRenderable(renderer, new TextOptions
 {
@@ -55,13 +57,20 @@ var logText = new TextRenderable(renderer, new TextOptions
     Content = "",
     Fg = Rgba.FromHex("#c9d1d9"),
     WrapMode = WrapMode.Char,
+    Width = DimensionValue.Auto,
 });
+logText.OnSizeChange = () =>
+{
+    if (autoScroll)
+        logArea.ScrollTo(y: logArea.ScrollHeight);
+};
 logArea.Add(logText);
 
 void UpdateLog()
 {
     logText.ContentText = string.Join("\n", logLines);
-    logText.ScrollY = logText.MaxScrollY;
+    if (autoScroll)
+        logArea.ScrollTo(y: logArea.ScrollHeight);
     renderer.RequestRender();
 }
 
@@ -123,7 +132,7 @@ var footer = new BoxRenderable(renderer, new BoxOptions
 var footerText = new TextRenderable(renderer, new TextOptions
 {
     Id = "footer-text",
-    Content = "I: info | W: warn | E: error | D: debug | C: clear | Ctrl+C: exit",
+    Content = "I: info | W: warn | E: error | D: debug | C: clear | ↑/↓/🖱: scroll | Ctrl+C: exit",
     Fg = Rgba.FromInts(255, 255, 255),
 });
 footer.Add(footerText);
@@ -159,7 +168,30 @@ renderer.KeyInput.On("keypress", (KeyEvent e) =>
         case "c":
             logLines.Clear();
             messageCount = 0;
+            autoScroll = true;
             UpdateLog();
+            break;
+        case "up":
+            autoScroll = false;
+            logArea.ScrollBy(0, -1);
+            renderer.RequestRender();
+            break;
+        case "down":
+            logArea.ScrollBy(0, 1);
+            if (logArea.ScrollTop >= logArea.MaxScrollTop)
+                autoScroll = true;
+            renderer.RequestRender();
+            break;
+        case "pageup":
+            autoScroll = false;
+            logArea.ScrollBy(0, -10);
+            renderer.RequestRender();
+            break;
+        case "pagedown":
+            logArea.ScrollBy(0, 10);
+            if (logArea.ScrollTop >= logArea.MaxScrollTop)
+                autoScroll = true;
+            renderer.RequestRender();
             break;
     }
 });

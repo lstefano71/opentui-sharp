@@ -133,6 +133,15 @@ var diffContainer = new BoxRenderable(renderer, new BoxOptions
     BorderColor = Rgba.FromHex("#444444"),
 });
 
+var diffLayout = new BoxRenderable(renderer, new BoxOptions
+{
+    Id = "diff-layout",
+    Width = DimensionValue.Auto,
+    Height = DimensionValue.Auto,
+    FlexGrow = 1,
+    FlexDirection = FlexDirectionValue.Row,
+});
+
 var theme = themes[themeIndex];
 var diff = new DiffRenderable(renderer, new DiffOptions
 {
@@ -147,7 +156,15 @@ var diff = new DiffRenderable(renderer, new DiffOptions
     Width = DimensionValue.Auto,
     FlexGrow = 1,
 });
-diffContainer.Add(diff);
+var diffScrollbar = new ScrollBarRenderable(renderer, new ScrollBarOptions
+{
+    Orientation = SliderOrientation.Vertical,
+    OnChange = position => diff.ScrollTop = (int)position,
+});
+diffScrollbar.WidthDimension = DimensionValue.Point(1);
+diffLayout.Add(diff);
+diffLayout.Add(diffScrollbar);
+diffContainer.Add(diffLayout);
 
 // --- Footer ---
 var footer = new BoxRenderable(renderer, new BoxOptions
@@ -176,7 +193,7 @@ renderer.Root.Add(footer);
 
 void RebuildDiff()
 {
-    diffContainer.Remove("diff");
+    diffLayout.Remove("diff");
     var t = themes[themeIndex];
     diff = new DiffRenderable(renderer, new DiffOptions
     {
@@ -191,14 +208,24 @@ void RebuildDiff()
         Width = DimensionValue.Auto,
         FlexGrow = 1,
     });
-    diffContainer.Add(diff);
+    diff.On<int>(DiffRenderable.Events.Scroll, _ => UpdateDiffScrollbar());
+    diff.OnSizeChange = UpdateDiffScrollbar;
+    diffLayout.Add(diff, 0);
+    UpdateDiffScrollbar();
+}
+
+void UpdateDiffScrollbar()
+{
+    diffScrollbar.ScrollSize = diff.ScrollHeight;
+    diffScrollbar.ViewportSize = Math.Max(1, diff.ViewportHeight);
+    diffScrollbar.ScrollPosition = diff.ScrollTop;
 }
 
 void UpdateDisplay()
 {
     string viewLabel = splitView ? "split" : "unified";
     headerText.ContentText = $"DIFF DEMO — {diffNames[diffIndex]} ({diffIndex + 1}/{diffNames.Length})";
-    footerText.ContentText = $"[N] Diff ({diffNames[diffIndex]})  [V] View ({viewLabel})  [T] Theme ({themes[themeIndex].Name})";
+    footerText.ContentText = $"[N] Diff ({diffNames[diffIndex]})  [V] View ({viewLabel})  [T] Theme ({themes[themeIndex].Name})  [↑/↓/🖱] Scroll";
 }
 
 // --- Key handling ---
@@ -218,10 +245,28 @@ renderer.KeyInput.On("keypress", (KeyEvent e) =>
             diffIndex = (diffIndex + 1) % diffs.Length;
             RebuildDiff();
             break;
+        case "up":
+            diff.ScrollBy(-1);
+            UpdateDiffScrollbar();
+            break;
+        case "down":
+            diff.ScrollBy(1);
+            UpdateDiffScrollbar();
+            break;
+        case "pageup":
+            diff.ScrollBy(-10);
+            UpdateDiffScrollbar();
+            break;
+        case "pagedown":
+            diff.ScrollBy(10);
+            UpdateDiffScrollbar();
+            break;
     }
     UpdateDisplay();
 });
 
+diff.On<int>(DiffRenderable.Events.Scroll, _ => UpdateDiffScrollbar());
+diff.OnSizeChange = UpdateDiffScrollbar;
 UpdateDisplay();
 renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);

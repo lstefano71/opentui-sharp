@@ -214,6 +214,27 @@ public sealed class EditBuffer : IDisposable
 
     #endregion
 
+    #region Default Styling
+
+    /// <summary>Sets the default foreground color for unstyled text in the edit buffer.</summary>
+    public void SetForeground(Rgba? fg) =>
+        RgbaMarshalling.WithColorPtr(fg, ptr =>
+            OpenTuiNative.TextBufferSetDefaultFg(GetTextBuffer(), ptr));
+
+    /// <summary>Sets the default background color for unstyled text in the edit buffer.</summary>
+    public void SetBackground(Rgba? bg) =>
+        RgbaMarshalling.WithColorPtr(bg, ptr =>
+            OpenTuiNative.TextBufferSetDefaultBg(GetTextBuffer(), ptr));
+
+    /// <summary>Sets the default text attributes for unstyled text in the edit buffer.</summary>
+    public unsafe void SetAttributes(TextAttributes attrs)
+    {
+        uint value = (uint)attrs;
+        OpenTuiNative.TextBufferSetDefaultAttributes(GetTextBuffer(), (nint)(&value));
+    }
+
+    #endregion
+
     #region Position Conversion
 
     /// <summary>Converts a character offset to a logical cursor position.</summary>

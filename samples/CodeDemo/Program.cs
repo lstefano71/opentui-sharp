@@ -232,7 +232,7 @@ void UpdateDisplay()
 {
     var (name, _, _) = samples[sampleIndex];
     headerText.ContentText = $"CODE DEMO — {name} ({sampleIndex + 1}/{samples.Length})";
-    footerText.ContentText = $"[N] Language ({name})  [W] Wrap ({wrapNames[wrapIndex]})  [↑/↓] Scroll";
+    footerText.ContentText = $"[N] Language ({name})  [W] Wrap ({wrapNames[wrapIndex]})  [↑/↓/🖱] Scroll";
 }
 
 // --- Key handling ---

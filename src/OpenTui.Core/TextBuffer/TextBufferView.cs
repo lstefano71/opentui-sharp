@@ -182,6 +182,26 @@ public sealed class TextBufferView : IDisposable
         NativeLineInfo info = default;
         OpenTuiNative.TextBufferViewGetLineInfoDirect(Handle, (nint)(&info));
 
+        return MarshalLineInfo(in info);
+    }
+
+    /// <summary>
+    /// Gets logical (full-document) line layout information as a managed <see cref="LineInfo"/>.
+    /// Unlike <see cref="GetLineInfo"/> which returns viewport-only data,
+    /// this returns mapping for all virtual lines in the document.
+    /// </summary>
+    public unsafe LineInfo GetLogicalLineInfo()
+    {
+        GetVirtualLineCount();
+
+        NativeLineInfo info = default;
+        OpenTuiNative.TextBufferViewGetLogicalLineInfoDirect(Handle, (nint)(&info));
+
+        return MarshalLineInfo(in info);
+    }
+
+    private static unsafe LineInfo MarshalLineInfo(in NativeLineInfo info)
+    {
         var startCols = new uint[info.StartColsLen];
         var widthCols = new uint[info.WidthColsLen];
         var sources = new uint[info.SourcesLen];

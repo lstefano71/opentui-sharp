@@ -132,19 +132,19 @@ public class LineNumberRenderable : Renderable
     public void SetLineSign(int line, LineSign sign)
     {
         _lineSigns[line] = sign;
-        RequestRender();
+        DirtyGutterLayout();
     }
 
     public void ClearLineSign(int line)
     {
         _lineSigns.Remove(line);
-        RequestRender();
+        DirtyGutterLayout();
     }
 
     public void SetLineSigns(Dictionary<int, LineSign> signs)
     {
         _lineSigns = signs;
-        RequestRender();
+        DirtyGutterLayout();
     }
 
     public void SetHideLineNumbers(HashSet<int> lines)
@@ -161,6 +161,12 @@ public class LineNumberRenderable : Renderable
 
     public Dictionary<int, LineColorConfig> GetLineColors() => _lineColors;
     public Dictionary<int, LineSign> GetLineSigns() => _lineSigns;
+
+    private void DirtyGutterLayout()
+    {
+        _gutter.MarkLayoutDirty();
+        RequestRender();
+    }
 
     #endregion
 
@@ -201,12 +207,21 @@ public class LineNumberRenderable : Renderable
         // Draw full-width content backgrounds for lines with custom colors
         if (_target != null && _lineColors.Count > 0)
         {
-            int scrollY = (_target as ILineInfoProvider)?.ScrollY ?? 0;
+            var provider = _target as ILineInfoProvider;
+            int scrollY = provider?.ScrollY ?? 0;
             int visibleLines = _heightValue;
+            var lineInfo = provider?.GetCachedLineInfo();
+            var sources = lineInfo?.LineSources;
 
             for (int i = 0; i < visibleLines; i++)
             {
-                int logicalLine = scrollY + i;
+                int visualIdx = scrollY + i;
+                int logicalLine;
+                if (sources != null && visualIdx < sources.Length)
+                    logicalLine = (int)sources[visualIdx];
+                else
+                    break;
+
                 if (_lineColors.TryGetValue(logicalLine, out var colorCfg) && colorCfg.ContentBg.HasValue)
                 {
                     buffer.FillRect((uint)_screenX, (uint)(_screenY + i),
@@ -224,12 +239,36 @@ public class LineNumberRenderable : Renderable
     private sealed class GutterRenderable : Renderable
     {
         private readonly LineNumberRenderable _owner;
+        private int _maxBeforeWidth;
+        private int _maxAfterWidth;
+        private int _digitWidth;
 
         public GutterRenderable(IRenderContext ctx, LineNumberRenderable owner)
             : base(ctx, new RenderableOptions { Buffered = true })
         {
             _owner = owner;
             YGNodeAPI.YGNodeSetMeasureFunc(YogaNode, MeasureFunc);
+        }
+
+        public void MarkLayoutDirty() => YGNodeAPI.YGNodeMarkDirty(YogaNode);
+
+        /// <summary>
+        /// Recomputes shared gutter metrics from current signs and line count.
+        /// Called by both measure and render to ensure consistency.
+        /// </summary>
+        private void UpdateMetrics()
+        {
+            int lineCount = (_owner._target as ILineInfoProvider)?.LineCount ?? 0;
+            int maxLineNum = lineCount + _owner._lineNumberOffset;
+            _digitWidth = Math.Max(_owner._minWidth, maxLineNum.ToString().Length);
+
+            _maxBeforeWidth = 0;
+            _maxAfterWidth = 0;
+            foreach (var (_, sign) in _owner._lineSigns)
+            {
+                if (sign.Before != null) _maxBeforeWidth = Math.Max(_maxBeforeWidth, sign.Before.Length);
+                if (sign.After != null) _maxAfterWidth = Math.Max(_maxAfterWidth, sign.After.Length);
+            }
         }
 
         private YGSize MeasureFunc(Node node, float availableWidth, MeasureMode widthMode,
@@ -242,48 +281,57 @@ public class LineNumberRenderable : Renderable
         private int ComputeGutterWidth()
         {
             if (!_owner._showLineNumbers) return 0;
-
-            int lineCount = (_owner._target as ILineInfoProvider)?.LineCount ?? 0;
-            int maxLineNum = lineCount + _owner._lineNumberOffset;
-            int digitWidth = Math.Max(_owner._minWidth, maxLineNum.ToString().Length);
-
-            // Account for signs
-            int signWidth = 0;
-            foreach (var (_, sign) in _owner._lineSigns)
-            {
-                if (sign.Before != null) signWidth = Math.Max(signWidth, sign.Before.Length);
-                if (sign.After != null) signWidth = Math.Max(signWidth, sign.After.Length);
-            }
-
-            return digitWidth + _owner._paddingRight + signWidth;
+            UpdateMetrics();
+            return _maxBeforeWidth + _digitWidth + _maxAfterWidth + _owner._paddingRight;
         }
 
         protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
         {
             if (!_owner._showLineNumbers) return;
 
-            int scrollY = (_owner._target as ILineInfoProvider)?.ScrollY ?? 0;
-            int lineCount = (_owner._target as ILineInfoProvider)?.LineCount ?? 0;
+            UpdateMetrics();
+
+            var provider = _owner._target as ILineInfoProvider;
+            int scrollY = provider?.ScrollY ?? 0;
             int visibleLines = _heightValue;
             int gutterWidth = _widthValue;
 
-            // Fill background
-            buffer.FillRect((uint)_screenX, (uint)_screenY,
-                (uint)gutterWidth, (uint)visibleLines, _owner._bg);
+            var lineInfo = provider?.GetCachedLineInfo();
+            var sources = lineInfo?.LineSources;
+
+            int startX = 0;
+            int startY = 0;
+
+            buffer.Clear(_owner._bg);
+
+            int lastSource = scrollY > 0 && sources != null && scrollY - 1 < sources.Length
+                ? (int)sources[scrollY - 1] : -1;
 
             for (int i = 0; i < visibleLines; i++)
             {
-                int logicalLine = scrollY + i;
-                if (logicalLine >= lineCount) break;
+                int visualIdx = scrollY + i;
+                int logicalLine;
+                if (sources != null && visualIdx < sources.Length)
+                    logicalLine = (int)sources[visualIdx];
+                else
+                    break;
 
                 // Per-line gutter background
                 if (_owner._lineColors.TryGetValue(logicalLine, out var colorCfg) && colorCfg.GutterBg.HasValue)
                 {
-                    buffer.FillRect((uint)_screenX, (uint)(_screenY + i),
+                    buffer.FillRect((uint)startX, (uint)(startY + i),
                         (uint)gutterWidth, 1, colorCfg.GutterBg.Value);
                 }
 
                 var fg = colorCfg.GutterFg ?? _owner._fg;
+
+                // Skip wrapped continuation lines (same logical source as previous row)
+                if (logicalLine == lastSource)
+                {
+                    lastSource = logicalLine;
+                    continue;
+                }
+                lastSource = logicalLine;
 
                 // Hidden line numbers
                 if (_owner._hideLineNumbers.Contains(logicalLine))
@@ -293,28 +341,34 @@ public class LineNumberRenderable : Renderable
                 int displayNum = _owner._customLineNumbers?.GetValueOrDefault(logicalLine, logicalLine + 1 + _owner._lineNumberOffset)
                     ?? (logicalLine + 1 + _owner._lineNumberOffset);
 
-                string numStr = displayNum.ToString().PadLeft(_owner._minWidth);
+                string numStr = displayNum.ToString().PadLeft(_digitWidth);
 
-                // Draw signs (before)
-                if (_owner._lineSigns.TryGetValue(logicalLine, out var sign))
+                int currentX = startX;
+
+                // Draw sign (before) — always reserve _maxBeforeWidth columns
+                _owner._lineSigns.TryGetValue(logicalLine, out var sign);
+                if (sign.Before is { } before)
                 {
-                    if (sign.Before is { } before)
-                    {
-                        var signFg = sign.Fg ?? fg;
-                        buffer.DrawText(before, (uint)_screenX, (uint)(_screenY + i), signFg, sign.Bg);
-                    }
+                    int padding = _maxBeforeWidth - before.Length;
+                    currentX += padding;
+                    var signFg = sign.Fg ?? fg;
+                    buffer.DrawText(before, (uint)currentX, (uint)(startY + i), signFg, sign.Bg);
+                    currentX += before.Length;
+                }
+                else
+                {
+                    currentX += _maxBeforeWidth;
                 }
 
-                // Draw line number
-                int numX = (int)_screenX + (sign.Before?.Length ?? 0);
-                buffer.DrawText(numStr, (uint)numX, (uint)(_screenY + i), fg);
+                // Draw line number (right-aligned within digit area)
+                buffer.DrawText(numStr, (uint)currentX, (uint)(startY + i), fg);
+                currentX += numStr.Length;
 
-                // Draw signs (after)
+                // Draw sign (after) — always at fixed position
                 if (sign.After is { } after)
                 {
-                    int afterX = numX + numStr.Length;
                     var signFg = sign.Fg ?? fg;
-                    buffer.DrawText(after, (uint)afterX, (uint)(_screenY + i), signFg, sign.Bg);
+                    buffer.DrawText(after, (uint)currentX, (uint)(startY + i), signFg, sign.Bg);
                 }
             }
         }

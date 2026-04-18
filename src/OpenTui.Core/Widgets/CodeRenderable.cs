@@ -125,7 +125,23 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
         }
     }
 
-    public int ScrollY => 0; // TODO: get from TextBufferView scroll position
+    // ScrollY is inherited from TextBufferRenderable and satisfies ILineInfoProvider.ScrollY
+
+    private LineInfo? _cachedLineInfo;
+    private bool _lineInfoDirty = true;
+
+    public LineInfo? GetCachedLineInfo()
+    {
+        if (_lineInfoDirty)
+        {
+            _cachedLineInfo = TextBufferView.GetLogicalLineInfo();
+            _lineInfoDirty = false;
+        }
+        return _cachedLineInfo;
+    }
+
+    /// <summary>Marks the cached LineInfo as stale (call on content/resize/wrap changes).</summary>
+    private void InvalidateLineInfo() => _lineInfoDirty = true;
 
     #endregion
 
@@ -133,6 +149,7 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
 
     private void SetTextContent(string content)
     {
+        InvalidateLineInfo();
         SetTextAndDirtyLayout(content);
     }
 
@@ -141,6 +158,7 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
     /// </summary>
     public void SetStyledContent(StyledText styledText)
     {
+        InvalidateLineInfo();
         SetStyledTextAndDirtyLayout(styledText);
         _highlightsDirty = false;
         RequestRender();
@@ -157,28 +175,45 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
 
     #endregion
 
+    #region Resize
+
+    protected override void OnResize(int width, int height)
+    {
+        InvalidateLineInfo();
+        base.OnResize(width, height);
+    }
+
+    #endregion
+
     #region Rendering
 
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
-        // If highlights are dirty and we have a syntax style, we'd trigger
-        // async highlighting here. For now, just render the plain text.
         if (_highlightsDirty)
         {
             _highlightSnapshotId++;
             _highlightsDirty = false;
-            // TODO: Async tree-sitter highlighting when ported
         }
 
-        // Draw per-line backgrounds if set
+        // Draw per-line backgrounds using lineSources for visual→logical mapping
         if (LineBackgrounds != null && _heightValue > 0)
         {
-            foreach (var (line, bg) in LineBackgrounds)
+            var lineInfo = GetCachedLineInfo();
+            var sources = lineInfo?.LineSources;
+            int startLine = ScrollY;
+
+            for (int i = 0; i < _heightValue; i++)
             {
-                int renderY = line; // TODO: account for scroll
-                if (renderY >= 0 && renderY < _heightValue)
+                int visualIdx = startLine + i;
+                int logicalLine;
+                if (sources != null && visualIdx < sources.Length)
+                    logicalLine = (int)sources[visualIdx];
+                else
+                    break;
+
+                if (LineBackgrounds.TryGetValue(logicalLine, out var bg))
                 {
-                    buffer.FillRect((uint)_screenX, (uint)(_screenY + renderY),
+                    buffer.FillRect((uint)_screenX, (uint)(_screenY + i),
                         (uint)_widthValue, 1, bg);
                 }
             }

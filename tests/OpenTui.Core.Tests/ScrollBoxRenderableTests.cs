@@ -257,6 +257,38 @@ public sealed class ScrollBoxRenderableTests : IDisposable
             $"ScrollHeight={scrollHeight}, ViewportHeight={viewportHeight}");
     }
 
+    [Fact]
+    public void MouseWheel_ScrollsScrollBox()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "scroll-mouse",
+            ScrollY = true,
+            ScrollX = false,
+            FlexGrow = 1,
+        });
+
+        var content = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "tall-content",
+            Height = DimensionValue.Point(100),
+        });
+
+        scrollBox.Add(content);
+        _renderer.Root.Add(scrollBox);
+
+        RenderFrame();
+
+        scrollBox.ProcessMouseEvent(new UiMouseEvent
+        {
+            Type = MouseEventType.Scroll,
+            Scroll = new ScrollInfo("down", 1),
+            Target = scrollBox,
+        });
+
+        Assert.True(scrollBox.ScrollTop > 0, "Mouse wheel should move the scroll position.");
+    }
+
     #endregion
 
     #region Resize
