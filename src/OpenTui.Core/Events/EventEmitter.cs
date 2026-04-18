@@ -5,7 +5,7 @@ namespace OpenTui.Core;
 /// Supports on/once/off/emit/removeAllListeners with string-keyed event names.
 /// AOT-compatible: no reflection, delegates stored and invoked directly.
 /// </summary>
-public class EventEmitter
+public class EventEmitter : IEventEmitter
 {
     private readonly Dictionary<string, List<Subscription>> _listeners = [];
 
