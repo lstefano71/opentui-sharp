@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace OpenTui;
 
 /// <summary>Options for configuring the App host.</summary>
@@ -28,6 +30,15 @@ public sealed class App : IDisposable
     private volatile bool _running;
     private bool _disposed;
 
+    // Win32 API to set/get the console output code page.
+    [DllImport("kernel32.dll")]
+    private static extern bool SetConsoleOutputCP(uint codePage);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetConsoleOutputCP();
+
+    private const uint CP_UTF8 = 65001;
+
     /// <summary>Creates a new App with the specified options.</summary>
     public App(AppOptions? options = null)
     {
@@ -52,6 +63,15 @@ public sealed class App : IDisposable
         uint cols = _options.Cols > 0 ? (uint)_options.Cols : (uint)Console.WindowWidth;
         uint rows = _options.Rows > 0 ? (uint)_options.Rows : (uint)Console.WindowHeight;
         int fps = Math.Clamp(_options.TargetFps, 1, 120);
+
+        // The native renderer writes UTF-8 directly to stdout. On Windows the
+        // console code page must be UTF-8 (65001) for correct rendering.
+        uint previousCP = 0;
+        if (OperatingSystem.IsWindows())
+        {
+            previousCP = GetConsoleOutputCP();
+            SetConsoleOutputCP(CP_UTF8);
+        }
 
         using var renderer = new NativeRenderer(cols, rows);
         renderer.ForwardEnvironment();
@@ -90,6 +110,9 @@ public sealed class App : IDisposable
         {
             Console.CancelKeyPress -= OnCancelKeyPress;
             renderer.RestoreTerminalModes();
+
+            if (OperatingSystem.IsWindows() && previousCP != 0)
+                SetConsoleOutputCP(previousCP);
         }
     }
 
