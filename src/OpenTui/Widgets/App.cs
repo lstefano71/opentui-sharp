@@ -54,6 +54,7 @@ public sealed class App : IDisposable
         int fps = Math.Clamp(_options.TargetFps, 1, 120);
 
         using var renderer = new NativeRenderer(cols, rows);
+        renderer.ForwardEnvironment();
         renderer.SetupTerminal(_options.AlternateScreen);
 
         Console.CancelKeyPress += OnCancelKeyPress;

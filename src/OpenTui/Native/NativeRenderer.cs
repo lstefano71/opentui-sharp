@@ -176,6 +176,30 @@ public sealed class NativeRenderer : IDisposable
         }
     }
 
+    // Environment variable keys the native renderer needs to detect terminal capabilities.
+    private static readonly string[] ForwardedEnvKeys =
+    [
+        "TMUX", "TERM", "OPENTUI_GRAPHICS", "TERM_PROGRAM", "TERM_PROGRAM_VERSION",
+        "ALACRITTY_SOCKET", "ALACRITTY_LOG", "COLORTERM", "TERMUX_VERSION",
+        "OPENTUI_FORCE_WCWIDTH", "OPENTUI_FORCE_UNICODE", "OPENTUI_FORCE_NOZWJ",
+        "OPENTUI_FORCE_EXPLICIT_WIDTH", "WT_SESSION", "STY", "WSL_DISTRO_NAME", "WSL_INTEROP",
+    ];
+
+    /// <summary>
+    /// Forwards terminal-related environment variables to the native renderer
+    /// so it can detect capabilities (Unicode support, color depth, etc.).
+    /// Call this after construction, before <see cref="SetupTerminal"/>.
+    /// </summary>
+    public void ForwardEnvironment()
+    {
+        foreach (var key in ForwardedEnvKeys)
+        {
+            var value = Environment.GetEnvironmentVariable(key);
+            if (value is not null)
+                SetTerminalEnvVar(key, value);
+        }
+    }
+
     /// <summary>Dumps internal buffers to a file named with the given timestamp for debugging.</summary>
     public void DumpBuffers(long? timestamp = null) =>
         OpenTuiNative.DumpBuffers(Handle, timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
