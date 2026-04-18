@@ -25,6 +25,17 @@ public sealed class TextBufferView : IDisposable
         return new TextBufferView(handle);
     }
 
+    /// <summary>Creates a new text buffer view from an edit buffer's underlying text buffer.</summary>
+    public static TextBufferView CreateFrom(EditBuffer editBuffer)
+    {
+        ArgumentNullException.ThrowIfNull(editBuffer);
+        nint tbHandle = editBuffer.GetTextBuffer();
+        nint handle = OpenTuiNative.CreateTextBufferView(tbHandle);
+        if (handle == nint.Zero)
+            throw new InvalidOperationException("Failed to create native text buffer view.");
+        return new TextBufferView(handle);
+    }
+
     /// <summary>Gets the native handle.</summary>
     internal nint Handle
     {
@@ -50,6 +61,10 @@ public sealed class TextBufferView : IDisposable
     #region Wrap
 
     /// <summary>Sets the line wrap mode.</summary>
+    public void SetWrapMode(WrapMode mode) =>
+        OpenTuiNative.TextBufferViewSetWrapMode(Handle, (byte)mode);
+
+    /// <summary>Sets the line wrap mode (raw byte).</summary>
     public void SetWrapMode(byte mode) =>
         OpenTuiNative.TextBufferViewSetWrapMode(Handle, mode);
 
@@ -135,6 +150,21 @@ public sealed class TextBufferView : IDisposable
 
     #region Line Info
 
+    /// <summary>Native struct matching Zig ExternalLineInfo layout.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeLineInfo
+    {
+        public nint StartColsPtr;
+        public uint StartColsLen;
+        public nint WidthColsPtr;
+        public uint WidthColsLen;
+        public nint SourcesPtr;
+        public uint SourcesLen;
+        public nint WrapsPtr;
+        public uint WrapsLen;
+        public uint WidthColsMax;
+    }
+
     /// <summary>Gets line information directly into the output struct.</summary>
     public void GetLineInfoDirect(nint outInfo) =>
         OpenTuiNative.TextBufferViewGetLineInfoDirect(Handle, outInfo);
@@ -142,6 +172,39 @@ public sealed class TextBufferView : IDisposable
     /// <summary>Gets logical line information directly into the output struct.</summary>
     public void GetLogicalLineInfoDirect(nint outInfo) =>
         OpenTuiNative.TextBufferViewGetLogicalLineInfoDirect(Handle, outInfo);
+
+    /// <summary>Gets virtual line layout information as a managed <see cref="LineInfo"/>.</summary>
+    public unsafe LineInfo GetLineInfo()
+    {
+        // Trigger layout by querying line count first
+        GetVirtualLineCount();
+
+        NativeLineInfo info = default;
+        OpenTuiNative.TextBufferViewGetLineInfoDirect(Handle, (nint)(&info));
+
+        var startCols = new uint[info.StartColsLen];
+        var widthCols = new uint[info.WidthColsLen];
+        var sources = new uint[info.SourcesLen];
+        var wraps = new uint[info.WrapsLen];
+
+        for (int i = 0; i < (int)info.StartColsLen; i++)
+            startCols[i] = ((uint*)info.StartColsPtr)[i];
+        for (int i = 0; i < (int)info.WidthColsLen; i++)
+            widthCols[i] = ((uint*)info.WidthColsPtr)[i];
+        for (int i = 0; i < (int)info.SourcesLen; i++)
+            sources[i] = ((uint*)info.SourcesPtr)[i];
+        for (int i = 0; i < (int)info.WrapsLen; i++)
+            wraps[i] = ((uint*)info.WrapsPtr)[i];
+
+        return new LineInfo
+        {
+            LineStartCols = startCols,
+            LineWidthCols = widthCols,
+            LineSources = sources,
+            LineWraps = wraps,
+            LineWidthColsMax = info.WidthColsMax,
+        };
+    }
 
     #endregion
 

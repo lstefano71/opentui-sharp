@@ -221,6 +221,26 @@ public sealed class TextBuffer : IDisposable
     public void ClearHighlights() =>
         OpenTuiNative.TextBufferClearAllHighlights(Handle);
 
+    /// <summary>Gets the highlights for a specific line.</summary>
+    /// <param name="line">Zero-based line number.</param>
+    /// <returns>Array of <see cref="Highlight"/> structs for the line.</returns>
+    public unsafe Highlight[] GetLineHighlights(uint line)
+    {
+        nuint count = 0;
+        nint ptr = OpenTuiNative.TextBufferGetLineHighlightsPtr(Handle, line, (nint)(&count));
+
+        if (ptr == nint.Zero || count == 0)
+            return [];
+
+        var result = new Highlight[(int)count];
+        int structSize = sizeof(Highlight);
+        for (int i = 0; i < (int)count; i++)
+            result[i] = *(Highlight*)(ptr + i * structSize);
+
+        OpenTuiNative.TextBufferFreeLineHighlights(ptr, count);
+        return result;
+    }
+
     #endregion
 
     #region Memory Registry

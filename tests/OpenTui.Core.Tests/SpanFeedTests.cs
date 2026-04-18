@@ -10,12 +10,8 @@ namespace OpenTui.Core.Tests;
 /// Tests that require internal Zig state (stateBuffer, span_ring head/tail),
 /// FailingAllocator, or markSpanConsumed for chunk reuse are not portable and are omitted.
 /// </summary>
-public partial class SpanFeedTests
+public class SpanFeedTests
 {
-    // Local P/Invoke for use inside unmanaged callbacks where the managed wrapper is inaccessible.
-    [LibraryImport("opentui", EntryPoint = "streamDrainSpans")]
-    private static partial uint NativeDrainSpans(nint spanFeed, nint outSpans, uint maxSpans);
-
     // Status codes matching Zig native-span-feed.zig Status struct
     private const int StatusOk = 0;
     private const int ErrNoSpace = -1;
@@ -1165,7 +1161,7 @@ public partial class SpanFeedTests
     #region Synchronous drain during write (callback)
 
     [ThreadStatic]
-    private static nint s_drainTarget;
+    private static NativeSpanFeed? s_drainFeed;
     [ThreadStatic]
     private static ulong s_drainTotal;
 
@@ -1173,12 +1169,12 @@ public partial class SpanFeedTests
     private static unsafe void DrainingCallback(nuint streamPtr, uint eventId, nuint param1, ulong param2)
     {
         if (eventId != EventDataAvailable) return;
-        if (s_drainTarget == nint.Zero) return;
+        if (s_drainFeed is null) return;
 
         SpanInfoNative* buf = stackalloc SpanInfoNative[64];
         while (true)
         {
-            uint count = NativeDrainSpans(s_drainTarget, (nint)buf, 64);
+            uint count = s_drainFeed.DrainSpans((nint)buf, 64);
             if (count == 0) break;
             for (uint i = 0; i < count; i++)
                 s_drainTotal += buf[i].Len;
@@ -1188,7 +1184,7 @@ public partial class SpanFeedTests
     [Fact]
     public unsafe void SynchronousDrainDuringWriteDoesNotCorruptState()
     {
-        s_drainTarget = nint.Zero;
+        s_drainFeed = null;
         s_drainTotal = 0;
 
         const uint chunkSize = 64;
@@ -1196,7 +1192,7 @@ public partial class SpanFeedTests
 
         feed.SetCallback((nint)(delegate* unmanaged[Cdecl]<nuint, uint, nuint, ulong, void>)&DrainingCallback);
         feed.Attach();
-        s_drainTarget = feed.Handle;
+        s_drainFeed = feed;
         s_drainTotal = 0;
 
         byte[] data = FilledBytes((byte)'D', 256);
@@ -1218,7 +1214,7 @@ public partial class SpanFeedTests
         Assert.Equal(256UL, s_drainTotal);
         Assert.Equal(256UL, feed.GetStats().BytesWritten);
 
-        s_drainTarget = nint.Zero;
+        s_drainFeed = null;
     }
 
     #endregion
