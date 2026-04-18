@@ -193,13 +193,8 @@ var statusBox = new BoxRenderable(renderer, new BoxOptions
     Border = true,
     BorderColor = Rgba.FromHex("#475569"),
     Padding = DimensionValue.Point(1),
-});
-
-var statusTitle = new TextRenderable(renderer, new TextOptions
-{
-    Id = "status-title",
-    Content = "Slider Values",
-    Fg = Rgba.FromHex("#c084fc"),
+    Title = "Slider Values",
+    TitleAlignment = TitleAlignment.Left,
 });
 
 var statusText = new TextRenderable(renderer, new TextOptions
@@ -209,7 +204,6 @@ var statusText = new TextRenderable(renderer, new TextOptions
     Fg = Rgba.FromHex("#94a3b8"),
 });
 
-statusBox.Add(statusTitle);
 statusBox.Add(statusText);
 
 // --- Footer ---
@@ -228,7 +222,7 @@ var footer = new BoxRenderable(renderer, new BoxOptions
 var footerText = new TextRenderable(renderer, new TextOptions
 {
     Id = "footer-text",
-    Content = "Sliders 3 & 4 (vertical) are animated with sin/cos • Ctrl+C to quit",
+    Content = "Click/drag sliders • Arrow keys move the focused slider • V3/V4 animate • Ctrl+C to quit",
     Fg = Rgba.FromHex("#818cf8"),
 });
 footer.Add(footerText);

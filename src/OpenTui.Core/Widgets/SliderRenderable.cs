@@ -44,6 +44,8 @@ public class SliderRenderable : Renderable
     private Rgba _backgroundColor;
     private Rgba _foregroundColor;
     private Action<float>? _onChange;
+    private bool _isDragging;
+    private int _dragOffsetVirtual;
 
     public SliderRenderable(IRenderContext ctx, SliderOptions options)
         : base(ctx, options)
@@ -59,6 +61,7 @@ public class SliderRenderable : Renderable
 
         // Slider doesn't shrink by default
         FlexShrink = 0;
+        Focusable = true;
     }
 
     #region Properties
@@ -144,6 +147,60 @@ public class SliderRenderable : Renderable
         return (int)MathF.Round(valueRatio * (virtualTrackSize - thumbSize));
     }
 
+    private float GetKeyboardStep()
+    {
+        float range = _max - _min;
+        if (range <= 0) return 0;
+
+        int maxThumbStart = Math.Max(1, GetVirtualTrackSize() - GetVirtualThumbSize());
+        return range / maxThumbStart;
+    }
+
+    private int CalculateDragOffsetVirtual(UiMouseEvent evt)
+    {
+        int trackStart = _orientation == SliderOrientation.Vertical ? (int)_screenY : (int)_screenX;
+        int mousePos = (_orientation == SliderOrientation.Vertical ? evt.Y : evt.X) - trackStart;
+        int trackSize = _orientation == SliderOrientation.Vertical ? _heightValue : _widthValue;
+        int virtualMousePos = Math.Max(0, Math.Min(trackSize * 2, mousePos * 2));
+        int virtualThumbStart = GetVirtualThumbStart();
+        int virtualThumbSize = GetVirtualThumbSize();
+        return Math.Max(0, Math.Min(virtualThumbSize, virtualMousePos - virtualThumbStart));
+    }
+
+    private void UpdateValueFromMouseDirect(UiMouseEvent evt)
+    {
+        int trackStart = _orientation == SliderOrientation.Vertical ? (int)_screenY : (int)_screenX;
+        int mousePos = _orientation == SliderOrientation.Vertical ? evt.Y : evt.X;
+        UpdateValueFromPosition(mousePos - trackStart);
+    }
+
+    private void UpdateValueFromMouseWithOffset(UiMouseEvent evt, int offsetVirtual)
+    {
+        int trackStart = _orientation == SliderOrientation.Vertical ? (int)_screenY : (int)_screenX;
+        int trackSize = _orientation == SliderOrientation.Vertical ? _heightValue : _widthValue;
+        int mousePos = _orientation == SliderOrientation.Vertical ? evt.Y : evt.X;
+        int virtualTrackSize = trackSize * 2;
+        int clampedMousePos = Math.Max(0, Math.Min(trackSize, mousePos - trackStart));
+        int virtualMousePos = clampedMousePos * 2;
+        int virtualThumbSize = GetVirtualThumbSize();
+        int maxThumbStart = Math.Max(0, virtualTrackSize - virtualThumbSize);
+        int desiredThumbStart = Math.Max(0, Math.Min(maxThumbStart, virtualMousePos - offsetVirtual));
+        float ratio = maxThumbStart == 0 ? 0 : (float)desiredThumbStart / maxThumbStart;
+        Value = _min + ratio * (_max - _min);
+    }
+
+    private (int x, int y, int width, int height) GetThumbRect()
+    {
+        int virtualThumbSize = GetVirtualThumbSize();
+        int virtualThumbStart = GetVirtualThumbStart();
+        int realThumbStart = virtualThumbStart / 2;
+        int realThumbSize = (int)Math.Ceiling((virtualThumbStart + virtualThumbSize) / 2f) - realThumbStart;
+
+        return _orientation == SliderOrientation.Vertical
+            ? ((int)_screenX, (int)_screenY + realThumbStart, _widthValue, Math.Max(1, realThumbSize))
+            : ((int)_screenX + realThumbStart, (int)_screenY, Math.Max(1, realThumbSize), _heightValue);
+    }
+
     #endregion
 
     #region Rendering
@@ -160,8 +217,8 @@ public class SliderRenderable : Renderable
 
     private void RenderHorizontal(OptimizedBuffer buffer)
     {
-        int startX = (int)_screenX;
-        int startY = (int)_screenY;
+        int startX = _buffered ? 0 : (int)_screenX;
+        int startY = _buffered ? 0 : (int)_screenY;
 
         // Track background
         buffer.FillRect((uint)startX, (uint)startY, (uint)_widthValue, (uint)_heightValue, _backgroundColor);
@@ -170,10 +227,10 @@ public class SliderRenderable : Renderable
         int virtualThumbSize = GetVirtualThumbSize();
         int virtualThumbEnd = virtualThumbStart + virtualThumbSize;
 
-        int realStartCell = virtualThumbStart / 2;
-        int realEndCell = (virtualThumbEnd + 1) / 2 - 1;
+        int realStartCell = Math.Max(0, virtualThumbStart / 2);
+        int realEndCell = Math.Min(_widthValue - 1, (virtualThumbEnd + 1) / 2 - 1);
 
-        for (int cell = realStartCell; cell <= realEndCell && cell < _widthValue; cell++)
+        for (int cell = realStartCell; cell <= realEndCell; cell++)
         {
             int cellVirtualStart = cell * 2;
             int cellVirtualEnd = cellVirtualStart + 2;
@@ -182,25 +239,30 @@ public class SliderRenderable : Renderable
             int overlapEnd = Math.Min(cellVirtualEnd, virtualThumbEnd);
             int coverage = overlapEnd - overlapStart;
 
-            string ch;
+            uint codepoint;
             if (coverage >= 2)
-                ch = "█";
+                codepoint = '█';
             else if (overlapStart == cellVirtualStart)
-                ch = "▌"; // left half
+                codepoint = '▌'; // left half
             else
-                ch = "▐"; // right half
+                codepoint = '▐'; // right half
 
             for (int row = 0; row < _heightValue; row++)
             {
-                buffer.DrawText(ch, (uint)(startX + cell), (uint)(startY + row), _foregroundColor);
+                buffer.SetCellWithAlphaBlending(
+                    (uint)(startX + cell),
+                    (uint)(startY + row),
+                    codepoint,
+                    _foregroundColor,
+                    _backgroundColor);
             }
         }
     }
 
     private void RenderVertical(OptimizedBuffer buffer)
     {
-        int startX = (int)_screenX;
-        int startY = (int)_screenY;
+        int startX = _buffered ? 0 : (int)_screenX;
+        int startY = _buffered ? 0 : (int)_screenY;
 
         // Track background
         buffer.FillRect((uint)startX, (uint)startY, (uint)_widthValue, (uint)_heightValue, _backgroundColor);
@@ -209,10 +271,10 @@ public class SliderRenderable : Renderable
         int virtualThumbSize = GetVirtualThumbSize();
         int virtualThumbEnd = virtualThumbStart + virtualThumbSize;
 
-        int realStartCell = virtualThumbStart / 2;
-        int realEndCell = (virtualThumbEnd + 1) / 2 - 1;
+        int realStartCell = Math.Max(0, virtualThumbStart / 2);
+        int realEndCell = Math.Min(_heightValue - 1, (virtualThumbEnd + 1) / 2 - 1);
 
-        for (int cell = realStartCell; cell <= realEndCell && cell < _heightValue; cell++)
+        for (int cell = realStartCell; cell <= realEndCell; cell++)
         {
             int cellVirtualStart = cell * 2;
             int cellVirtualEnd = cellVirtualStart + 2;
@@ -221,17 +283,22 @@ public class SliderRenderable : Renderable
             int overlapEnd = Math.Min(cellVirtualEnd, virtualThumbEnd);
             int coverage = overlapEnd - overlapStart;
 
-            string ch;
+            uint codepoint;
             if (coverage >= 2)
-                ch = "█";
+                codepoint = '█';
             else if (overlapStart == cellVirtualStart)
-                ch = "▀"; // top half
+                codepoint = '▀'; // top half
             else
-                ch = "▄"; // bottom half
+                codepoint = '▄'; // bottom half
 
             for (int col = 0; col < _widthValue; col++)
             {
-                buffer.DrawText(ch, (uint)(startX + col), (uint)(startY + cell), _foregroundColor);
+                buffer.SetCellWithAlphaBlending(
+                    (uint)(startX + col),
+                    (uint)(startY + cell),
+                    codepoint,
+                    _foregroundColor,
+                    _backgroundColor);
             }
         }
     }
@@ -239,6 +306,39 @@ public class SliderRenderable : Renderable
     #endregion
 
     #region Mouse Handling
+
+    protected override void OnMouseEvent(UiMouseEvent evt)
+    {
+        switch (evt.Type)
+        {
+            case MouseEventType.Down when evt.Button == (int)MouseButton.Left:
+            {
+                evt.StopPropagation();
+                evt.PreventDefault();
+                Focus();
+
+                var thumb = GetThumbRect();
+                bool inThumb = evt.X >= thumb.x && evt.X < thumb.x + thumb.width
+                    && evt.Y >= thumb.y && evt.Y < thumb.y + thumb.height;
+
+                if (!inThumb)
+                    UpdateValueFromMouseDirect(evt);
+
+                _isDragging = true;
+                _dragOffsetVirtual = CalculateDragOffsetVirtual(evt);
+                break;
+            }
+            case MouseEventType.Drag when _isDragging:
+                evt.StopPropagation();
+                UpdateValueFromMouseWithOffset(evt, _dragOffsetVirtual);
+                break;
+            case MouseEventType.Up when _isDragging:
+                evt.StopPropagation();
+                UpdateValueFromMouseWithOffset(evt, _dragOffsetVirtual);
+                _isDragging = false;
+                break;
+        }
+    }
 
     /// <summary>Update value from a direct click position (0-based within the slider).</summary>
     public void UpdateValueFromPosition(float position)
@@ -248,6 +348,61 @@ public class SliderRenderable : Renderable
 
         float ratio = Math.Clamp(position / trackSize, 0, 1);
         Value = _min + ratio * (_max - _min);
+    }
+
+    #endregion
+
+    #region Keyboard
+
+    protected override void HandleKeyPress(KeyEvent key)
+    {
+        float step = GetKeyboardStep();
+        if (step <= 0)
+        {
+            base.HandleKeyPress(key);
+            return;
+        }
+
+        float pageStep = Math.Max(step * 5f, Math.Max(1f, _viewPortSize));
+        bool handled = _orientation switch
+        {
+            SliderOrientation.Horizontal => key.Name switch
+            {
+                "left" or "h" => Do(() => Value -= key.Shift ? pageStep : step),
+                "right" or "l" => Do(() => Value += key.Shift ? pageStep : step),
+                _ => false
+            },
+            SliderOrientation.Vertical => key.Name switch
+            {
+                "up" or "k" => Do(() => Value -= key.Shift ? pageStep : step),
+                "down" or "j" => Do(() => Value += key.Shift ? pageStep : step),
+                _ => false
+            },
+            _ => false
+        };
+
+        if (!handled)
+        {
+            handled = key.Name switch
+            {
+                "pageup" => Do(() => Value -= pageStep),
+                "pagedown" => Do(() => Value += pageStep),
+                "home" => Do(() => Value = _min),
+                "end" => Do(() => Value = _max),
+                _ => false
+            };
+        }
+
+        if (handled)
+            key.StopPropagation();
+        else
+            base.HandleKeyPress(key);
+    }
+
+    private static bool Do(Action action)
+    {
+        action();
+        return true;
     }
 
     #endregion
