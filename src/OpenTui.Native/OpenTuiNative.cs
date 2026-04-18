@@ -592,15 +592,9 @@ internal static partial class OpenTuiNative
 
     #region Link
 
-    // NOTE: The native API does not expose an explicit link store destroy function.
-    // Link stores may be owned and freed by the renderer. The LinkHandle SafeHandle
-    // calls LinkDestroy, which is declared here for compilation but may be a no-op
-    // or internally managed.
-
-    /// <summary>Destroys a link store (no-op if internally managed by the renderer).</summary>
-    /// <param name="link">Handle to the link store.</param>
-    [LibraryImport(LibName, EntryPoint = "linkDestroy")]
-    internal static partial void LinkDestroy(nint link);
+    // NOTE: Link stores are internally managed by the renderer.
+    // There is no separate destroyLinkStore native export.
+    // The renderer's destroy function handles cleanup.
 
     /// <summary>Allocates a new link entry for the given URL (UTF-8 pointer + byte length).</summary>
     /// <param name="urlPtr">Pointer to the UTF-8 encoded URL bytes.</param>
@@ -634,15 +628,9 @@ internal static partial class OpenTuiNative
 
     #region Hit Grid
 
-    // NOTE: The native API does not expose an explicit hit grid destroy function.
-    // Hit grids may be owned and freed by the renderer. The HitGridHandle SafeHandle
-    // calls HitGridDestroy, which is declared here for compilation but may be a no-op
-    // or internally managed.
-
-    /// <summary>Destroys a hit grid (no-op if internally managed by the renderer).</summary>
-    /// <param name="hitGrid">Handle to the hit grid.</param>
-    [LibraryImport(LibName, EntryPoint = "hitGridDestroy")]
-    internal static partial void HitGridDestroy(nint hitGrid);
+    // NOTE: Hit grids are internally managed by the renderer.
+    // There is no separate destroyHitGrid native export.
+    // The renderer's destroy function handles cleanup.
 
     /// <summary>Adds a rectangular hit region to the hit grid.</summary>
     /// <param name="renderer">Handle to the renderer instance.</param>
