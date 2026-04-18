@@ -639,6 +639,28 @@ public abstract class Renderable : EventEmitter
         var w = YGNodeLayoutAPI.YGNodeLayoutGetWidth(YogaNode);
         var h = YGNodeLayoutAPI.YGNodeLayoutGetHeight(YogaNode);
 
+        // Yoga.Net workaround: YGNodeStyleSetBorder does not properly reduce
+        // the layout width for stretched children — their LayoutGetWidth returns
+        // the parent's border-box width instead of the content-box width.
+        // Only applies to auto-width, non-absolute children whose parent has border.
+        if (_parent is not null && _positionType != PositionValue.Absolute)
+        {
+            var styleW = YGNodeStyleAPI.YGNodeStyleGetWidth(YogaNode);
+            if (styleW.Unit is Unit.Auto or Unit.Undefined)
+            {
+                var pNode = _parent.YogaNode;
+                float pBorderH = YGNodeLayoutAPI.YGNodeLayoutGetBorder(pNode, YGEdge.Left)
+                               + YGNodeLayoutAPI.YGNodeLayoutGetBorder(pNode, YGEdge.Right);
+                if (pBorderH > 0)
+                {
+                    float pPadH = YGNodeLayoutAPI.YGNodeLayoutGetPadding(pNode, YGEdge.Left)
+                                + YGNodeLayoutAPI.YGNodeLayoutGetPadding(pNode, YGEdge.Right);
+                    float maxW = YGNodeLayoutAPI.YGNodeLayoutGetWidth(pNode) - pBorderH - pPadH;
+                    if (w > maxW) w = maxW;
+                }
+            }
+        }
+
         var oldX = _x;
         var oldY = _y;
         var oldWidth = _widthValue;
@@ -1105,6 +1127,10 @@ public abstract class Renderable : EventEmitter
 
         if (options.MaxWidth is { } maxW) SetYogaSizeConstraint(YGNodeStyleAPI.YGNodeStyleSetMaxWidth, YGNodeStyleAPI.YGNodeStyleSetMaxWidthPercent, maxW);
         if (options.MaxHeight is { } maxH) SetYogaSizeConstraint(YGNodeStyleAPI.YGNodeStyleSetMaxHeight, YGNodeStyleAPI.YGNodeStyleSetMaxHeightPercent, maxH);
+
+        if (options.Gap is { } gap) YGNodeStyleAPI.YGNodeStyleSetGap(node, YGGutter.All, gap);
+        if (options.RowGap is { } rowGap) YGNodeStyleAPI.YGNodeStyleSetGap(node, YGGutter.Row, rowGap);
+        if (options.ColumnGap is { } colGap) YGNodeStyleAPI.YGNodeStyleSetGap(node, YGGutter.Column, colGap);
 
         SetupMarginAndPadding(options);
     }

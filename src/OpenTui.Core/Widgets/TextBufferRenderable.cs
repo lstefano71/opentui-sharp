@@ -169,6 +169,24 @@ public class TextBufferRenderable : Renderable
 
     #endregion
 
+    #region Text Mutation (marks Yoga dirty)
+
+    /// <summary>Sets plain text content and marks the Yoga node dirty so layout recalculates.</summary>
+    protected void SetTextAndDirtyLayout(string text)
+    {
+        _textBuffer.SetText(text);
+        YGNodeAPI.YGNodeMarkDirty(YogaNode);
+    }
+
+    /// <summary>Sets styled text content and marks the Yoga node dirty so layout recalculates.</summary>
+    protected void SetStyledTextAndDirtyLayout(StyledText styledText)
+    {
+        _textBuffer.SetStyledText(styledText);
+        YGNodeAPI.YGNodeMarkDirty(YogaNode);
+    }
+
+    #endregion
+
     #region Yoga Measure
 
     private YGSize MeasureFunc(Node node, float availableWidth, MeasureMode widthMode,
@@ -177,19 +195,25 @@ public class TextBufferRenderable : Renderable
         // Match TS: if width is undefined/NaN, use 0 (signals max-content to Zig)
         uint effectiveWidth = widthMode == MeasureMode.Undefined || float.IsNaN(availableWidth)
             ? 0 : (uint)Math.Floor(availableWidth);
-        uint effectiveHeight = heightMode == MeasureMode.Undefined || float.IsNaN(availableHeight)
-            ? 0 : (uint)Math.Floor(availableHeight);
+        // Match TS: use 1 as fallback for undefined/NaN height (not 0)
+        uint effectiveHeight = float.IsNaN(availableHeight) ? 1 : (uint)Math.Floor(availableHeight);
 
         if (_textBufferView.MeasureForDimensions(effectiveWidth, effectiveHeight, out var result))
         {
             float w = Math.Max(1, result.WidthColsMax);
             float h = Math.Max(1, result.LineCount);
 
-            // In AtMost mode, clamp to available dimensions
-            if (widthMode == MeasureMode.AtMost && effectiveWidth > 0)
+            // Match TS: only clamp when widthMode is AtMost and not absolute-positioned.
+            // The TS reference clamps BOTH axes together in this case, and never
+            // independently clamps height based on heightMode. This is critical for
+            // scroll containers: without this, a CodeRenderable inside a ScrollBox
+            // reports its height clamped to the viewport, making scrollHeight == viewportHeight
+            // and preventing any scrolling.
+            if (widthMode == MeasureMode.AtMost && _positionType != PositionValue.Absolute)
+            {
                 w = Math.Min(effectiveWidth, w);
-            if (heightMode == MeasureMode.AtMost && effectiveHeight > 0)
                 h = Math.Min(effectiveHeight, h);
+            }
 
             return new YGSize { Width = w, Height = h };
         }
@@ -204,6 +228,32 @@ public class TextBufferRenderable : Renderable
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         buffer.DrawTextBufferView(_textBufferView.Handle, (int)_screenX, (int)_screenY);
+    }
+
+    #endregion
+
+    #region Resize
+
+    protected override void OnResize(int width, int height)
+    {
+        // Set viewport dimensions first — virtual line count depends on width for wrapping.
+        _textBufferView.SetViewport(
+            (uint)Math.Max(0, _scrollX), (uint)Math.Max(0, _scrollY),
+            (uint)width, (uint)height);
+
+        // Clamp scroll to valid range after resize (prevents stale offsets
+        // set before the first layout from pointing past content).
+        int maxY = Math.Max(0, (int)_textBufferView.GetVirtualLineCount() - height);
+        if (_scrollY > maxY)
+        {
+            _scrollY = maxY;
+            _textBufferView.SetViewport(
+                (uint)Math.Max(0, _scrollX), (uint)Math.Max(0, _scrollY),
+                (uint)width, (uint)height);
+        }
+
+        YGNodeAPI.YGNodeMarkDirty(YogaNode);
+        base.OnResize(width, height);
     }
 
     #endregion

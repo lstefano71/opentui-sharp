@@ -133,7 +133,7 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
 
     private void SetTextContent(string content)
     {
-        TextBuffer.SetText(content);
+        SetTextAndDirtyLayout(content);
     }
 
     /// <summary>
@@ -141,7 +141,7 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
     /// </summary>
     public void SetStyledContent(StyledText styledText)
     {
-        TextBuffer.SetStyledText(styledText);
+        SetStyledTextAndDirtyLayout(styledText);
         _highlightsDirty = false;
         RequestRender();
     }

@@ -78,14 +78,14 @@ public class TextBufferDrawingTests
     /// <summary>
     /// Renders the buffer via WriteResolvedChars and returns the result as a UTF-8 string.
     /// </summary>
-    private static string GetResolvedText(OptimizedBuffer buf, int maxLen = 4096)
+    private static string GetResolvedText(OptimizedBuffer buf, int maxLen = 4096, bool addLineBreaks = false)
     {
         unsafe
         {
             byte[] outBuf = new byte[maxLen];
             fixed (byte* ptr = outBuf)
             {
-                uint written = buf.WriteResolvedChars((nint)ptr, (nuint)maxLen, false);
+                uint written = buf.WriteResolvedChars((nint)ptr, (nuint)maxLen, addLineBreaks);
                 return Encoding.UTF8.GetString(outBuf, 0, (int)written);
             }
         }
@@ -1794,6 +1794,658 @@ public class TextBufferDrawingTests
 
         string result = GetResolvedText(buf);
         Assert.Contains("\"ว่\"", result);
+    }
+
+    #endregion
+
+    #region Regression — char/word wrap must preserve all characters
+
+    [Theory]
+    [InlineData(15)]
+    [InlineData(18)]
+    [InlineData(20)]
+    [InlineData(22)]
+    [InlineData(23)]
+    [InlineData(24)]
+    [InlineData(25)]
+    [InlineData(26)]
+    [InlineData(28)]
+    [InlineData(30)]
+    [InlineData(35)]
+    public void DrawTextBuffer_CharWrapPreservesAllCharacters(int width)
+    {
+        // Regression: TextWrap demo "medium" sample loses characters like "az" from "lazy"
+        // and characters from "liquor" when using WrapMode.Char.
+        const string text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.";
+
+        using var tb = TextBuffer.Create(WidthMethod.Unicode);
+        using var view = TextBufferView.Create(tb);
+        tb.SetText(text);
+        view.SetWrapMode((byte)WrapMode.Char);
+        view.SetWrapWidth((uint)width);
+        view.SetViewport(0, 0, (uint)width, 20);
+
+        using var buf = OptimizedBuffer.Create((uint)width, 20);
+        buf.Clear(BlackBg);
+        buf.DrawTextBufferView(view.Handle, 0, 0);
+
+        string result = GetResolvedText(buf);
+        // Collapse rendered lines into a single string (strip trailing spaces per line)
+        var allText = string.Join("", result.Split('\n').Select(l => l.TrimEnd()));
+
+        Assert.Contains("lazy", allText);
+        Assert.Contains("liquor", allText);
+        // Every character in the original text should be present
+        Assert.Equal(text, allText);
+    }
+
+    [Theory]
+    [InlineData(15)]
+    [InlineData(18)]
+    [InlineData(20)]
+    [InlineData(22)]
+    [InlineData(23)]
+    [InlineData(24)]
+    [InlineData(25)]
+    [InlineData(26)]
+    [InlineData(28)]
+    [InlineData(30)]
+    [InlineData(35)]
+    public void DrawTextBuffer_WordWrapPreservesAllCharacters(int width)
+    {
+        // Regression: TextWrap demo "medium" sample may lose characters in WrapMode.Word too.
+        const string text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.";
+
+        using var tb = TextBuffer.Create(WidthMethod.Unicode);
+        using var view = TextBufferView.Create(tb);
+        tb.SetText(text);
+        view.SetWrapMode((byte)WrapMode.Word);
+        view.SetWrapWidth((uint)width);
+        view.SetViewport(0, 0, (uint)width, 20);
+
+        using var buf = OptimizedBuffer.Create((uint)width, 20);
+        buf.Clear(BlackBg);
+        buf.DrawTextBufferView(view.Handle, 0, 0);
+
+        string result = GetResolvedText(buf);
+        var allText = string.Join("", result.Split('\n').Select(l => l.TrimEnd()));
+
+        Assert.Contains("lazy", allText);
+        Assert.Contains("liquor", allText);
+    }
+
+    /// <summary>
+    /// Integration test: simulate TextWrap demo with full widget tree.
+    /// Box with border → TextRenderable, using Yoga layout.
+    /// </summary>
+    [Theory]
+    [InlineData(25, WrapMode.Char)]
+    [InlineData(30, WrapMode.Char)]
+    [InlineData(35, WrapMode.Char)]
+    [InlineData(40, WrapMode.Char)]
+    [InlineData(80, WrapMode.Char)]
+    [InlineData(25, WrapMode.Word)]
+    [InlineData(30, WrapMode.Word)]
+    [InlineData(35, WrapMode.Word)]
+    [InlineData(40, WrapMode.Word)]
+    [InlineData(80, WrapMode.Word)]
+    public void TextWrapDemo_WidgetTree_PreservesAllCharacters(int totalWidth, WrapMode wrapMode)
+    {
+        // Simulate the TextWrap demo: Box (border, overflow=hidden) → TextRenderable
+        const string text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.";
+
+        var ctx = new TestRenderContext { Width = totalWidth, Height = 20 };
+        var root = new RootRenderable(ctx);
+
+        var box = new BoxRenderable(ctx, new BoxOptions
+        {
+            Id = "col",
+            Border = true,
+            BorderStyle = BorderStyle.Rounded,
+            Overflow = OverflowValue.Hidden,
+        });
+
+        var txt = new TextRenderable(ctx, new TextOptions
+        {
+            Id = "txt",
+            Content = text,
+            WrapMode = wrapMode,
+            Fg = Rgba.FromInts(255, 255, 255),
+        });
+
+        box.Add(txt);
+        root.Add(box);
+
+        // Create buffer matching the total width
+        using var buf = OptimizedBuffer.Create((uint)totalWidth, 20);
+        buf.Clear(BlackBg);
+
+        // Trigger full render pipeline (layout + render)
+        ctx.FrameId = 1;
+        root.Render(buf, 0.016f);
+
+        Assert.True(txt.Width > 0, $"Text width should be > 0 but was {txt.Width}");
+        Assert.True(txt.Height > 0, $"Text height should be > 0 but was {txt.Height}");
+        Assert.True(box.Width > 0, $"Box width should be > 0 but was {box.Width}");
+        Assert.True(box.Height > 2, $"Box height should be > 2 (border) but was {box.Height}");
+        Assert.True(txt.Width == box.Width - 2,
+            $"Text w={txt.Width} should be box.Width-2={box.Width - 2}");
+
+        // Extract only the text content area (inside box border)
+        string fullResult = GetResolvedText(buf, 32768, addLineBreaks: true);
+        var lines = fullResult.Split('\n');
+        int txtX = (int)txt.ScreenX;
+        int txtW = txt.Width;
+        int txtY = (int)txt.ScreenY;
+
+        var contentParts = new List<string>();
+        for (int row = txtY; row < txtY + txt.Height && row < lines.Length; row++)
+        {
+            var line = lines[row];
+            if (line.Length > txtX)
+            {
+                int end = Math.Min(txtX + txtW, line.Length);
+                contentParts.Add(line[txtX..end].TrimEnd());
+            }
+        }
+        var allText = string.Join("", contentParts);
+
+        Assert.Contains("lazy", allText);
+        Assert.Contains("liquor", allText);
+
+        root.Destroy();
+    }
+
+    [Fact]
+    public void TextWrapDemo_WidgetTree_Debug_Width40Char()
+    {
+        const string text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.";
+
+        // Test a range of content widths to find which ones lose characters
+        var failures = new System.Text.StringBuilder();
+
+        foreach (int contentWidth in Enumerable.Range(20, 60))
+        {
+            int boxWidth = contentWidth + 2; // add border
+            var ctx = new TestRenderContext { Width = boxWidth, Height = 20 };
+            var root = new RootRenderable(ctx);
+
+            var box = new BoxRenderable(ctx, new BoxOptions
+            {
+                Id = "col",
+                Border = true,
+                BorderStyle = BorderStyle.Rounded,
+                Overflow = OverflowValue.Hidden,
+            });
+
+            var txt = new TextRenderable(ctx, new TextOptions
+            {
+                Id = "txt",
+                Content = text,
+                WrapMode = WrapMode.Char,
+                Fg = Rgba.FromInts(255, 255, 255),
+            });
+
+            box.Add(txt);
+            root.Add(box);
+
+            using var buf = OptimizedBuffer.Create((uint)boxWidth, 20);
+            buf.Clear(BlackBg);
+
+            ctx.FrameId = 1;
+            root.Render(buf, 0.016f);
+
+            // Read buffer and extract content rows
+            string fullResult = GetResolvedText(buf, 32768, addLineBreaks: true);
+            var lines = fullResult.Split('\n');
+
+            var contentParts = new List<string>();
+            for (int row = 1; row < box.Height - 1 && row < lines.Length; row++)
+            {
+                var line = lines[row];
+                if (line.Length >= 2)
+                {
+                    int end = Math.Min(boxWidth - 1, line.Length);
+                    var content = line[1..end];
+                    contentParts.Add(content.TrimEnd());
+                }
+            }
+
+            var allContent = string.Join("", contentParts);
+
+            // Compare with original text (ignoring trailing spaces)
+            var originalNoSpaces = text.Replace(" ", "");
+            var renderedNoSpaces = allContent.Replace(" ", "");
+
+            if (renderedNoSpaces != originalNoSpaces)
+            {
+                failures.AppendLine($"ContentWidth={contentWidth}: Txt(w={txt.Width},h={txt.Height})");
+                failures.AppendLine($"  Original chars: {originalNoSpaces.Length}");
+                failures.AppendLine($"  Rendered chars: {renderedNoSpaces.Length}");
+                failures.AppendLine($"  Missing count:  {originalNoSpaces.Length - renderedNoSpaces.Length}");
+                for (int i = 0; i < contentParts.Count; i++)
+                    failures.AppendLine($"  Line {i}: [{contentParts[i]}]");
+            }
+
+            root.Destroy();
+        }
+
+        Assert.True(failures.Length == 0, $"Character loss detected:\n{failures}");
+    }
+
+    [Fact]
+    public void TextWrapDemo_ThreeColumn_CharWrap_PreservesAllCharacters()
+    {
+        const string text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.";
+
+        var failures = new System.Text.StringBuilder();
+
+        foreach (int termWidth in new[] { 60, 70, 80, 90, 100, 110, 120, 130, 140 })
+        {
+            var ctx = new TestRenderContext { Width = termWidth, Height = 20 };
+            var root = new RootRenderable(ctx);
+
+            // Row with 3 columns (mimic the demo)
+            var row = new BoxRenderable(ctx, new BoxOptions
+            {
+                Id = "row",
+                Width = DimensionValue.Auto,
+                Height = DimensionValue.Auto,
+                FlexGrow = 1,
+                FlexDirection = FlexDirectionValue.Row,
+                Gap = 1,
+                Padding = DimensionValue.Point(1),
+            });
+
+            var col = new BoxRenderable(ctx, new BoxOptions
+            {
+                Id = "col-char",
+                FlexGrow = 1,
+                Border = true,
+                BorderStyle = BorderStyle.Rounded,
+                Overflow = OverflowValue.Hidden,
+            });
+
+            var txt = new TextRenderable(ctx, new TextOptions
+            {
+                Id = "col-char-text",
+                Content = text,
+                WrapMode = WrapMode.Char,
+                Fg = Rgba.FromInts(255, 255, 255),
+            });
+
+            // Two sibling columns (empty, just for layout)
+            var col1 = new BoxRenderable(ctx, new BoxOptions
+            {
+                Id = "col-none",
+                FlexGrow = 1,
+                Border = true,
+                BorderStyle = BorderStyle.Rounded,
+                Overflow = OverflowValue.Hidden,
+            });
+            var col3 = new BoxRenderable(ctx, new BoxOptions
+            {
+                Id = "col-word",
+                FlexGrow = 1,
+                Border = true,
+                BorderStyle = BorderStyle.Rounded,
+                Overflow = OverflowValue.Hidden,
+            });
+
+            col.Add(txt);
+            row.Add(col1);
+            row.Add(col);
+            row.Add(col3);
+            root.Add(row);
+
+            using var buf = OptimizedBuffer.Create((uint)termWidth, 20);
+            buf.Clear(BlackBg);
+
+            ctx.FrameId = 1;
+            root.Render(buf, 0.016f);
+
+            // Read buffer
+            string fullResult = GetResolvedText(buf, 65536, addLineBreaks: true);
+            var lines = fullResult.Split('\n');
+
+            // Extract the text content from the center column
+            int colScreenX = (int)col.ScreenX;
+            int colWidth = col.Width;
+            int txtWidth = txt.Width;
+            int txtScreenX = (int)txt.ScreenX;
+            int txtScreenY = (int)txt.ScreenY;
+
+            var contentParts = new List<string>();
+            for (int row_i = txtScreenY; row_i < txtScreenY + txt.Height && row_i < lines.Length; row_i++)
+            {
+                var line = lines[row_i];
+                if (line.Length > txtScreenX)
+                {
+                    int end = Math.Min(txtScreenX + txtWidth, line.Length);
+                    var content = line[txtScreenX..end].TrimEnd();
+                    contentParts.Add(content);
+                }
+            }
+
+            var allContent = string.Join("", contentParts);
+            var originalNoSpaces = text.Replace(" ", "");
+            var renderedNoSpaces = allContent.Replace(" ", "");
+
+            if (renderedNoSpaces != originalNoSpaces)
+            {
+                failures.AppendLine($"TermWidth={termWidth}: col(x={colScreenX},w={colWidth}) txt(x={txtScreenX},w={txtWidth},h={txt.Height})");
+                failures.AppendLine($"  Original chars: {originalNoSpaces.Length}");
+                failures.AppendLine($"  Rendered chars: {renderedNoSpaces.Length}");
+                failures.AppendLine($"  Missing count:  {originalNoSpaces.Length - renderedNoSpaces.Length}");
+                for (int i = 0; i < contentParts.Count; i++)
+                    failures.AppendLine($"  Line {i}: [{contentParts[i]}]");
+            }
+
+            root.Destroy();
+        }
+
+        Assert.True(failures.Length == 0, $"Character loss detected:\n{failures}");
+    }
+
+    [Fact]
+    public void Yoga_BorderReducesContentArea()
+    {
+        var ctx = new TestRenderContext { Width = 120, Height = 20 };
+        var root = new RootRenderable(ctx);
+
+        // Test 1: Fixed width box with border
+        var box1 = new BoxRenderable(ctx, new BoxOptions
+        {
+            Id = "box1",
+            Width = DimensionValue.Point(40),
+            Height = DimensionValue.Point(10),
+            Border = true,
+        });
+        var txt1 = new TextRenderable(ctx, new TextOptions
+        {
+            Id = "txt1",
+            Content = "hello",
+            Fg = Rgba.White,
+        });
+        box1.Add(txt1);
+        root.Add(box1);
+
+        using var buf1 = OptimizedBuffer.Create(120, 20);
+        ctx.FrameId = 1;
+        root.Render(buf1, 0.016f);
+
+        Assert.True(txt1.Width == box1.Width - 2,
+            $"Test1 (fixed): Text w={txt1.Width}, Box w={box1.Width}, expected {box1.Width - 2}");
+
+        root.Destroy();
+
+        // Test 2: Full demo layout with header, 3-column row, footer (like TextWrap demo)
+        var ctx2 = new TestRenderContext { Width = 120, Height = 20 };
+        var root2 = new RootRenderable(ctx2);
+
+        var header = new BoxRenderable(ctx2, new BoxOptions
+        {
+            Id = "header",
+            Width = DimensionValue.Auto,
+            Height = DimensionValue.Point(3),
+            BackgroundColor = Rgba.FromHex("#0f766e"),
+            BorderStyle = BorderStyle.Rounded,
+            AlignItems = AlignValue.Center,
+            JustifyContent = JustifyValue.Center,
+            Border = true,
+        });
+        var headerText = new TextRenderable(ctx2, new TextOptions
+        {
+            Id = "header-text",
+            Content = "Text Wrap Demo",
+            Fg = Rgba.White,
+        });
+        header.Add(headerText);
+
+        var row = new BoxRenderable(ctx2, new BoxOptions
+        {
+            Id = "row",
+            Width = DimensionValue.Auto,
+            Height = DimensionValue.Auto,
+            FlexGrow = 1,
+            FlexDirection = FlexDirectionValue.Row,
+            Gap = 1,
+            Padding = DimensionValue.Point(1),
+        });
+
+        var col1 = new BoxRenderable(ctx2, new BoxOptions
+        {
+            Id = "col1", FlexGrow = 1, Border = true, BorderStyle = BorderStyle.Rounded,
+            BorderColor = Rgba.FromHex("#6b7280"), BackgroundColor = Rgba.FromHex("#1f2937"),
+            Title = "WrapMode.None", Overflow = OverflowValue.Hidden,
+        });
+        var col2 = new BoxRenderable(ctx2, new BoxOptions
+        {
+            Id = "col2", FlexGrow = 1, Border = true, BorderStyle = BorderStyle.Rounded,
+            BorderColor = Rgba.FromHex("#6b7280"), BackgroundColor = Rgba.FromHex("#1f2937"),
+            Title = "WrapMode.Char", Overflow = OverflowValue.Hidden,
+        });
+        var col3 = new BoxRenderable(ctx2, new BoxOptions
+        {
+            Id = "col3", FlexGrow = 1, Border = true, BorderStyle = BorderStyle.Rounded,
+            BorderColor = Rgba.FromHex("#6b7280"), BackgroundColor = Rgba.FromHex("#1f2937"),
+            Title = "WrapMode.Word", Overflow = OverflowValue.Hidden,
+        });
+
+        var col1Txt = new TextRenderable(ctx2, new TextOptions
+        {
+            Id = "col1-txt",
+            Content = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.",
+            WrapMode = WrapMode.None,
+            Fg = Rgba.White,
+        });
+        col1.Add(col1Txt);
+
+        var txt2 = new TextRenderable(ctx2, new TextOptions
+        {
+            Id = "txt2",
+            Content = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.",
+            WrapMode = WrapMode.Char,
+            Fg = Rgba.White,
+        });
+        col2.Add(txt2);
+
+        var txt3 = new TextRenderable(ctx2, new TextOptions
+        {
+            Id = "txt3",
+            Content = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.",
+            WrapMode = WrapMode.Word,
+            Fg = Rgba.White,
+        });
+        col3.Add(txt3);
+
+        row.Add(col1);
+        row.Add(col2);
+        row.Add(col3);
+
+        var footer = new BoxRenderable(ctx2, new BoxOptions
+        {
+            Id = "footer",
+            Width = DimensionValue.Auto,
+            Height = DimensionValue.Point(3),
+            BackgroundColor = Rgba.FromHex("#1e3a5f"),
+            BorderStyle = BorderStyle.Rounded,
+            AlignItems = AlignValue.Center,
+            JustifyContent = JustifyValue.Center,
+            Border = true,
+        });
+
+        root2.Add(header);
+        root2.Add(row);
+        root2.Add(footer);
+
+        using var buf2 = OptimizedBuffer.Create(120, 20);
+        ctx2.FrameId = 1;
+        root2.Render(buf2, 0.016f);
+
+        // Stretched text child must be narrower than its bordered parent
+        Assert.True(txt2.Width == col2.Width - 2,
+            $"Test2 (full demo): Text w={txt2.Width}, Col2 w={col2.Width}, " +
+            $"expected text w={col2.Width - 2}");
+
+        root2.Destroy();
+    }
+
+    [Theory]
+    [InlineData(80)]
+    [InlineData(100)]
+    [InlineData(120)]
+    public void TextWrapDemo_AnsiOutput_PreservesAllCharacters(int termWidth)
+    {
+        const string text = "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs.";
+        const int termHeight = 20;
+
+        using var nativeRenderer = NativeRenderer.Create((uint)termWidth, (uint)termHeight, testing: true);
+        var ctx = new TestRenderContext { Width = termWidth, Height = termHeight };
+        var root = new RootRenderable(ctx);
+
+        // Build exact demo layout
+        var header = new BoxRenderable(ctx, new BoxOptions
+        {
+            Id = "header",
+            Width = DimensionValue.Auto,
+            Height = DimensionValue.Point(3),
+            BackgroundColor = Rgba.FromHex("#0f766e"),
+            BorderStyle = BorderStyle.Rounded,
+            AlignItems = AlignValue.Center,
+            JustifyContent = JustifyValue.Center,
+            Border = true,
+        });
+        var headerText = new TextRenderable(ctx, new TextOptions
+        {
+            Id = "header-text",
+            Content = "Text Wrap Demo — Sample: Medium",
+            Fg = Rgba.FromInts(255, 255, 255),
+        });
+        header.Add(headerText);
+
+        var row = new BoxRenderable(ctx, new BoxOptions
+        {
+            Id = "row",
+            Width = DimensionValue.Auto,
+            Height = DimensionValue.Auto,
+            FlexGrow = 1,
+            FlexDirection = FlexDirectionValue.Row,
+            Gap = 1,
+            Padding = DimensionValue.Point(1),
+        });
+
+        (BoxRenderable box, TextRenderable txt) MakeCol(string id, WrapMode mode)
+        {
+            var col = new BoxRenderable(ctx, new BoxOptions
+            {
+                Id = id,
+                FlexGrow = 1,
+                Border = true,
+                BorderStyle = BorderStyle.Rounded,
+                BorderColor = Rgba.FromHex("#6b7280"),
+                BackgroundColor = Rgba.FromHex("#1f2937"),
+                Title = $"WrapMode.{mode}",
+                Overflow = OverflowValue.Hidden,
+            });
+            var t = new TextRenderable(ctx, new TextOptions
+            {
+                Id = $"{id}-text",
+                Content = text,
+                WrapMode = mode,
+                Fg = Rgba.FromHex("#e5e7eb"),
+            });
+            col.Add(t);
+            return (col, t);
+        }
+
+        var (noneBox, _) = MakeCol("col-none", WrapMode.None);
+        var (charBox, charText) = MakeCol("col-char", WrapMode.Char);
+        var (wordBox, _) = MakeCol("col-word", WrapMode.Word);
+
+        row.Add(noneBox);
+        row.Add(charBox);
+        row.Add(wordBox);
+
+        var footer = new BoxRenderable(ctx, new BoxOptions
+        {
+            Id = "footer",
+            Width = DimensionValue.Auto,
+            Height = DimensionValue.Point(3),
+            BackgroundColor = Rgba.FromHex("#1e3a5f"),
+            BorderStyle = BorderStyle.Rounded,
+            AlignItems = AlignValue.Center,
+            JustifyContent = JustifyValue.Center,
+            Border = true,
+        });
+        var footerText = new TextRenderable(ctx, new TextOptions
+        {
+            Id = "footer-text",
+            Content = "[n] Next sample (2/5)  [Ctrl+C] Quit",
+            Fg = Rgba.FromHex("#94a3b8"),
+        });
+        footer.Add(footerText);
+
+        root.Add(header);
+        root.Add(row);
+        root.Add(footer);
+
+        // Render the tree to the NativeRenderer's next buffer
+        using var nextBuf = OptimizedBuffer.WrapExisting(nativeRenderer.GetNextBuffer());
+        ctx.FrameId = 1;
+        root.Render(nextBuf, 0.016f);
+
+        // First verify buffer content
+        string bufContent = GetResolvedText(nextBuf, 65536, addLineBreaks: true);
+
+        // Now generate ANSI output
+        nativeRenderer.Render(forceFullRender: true);
+        string ansiOutput = nativeRenderer.GetLastOutputForTest();
+
+        // Strip ANSI escape sequences to get plain text
+        string plainOutput = System.Text.RegularExpressions.Regex.Replace(
+            ansiOutput, @"\x1b[\[\]()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqry=><~]", "");
+        plainOutput = System.Text.RegularExpressions.Regex.Replace(
+            plainOutput, @"\x1b\].*?\x1b\\", "");
+
+        // Extract text column content from buffer
+        int txtX = (int)charText.ScreenX;
+        int txtW = charText.Width;
+        int txtY = (int)charText.ScreenY;
+        int txtH = charText.Height;
+
+        var bufLines = bufContent.Split('\n');
+        var bufTextParts = new List<string>();
+        for (int r = txtY; r < txtY + txtH && r < bufLines.Length; r++)
+        {
+            var line = bufLines[r];
+            if (line.Length > txtX)
+            {
+                int end = Math.Min(txtX + txtW, line.Length);
+                bufTextParts.Add(line[txtX..end].TrimEnd());
+            }
+        }
+        var bufAllText = string.Join("", bufTextParts);
+
+        bool ansiHasLazy = plainOutput.Contains("lazy");
+        bool bufHasLazy = bufAllText.Replace(" ", "").Contains("lazy");
+
+        var diag = new StringBuilder();
+        diag.AppendLine($"Terminal: {termWidth}x{termHeight}");
+        diag.AppendLine($"CharText: screenX={txtX}, screenY={txtY}, width={txtW}, height={txtH}");
+        diag.AppendLine($"CharBox:  screenX={(int)charBox.ScreenX}, width={charBox.Width}");
+        diag.AppendLine($"Scissor:  x={(int)charBox.ScreenX + 1}, w={charBox.Width - 2}");
+        diag.AppendLine($"Buffer lines (char column):");
+        for (int i = 0; i < bufTextParts.Count; i++)
+            diag.AppendLine($"  [{i}] \"{bufTextParts[i]}\"");
+
+        diag.AppendLine($"Buffer has 'lazy': {bufHasLazy}");
+        diag.AppendLine($"ANSI has 'lazy': {ansiHasLazy}");
+
+        Assert.True(bufHasLazy, $"Buffer missing 'lazy':\n{diag}");
+        Assert.True(ansiHasLazy, $"ANSI output missing 'lazy':\n{diag}");
+
+        root.Destroy();
     }
 
     #endregion

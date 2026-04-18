@@ -92,7 +92,7 @@ public class SliderRenderable : Renderable
     public float ViewPortSize
     {
         get => _viewPortSize;
-        set { _viewPortSize = Math.Clamp(value, 0.01f, _max - _min); RequestRender(); }
+        set { _viewPortSize = Math.Max(0.01f, Math.Min(value, _max - _min)); RequestRender(); }
     }
 
     public Rgba BackgroundColor

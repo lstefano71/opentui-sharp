@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using OpenTui.Native;
 
 namespace OpenTui;
@@ -6,6 +7,7 @@ namespace OpenTui;
 public sealed class NativeTextBuffer : IDisposable
 {
     private readonly TextBufferHandle _handle;
+    private readonly List<nint> _nativeAllocations = [];
     private bool _disposed;
 
     /// <summary>Creates a new text buffer with the specified width calculation method.</summary>
@@ -57,10 +59,18 @@ public sealed class NativeTextBuffer : IDisposable
         OpenTuiNative.TextBufferResetDefaults(Handle);
 
     /// <summary>Appends UTF-8 text to the text buffer.</summary>
-    public void Append(string text)
+    public unsafe void Append(string text)
     {
-        var utf8 = new Utf8String(text);
-        utf8.WithPtr((ptr, len) => OpenTuiNative.TextBufferAppend(Handle, ptr, len));
+        if (string.IsNullOrEmpty(text)) return;
+
+        // TextBufferAppend stores the raw pointer in the native mem_registry without copying.
+        // Allocate native memory so the pointer survives GC.
+        var utf8Bytes = System.Text.Encoding.UTF8.GetBytes(text);
+        nint nativeMem = (nint)NativeMemory.Alloc((nuint)utf8Bytes.Length);
+        fixed (byte* src = utf8Bytes)
+            NativeMemory.Copy(src, (void*)nativeMem, (nuint)utf8Bytes.Length);
+        _nativeAllocations.Add(nativeMem);
+        OpenTuiNative.TextBufferAppend(Handle, nativeMem, (nuint)utf8Bytes.Length);
     }
 
     /// <summary>Sets the default foreground color.</summary>
@@ -109,12 +119,15 @@ public sealed class NativeTextBuffer : IDisposable
         OpenTuiNative.TextBufferSetSyntaxStyle(Handle, syntaxStyle);
 
     /// <inheritdoc />
-    public void Dispose()
+    public unsafe void Dispose()
     {
         if (!_disposed)
         {
             _disposed = true;
             _handle.Dispose();
+            foreach (nint alloc in _nativeAllocations)
+                NativeMemory.Free((void*)alloc);
+            _nativeAllocations.Clear();
         }
     }
 }

@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 
 namespace OpenTui.Core;
 
@@ -11,6 +12,25 @@ namespace OpenTui.Core;
 /// </summary>
 public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 {
+    #region Win32 Console Mode (Windows only)
+
+    private const int STD_INPUT_HANDLE = -10;
+    private const uint ENABLE_PROCESSED_INPUT = 0x0001;
+    private const uint ENABLE_LINE_INPUT = 0x0002;
+    private const uint ENABLE_ECHO_INPUT = 0x0004;
+    private const uint ENABLE_VIRTUAL_TERMINAL_INPUT = 0x0200;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern nint GetStdHandle(int nStdHandle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetConsoleMode(nint hConsoleHandle, out uint lpMode);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetConsoleMode(nint hConsoleHandle, uint dwMode);
+
+    #endregion
+
     #region Default env keys
 
     private static readonly string[] DefaultForwardedEnvKeys =
@@ -52,6 +72,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     private readonly KeyHandler _keyHandler;
     private StdinParser? _stdinParser;
+    private readonly object _stdinLock = new();
     private CancellationTokenSource? _inputCts;
     private Thread? _inputThread;
 
@@ -61,6 +82,16 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private readonly List<Action<OptimizedBuffer, float>> _postProcessFns;
 
     private bool _terminalIsSetup;
+    private uint _savedConsoleMode;
+    private bool _hasConsoleMode;
+    private volatile bool _exitOnDestroy;
+    private bool _destroyRequested;
+
+    // Resize detection (polled from a timer, applied on the render thread)
+    private Timer? _resizeTimer;
+    private volatile int _pendingResizeWidth;
+    private volatile int _pendingResizeHeight;
+    private volatile bool _hasPendingResize;
 
     #endregion
 
@@ -90,6 +121,17 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     public bool IsDestroyed => _isDestroyed;
 
     public bool IsRunning => _isRunning;
+
+    /// <summary>
+    /// Advances the frame counter and renders the tree. For use in tests only —
+    /// mirrors the essential steps of the real render loop (frame ID increment +
+    /// Root.Render) without timer/input/native plumbing.
+    /// </summary>
+    internal void RenderTestFrame(float deltaTime = 16f)
+    {
+        _frameId++;
+        Root.Render(NextRenderBuffer, deltaTime);
+    }
 
     #endregion
 
@@ -140,6 +182,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         {
             if (config.ExitOnCtrlC && e.Name == "c" && e.Ctrl)
             {
+                _exitOnDestroy = true;
                 Destroy();
             }
         });
@@ -219,15 +262,30 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
         // Start input reading thread
         StartInputLoop();
+
+        // Start resize polling timer
+        StartResizeWatcher();
     }
 
     private void SetupRawInput()
     {
         if (OperatingSystem.IsWindows())
         {
-            // Windows code page 65001 for UTF-8
             try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { }
             try { Console.InputEncoding = System.Text.Encoding.UTF8; } catch { }
+
+            // Enable raw console mode: disable line buffering, echo, and Ctrl+C signal
+            // so stdin reads return individual keystrokes silently.
+            var handle = GetStdHandle(STD_INPUT_HANDLE);
+            if (handle != nint.Zero && handle != (nint)(-1) &&
+                GetConsoleMode(handle, out uint mode))
+            {
+                _savedConsoleMode = mode;
+                _hasConsoleMode = true;
+                mode &= ~(ENABLE_PROCESSED_INPUT | ENABLE_LINE_INPUT | ENABLE_ECHO_INPUT);
+                mode |= ENABLE_VIRTUAL_TERMINAL_INPUT;
+                SetConsoleMode(handle, mode);
+            }
         }
     }
 
@@ -237,6 +295,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _terminalIsSetup = false;
 
         _inputCts?.Cancel();
+        _resizeTimer?.Dispose();
+        _resizeTimer = null;
 
         if (_useMouse)
             _nativeRenderer.DisableMouse();
@@ -245,9 +305,21 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         if (kittyConfig is not null)
             _nativeRenderer.DisableKittyKeyboard();
 
+        RestoreConsoleMode();
         _nativeRenderer.RestoreTerminalModes();
 
         Console.CancelKeyPress -= OnCancelKeyPress;
+    }
+
+    private void RestoreConsoleMode()
+    {
+        if (_hasConsoleMode && OperatingSystem.IsWindows())
+        {
+            var handle = GetStdHandle(STD_INPUT_HANDLE);
+            if (handle != nint.Zero && handle != (nint)(-1))
+                SetConsoleMode(handle, _savedConsoleMode);
+            _hasConsoleMode = false;
+        }
     }
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
@@ -255,8 +327,51 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         if (_config.ExitOnCtrlC)
         {
             e.Cancel = true;
+            _exitOnDestroy = true;
             Destroy();
         }
+    }
+
+    #endregion
+
+    #region Resize Detection
+
+    private void StartResizeWatcher()
+    {
+        // Poll terminal size at regular intervals.
+        // When a change is detected, store it and trigger a render.
+        // The actual Resize() call happens on the render thread in Loop().
+        _resizeTimer = new Timer(_ =>
+        {
+            if (_isDestroyed) return;
+            try
+            {
+                int w = Console.WindowWidth;
+                int h = Console.WindowHeight;
+                if (w > 0 && h > 0 && (w != Width || h != Height))
+                {
+                    _pendingResizeWidth = w;
+                    _pendingResizeHeight = h;
+                    _hasPendingResize = true;
+                    RequestRender();
+                }
+            }
+            catch
+            {
+                // Console may not be available (e.g., piped stdin)
+            }
+        }, null, _config.DebounceDelay, _config.DebounceDelay);
+    }
+
+    /// <summary>
+    /// Apply any pending resize on the render thread.
+    /// Called at the start of Loop() before processing events.
+    /// </summary>
+    private void ApplyPendingResize()
+    {
+        if (!_hasPendingResize) return;
+        _hasPendingResize = false;
+        Resize(_pendingResizeWidth, _pendingResizeHeight);
     }
 
     #endregion
@@ -303,8 +418,11 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
                 if (_stdinParser is not null)
                 {
-                    _stdinParser.Push(buffer.AsSpan(0, bytesRead));
-                    DrainStdinParser();
+                    lock (_stdinLock)
+                    {
+                        _stdinParser.Push(buffer.AsSpan(0, bytesRead));
+                    }
+                    RequestRender();
                 }
             }
         }
@@ -316,9 +434,27 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     private void DrainStdinParser()
     {
-        if (_stdinParser is null) return;
+        var parser = _stdinParser;
+        if (parser is null) return;
 
-        _stdinParser.Drain(HandleStdinEvent);
+        // Collect events under lock to avoid racing with Push on the input thread
+        List<StdinEvent>? events = null;
+        lock (_stdinLock)
+        {
+            StdinEvent? evt;
+            while ((evt = parser.Read()) is not null)
+            {
+                events ??= new();
+                events.Add(evt);
+            }
+        }
+
+        // Dispatch outside lock — handlers may modify the Yoga tree, call RequestRender, etc.
+        if (events is not null)
+        {
+            foreach (var evt in events)
+                HandleStdinEvent(evt);
+        }
     }
 
     private void HandleStdinEvent(StdinEvent evt)
@@ -422,6 +558,11 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     {
         if (_isDestroyed) return;
 
+        // In testing mode, don't schedule async renders — tests call RenderFrame()
+        // explicitly. Scheduling background renders causes data races with native
+        // handles when the test also renders on its own thread.
+        if (_config.Testing) return;
+
         if (_isRunning) return;
 
         if (_rendering)
@@ -477,6 +618,15 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _rendering = true;
         try
         {
+            // Apply any terminal resize detected by the watcher timer.
+            // This runs on the render thread so tree mutations are safe.
+            ApplyPendingResize();
+
+            // Process stdin events on the render thread before anything else.
+            // The input thread only pushes raw bytes; we drain parsed events here
+            // so all Yoga tree mutations happen on a single thread.
+            DrainStdinParser();
+
             _frameId++;
 
             var nowMs = _clock.ElapsedMilliseconds;
@@ -535,6 +685,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         finally
         {
             _rendering = false;
+            if (_destroyRequested)
+                Destroy();
         }
     }
 
@@ -757,6 +909,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         if (_rendering)
         {
             // Defer destruction until after current frame
+            _destroyRequested = true;
             _immediateRerenderRequested = false;
             _isRunning = false;
             return;
@@ -777,6 +930,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
         _stdinParser = null;
         _nativeRenderer.Dispose();
+
+        if (_exitOnDestroy)
+            Environment.Exit(0);
     }
 
     public void Dispose() => Destroy();

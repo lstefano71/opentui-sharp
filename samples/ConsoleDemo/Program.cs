@@ -61,6 +61,7 @@ logArea.Add(logText);
 void UpdateLog()
 {
     logText.ContentText = string.Join("\n", logLines);
+    logText.ScrollY = logText.MaxScrollY;
     renderer.RequestRender();
 }
 

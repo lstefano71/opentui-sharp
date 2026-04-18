@@ -353,6 +353,17 @@ public sealed class NativeRenderer : IDisposable
     public void DumpStdoutBuffer(long? timestamp = null) =>
         OpenTuiNative.DumpStdoutBuffer(Handle, timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
 
+    /// <summary>Returns the raw ANSI bytes from the last Render() call (testing mode only).</summary>
+    public string GetLastOutputForTest()
+    {
+        OpenTuiNative.GetLastOutputForTest(Handle, out var slice);
+        if (slice.Ptr == 0 || slice.Len == 0) return string.Empty;
+        unsafe
+        {
+            return System.Text.Encoding.UTF8.GetString((byte*)slice.Ptr, (int)slice.Len);
+        }
+    }
+
     #endregion
 
     #region Hit Grid

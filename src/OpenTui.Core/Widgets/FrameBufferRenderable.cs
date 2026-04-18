@@ -77,6 +77,12 @@ public class FrameBufferRenderable : Renderable
         }
     }
 
+    protected override void OnResize(int width, int height)
+    {
+        EnsureBuffer();
+        base.OnResize(width, height);
+    }
+
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_privateBuffer == null || _widthValue == 0 || _heightValue == 0) return;

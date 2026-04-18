@@ -68,8 +68,7 @@ public class TextRenderable : TextBufferRenderable
     public void SetContent(string text)
     {
         _content = new StyledText(TextChunk.Plain(text));
-        TextBuffer.SetStyledText(_content);
-        UpdateTextInfo();
+        SetStyledTextAndDirtyLayout(_content);
         RequestRender();
     }
 
@@ -77,8 +76,7 @@ public class TextRenderable : TextBufferRenderable
     public void SetContent(StyledText styledText)
     {
         _content = styledText;
-        TextBuffer.SetStyledText(styledText);
-        UpdateTextInfo();
+        SetStyledTextAndDirtyLayout(styledText);
         RequestRender();
     }
 
@@ -88,12 +86,6 @@ public class TextRenderable : TextBufferRenderable
         _content = null;
         TextBuffer.Clear();
         RequestRender();
-    }
-
-    private void UpdateTextInfo()
-    {
-        // Mark yoga node dirty after content change so layout recalculates
-        YGNodeAPI.YGNodeMarkDirty(YogaNode);
     }
 
     #endregion

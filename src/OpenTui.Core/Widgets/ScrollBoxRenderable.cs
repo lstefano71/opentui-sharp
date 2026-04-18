@@ -67,12 +67,36 @@ public class ScrollBoxRenderable : BoxRenderable
         // Viewport: clipped area containing content
         _viewport = new BoxRenderable(ctx, options.ViewportOptions ?? new BoxOptions());
         _viewport.FlexGrow = 1;
+        _viewport.FlexDirection = FlexDirectionValue.Column;
         _viewport.Overflow = OverflowValue.Hidden;
+        _viewport.OnSizeChange = () => RecalculateBarProps();
 
         // Content: actual child container (scrolls within viewport)
         _content = new BoxRenderable(ctx, options.ContentOptions ?? new BoxOptions());
         _content.FlexShrink = 0;
         _content.AlignSelf = AlignValue.FlexStart;
+        _content.OnSizeChange = () => RecalculateBarProps();
+
+        // Match TS: constrain content width/height based on scroll directions
+        if (_scrollX)
+        {
+            _content.MinWidth = DimensionValue.Percent(100);
+        }
+        else
+        {
+            _content.MinWidth = DimensionValue.Percent(100);
+            _content.MaxWidth = DimensionValue.Percent(100);
+        }
+
+        if (_scrollY)
+        {
+            _content.MinHeight = DimensionValue.Percent(100);
+        }
+        else
+        {
+            _content.MinHeight = DimensionValue.Percent(100);
+            _content.MaxHeight = DimensionValue.Percent(100);
+        }
 
         // Build internal tree: viewport contains content
         _viewport.Add(_content);
@@ -190,17 +214,13 @@ public class ScrollBoxRenderable : BoxRenderable
 
     private void OnVerticalScroll(float position)
     {
-        // Translate content up by scroll amount
-        _content.PositionType = PositionValue.Relative;
-        _content.Top = DimensionValue.Point(-(int)position);
-        RequestRender();
+        // Use TranslateY (not Yoga Top) to shift content without triggering layout recalc
+        _content.TranslateY = -position;
     }
 
     private void OnHorizontalScroll(float position)
     {
-        _content.PositionType = PositionValue.Relative;
-        _content.Left = DimensionValue.Point(-(int)position);
-        RequestRender();
+        _content.TranslateX = -position;
     }
 
     #endregion

@@ -14,6 +14,7 @@ public sealed class TextBuffer : IDisposable
     private nint _handle;
     private bool _disposed;
     private readonly List<nint> _nativeAllocations = [];
+    private readonly List<nint> _registeredMemAllocations = [];
 
     private TextBuffer(nint handle)
     {
@@ -69,19 +70,39 @@ public sealed class TextBuffer : IDisposable
     #region Text Content
 
     /// <summary>Sets the text buffer content, replacing any existing content.</summary>
-    public void SetText(string text)
+    public unsafe void SetText(string text)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        // Clear content first (clears rope, preserves highlights — matches Zig clear()).
         OpenTuiNative.TextBufferClear(_handle);
-        var utf8 = new Utf8String(text);
-        utf8.WithPtr((ptr, len) => OpenTuiNative.TextBufferAppend(_handle, ptr, len));
+        // Free previous append allocations now that rope no longer references them.
+        FreeAppendAllocations();
+
+        if (string.IsNullOrEmpty(text)) return;
+
+        // TextBufferAppend stores the raw pointer in the native mem_registry without copying.
+        // Allocate native memory so the pointer survives GC collection/compaction.
+        byte[] utf8Bytes = Encoding.UTF8.GetBytes(text);
+        nint nativeMem = (nint)NativeMemory.Alloc((nuint)utf8Bytes.Length);
+        fixed (byte* src = utf8Bytes)
+            NativeMemory.Copy(src, (void*)nativeMem, (nuint)utf8Bytes.Length);
+        _nativeAllocations.Add(nativeMem);
+        OpenTuiNative.TextBufferAppend(_handle, nativeMem, (nuint)utf8Bytes.Length);
     }
 
     /// <summary>Appends UTF-8 text to the end of the text buffer.</summary>
-    public void AppendText(string text)
+    public unsafe void AppendText(string text)
     {
-        var utf8 = new Utf8String(text);
-        utf8.WithPtr((ptr, len) => OpenTuiNative.TextBufferAppend(Handle, ptr, len));
+        if (string.IsNullOrEmpty(text)) return;
+
+        // TextBufferAppend stores the raw pointer in the mem_registry without copying.
+        // We must allocate native memory so the pointer survives GC.
+        byte[] utf8Bytes = Encoding.UTF8.GetBytes(text);
+        nint nativeMem = (nint)NativeMemory.Alloc((nuint)utf8Bytes.Length);
+        fixed (byte* src = utf8Bytes)
+            NativeMemory.Copy(src, (void*)nativeMem, (nuint)utf8Bytes.Length);
+        _nativeAllocations.Add(nativeMem);
+        OpenTuiNative.TextBufferAppend(Handle, nativeMem, (nuint)utf8Bytes.Length);
     }
 
     /// <summary>Loads content from a file into the text buffer.</summary>
@@ -132,15 +153,97 @@ public sealed class TextBuffer : IDisposable
 
     /// <summary>
     /// Sets styled text content from a <see cref="StyledText"/> instance.
-    /// Serializes the chunks into the native styled text format.
+    /// Serializes the chunks into native StyledChunk structs and calls the native
+    /// setStyledText API which copies all text data into Zig-owned memory.
     /// </summary>
     /// <param name="styledText">The styled text to set.</param>
-    public void SetStyledText(StyledText styledText)
+    public unsafe void SetStyledText(StyledText styledText)
     {
-        // TODO: Serialize individual chunk styling (fg, bg, attributes, link) into the native
-        //       binary format once the exact layout is documented. For now, set the plain text
-        //       content which is always correct for the text portion.
-        SetText(styledText.PlainText);
+        var chunks = styledText.Chunks;
+        if (chunks.Count == 0)
+        {
+            Clear();
+            return;
+        }
+
+        // Encode all chunk texts to UTF-8
+        byte[][] utf8Arrays = new byte[chunks.Count][];
+        for (int i = 0; i < chunks.Count; i++)
+            utf8Arrays[i] = Encoding.UTF8.GetBytes(chunks[i].Text);
+
+        // Encode link texts
+        byte[]?[] linkArrays = new byte[chunks.Count][];
+        for (int i = 0; i < chunks.Count; i++)
+            linkArrays[i] = chunks[i].Link is { } link ? Encoding.UTF8.GetBytes(link) : null;
+
+        // Allocate native chunks array
+        var nativeChunks = new NativeStyledChunk[chunks.Count];
+
+        // We need to pin all byte arrays and RGBA floats simultaneously.
+        // Use GCHandle for pinning since we have a variable number of arrays.
+        var pins = new GCHandle[chunks.Count * 2]; // text + link
+        int pinCount = 0;
+
+        // Allocate RGBA float arrays on the stack or heap
+        float[]?[] fgArrays = new float[chunks.Count][];
+        float[]?[] bgArrays = new float[chunks.Count][];
+        var colorPins = new GCHandle[chunks.Count * 2]; // fg + bg
+        int colorPinCount = 0;
+
+        try
+        {
+            for (int i = 0; i < chunks.Count; i++)
+            {
+                var chunk = chunks[i];
+
+                // Pin text bytes
+                var textPin = GCHandle.Alloc(utf8Arrays[i], GCHandleType.Pinned);
+                pins[pinCount++] = textPin;
+                nativeChunks[i].TextPtr = textPin.AddrOfPinnedObject();
+                nativeChunks[i].TextLen = (nuint)utf8Arrays[i].Length;
+
+                // Fg color
+                if (chunk.Fg is { } fg)
+                {
+                    fgArrays[i] = [fg.R, fg.G, fg.B, fg.A];
+                    var fgPin = GCHandle.Alloc(fgArrays[i], GCHandleType.Pinned);
+                    colorPins[colorPinCount++] = fgPin;
+                    nativeChunks[i].FgPtr = fgPin.AddrOfPinnedObject();
+                }
+
+                // Bg color
+                if (chunk.Bg is { } bg)
+                {
+                    bgArrays[i] = [bg.R, bg.G, bg.B, bg.A];
+                    var bgPin = GCHandle.Alloc(bgArrays[i], GCHandleType.Pinned);
+                    colorPins[colorPinCount++] = bgPin;
+                    nativeChunks[i].BgPtr = bgPin.AddrOfPinnedObject();
+                }
+
+                nativeChunks[i].Attributes = (uint)chunk.Attributes;
+
+                // Link
+                if (linkArrays[i] is { } linkBytes)
+                {
+                    var linkPin = GCHandle.Alloc(linkBytes, GCHandleType.Pinned);
+                    pins[pinCount++] = linkPin;
+                    nativeChunks[i].LinkPtr = linkPin.AddrOfPinnedObject();
+                    nativeChunks[i].LinkLen = (nuint)linkBytes.Length;
+                }
+            }
+
+            fixed (NativeStyledChunk* chunksPtr = nativeChunks)
+            {
+                OpenTuiNative.TextBufferSetStyledText(Handle, (nint)chunksPtr, (nuint)chunks.Count);
+            }
+        }
+        finally
+        {
+            for (int i = 0; i < pinCount; i++)
+                if (pins[i].IsAllocated) pins[i].Free();
+            for (int i = 0; i < colorPinCount; i++)
+                if (colorPins[i].IsAllocated) colorPins[i].Free();
+        }
     }
 
     /// <summary>Sets the text buffer content from a registered memory buffer.</summary>
@@ -154,12 +257,27 @@ public sealed class TextBuffer : IDisposable
         OpenTuiNative.TextBufferAppendFromMemId(Handle, memId);
 
     /// <summary>Resets the text buffer to its initial state.</summary>
-    public void Reset() =>
+    public void Reset()
+    {
+        FreeAppendAllocations();
         OpenTuiNative.TextBufferReset(Handle);
+    }
 
     /// <summary>Clears all content from the text buffer.</summary>
-    public void Clear() =>
+    public void Clear()
+    {
+        FreeAppendAllocations();
         OpenTuiNative.TextBufferClear(Handle);
+    }
+
+    /// <summary>Frees native memory allocated by AppendText calls.
+    /// Called when the buffer content is replaced (Clear/Reset/SetText).</summary>
+    private unsafe void FreeAppendAllocations()
+    {
+        foreach (nint alloc in _nativeAllocations)
+            NativeMemory.Free((void*)alloc);
+        _nativeAllocations.Clear();
+    }
 
     #endregion
 
@@ -265,7 +383,7 @@ public sealed class TextBuffer : IDisposable
 
         ushort id = OpenTuiNative.TextBufferRegisterMemBuffer(
             Handle, nativeMem, (nuint)data.Length, false);
-        _nativeAllocations.Add(nativeMem);
+        _registeredMemAllocations.Add(nativeMem);
         return id;
     }
 
@@ -279,7 +397,7 @@ public sealed class TextBuffer : IDisposable
 
         bool ok = OpenTuiNative.TextBufferReplaceMemBuffer(
             Handle, id, nativeMem, (nuint)data.Length, false);
-        _nativeAllocations.Add(nativeMem);
+        _registeredMemAllocations.Add(nativeMem);
         return ok;
     }
 
@@ -318,6 +436,10 @@ public sealed class TextBuffer : IDisposable
             foreach (nint alloc in _nativeAllocations)
                 NativeMemory.Free((void*)alloc);
             _nativeAllocations.Clear();
+
+            foreach (nint alloc in _registeredMemAllocations)
+                NativeMemory.Free((void*)alloc);
+            _registeredMemAllocations.Clear();
         }
     }
 

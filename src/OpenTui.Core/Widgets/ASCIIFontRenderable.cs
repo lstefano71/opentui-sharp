@@ -54,8 +54,7 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         var (w, h) = MeasureText(_text, _font);
         WidthDimension = DimensionValue.Point(w);
         HeightDimension = DimensionValue.Point(h);
-
-        RenderFontToBuffer();
+        // Don't render here — buffer doesn't exist yet. OnResize handles first render.
     }
 
     #region Properties
@@ -68,9 +67,13 @@ public class ASCIIFontRenderable : FrameBufferRenderable
             if (_text == value) return;
             _text = value;
             var (w, h) = MeasureText(_text, _font);
+            bool sizeChanged = !WidthDimension.Equals(DimensionValue.Point(w))
+                            || !HeightDimension.Equals(DimensionValue.Point(h));
             WidthDimension = DimensionValue.Point(w);
             HeightDimension = DimensionValue.Point(h);
-            RenderFontToBuffer();
+            if (!sizeChanged)
+                RenderFontToBuffer(); // Same size — buffer is valid, render now
+            // else: OnResize will fire after layout and render with correct buffer
             RequestRender();
         }
     }
@@ -83,9 +86,12 @@ public class ASCIIFontRenderable : FrameBufferRenderable
             if (_font == value) return;
             _font = value;
             var (w, h) = MeasureText(_text, _font);
+            bool sizeChanged = !WidthDimension.Equals(DimensionValue.Point(w))
+                            || !HeightDimension.Equals(DimensionValue.Point(h));
             WidthDimension = DimensionValue.Point(w);
             HeightDimension = DimensionValue.Point(h);
-            RenderFontToBuffer();
+            if (!sizeChanged)
+                RenderFontToBuffer();
             RequestRender();
         }
     }
@@ -97,7 +103,7 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         {
             _color = value;
             _colors = [value];
-            RenderFontToBuffer();
+            RenderFontToBuffer(); // Dimensions unchanged — buffer is valid
             RequestRender();
         }
     }
@@ -105,6 +111,12 @@ public class ASCIIFontRenderable : FrameBufferRenderable
     #endregion
 
     #region Rendering
+
+    protected override void OnResize(int width, int height)
+    {
+        base.OnResize(width, height);
+        RenderFontToBuffer();
+    }
 
     private void RenderFontToBuffer()
     {
