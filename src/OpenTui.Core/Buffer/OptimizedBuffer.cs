@@ -29,11 +29,19 @@ public sealed class OptimizedBuffer : IDisposable
 {
     private nint _handle;
     private bool _disposed;
+    private bool _ownsHandle = true;
 
     private OptimizedBuffer(nint handle)
     {
         _handle = handle;
     }
+
+    /// <summary>
+    /// Wraps an existing native buffer handle (e.g. from NativeRenderer.GetNextBuffer).
+    /// The wrapper does NOT own the handle — Dispose is a no-op.
+    /// </summary>
+    internal static OptimizedBuffer WrapExisting(nint handle) =>
+        new(handle) { _ownsHandle = false };
 
     /// <summary>Creates a new optimized buffer with the specified dimensions.</summary>
     public static OptimizedBuffer Create(
@@ -359,11 +367,11 @@ public sealed class OptimizedBuffer : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            if (_handle != nint.Zero)
+            if (_ownsHandle && _handle != nint.Zero)
             {
                 OpenTuiNative.BufferDestroy(_handle);
-                _handle = nint.Zero;
             }
+            _handle = nint.Zero;
         }
     }
 

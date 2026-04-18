@@ -27,4 +27,5 @@ public static class RendererEventNames
     public const string FocusedEditor = "focused_editor";
     public const string DebugOverlayToggle = "debugOverlay:toggle";
     public const string ThemeMode = "theme_mode";
+    public const string Destroy = "destroy";
 }
