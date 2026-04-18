@@ -13,6 +13,7 @@ public sealed class TextBuffer : IDisposable
 {
     private nint _handle;
     private bool _disposed;
+    private readonly List<nint> _nativeAllocations = [];
 
     private TextBuffer(nint handle)
     {
@@ -178,8 +179,11 @@ public sealed class TextBuffer : IDisposable
 
     /// <summary>Sets the default text attributes for new text.</summary>
     /// <param name="attrs">The text attributes bitmask.</param>
-    public void SetAttributes(TextAttributes attrs) =>
-        OpenTuiNative.TextBufferSetDefaultAttributes(Handle, (nint)(uint)attrs);
+    public unsafe void SetAttributes(TextAttributes attrs)
+    {
+        uint val = (uint)attrs;
+        OpenTuiNative.TextBufferSetDefaultAttributes(Handle, (nint)(&val));
+    }
 
     /// <summary>Resets all default styling (foreground, background, attributes) to initial values.</summary>
     public void ResetDefaults() =>
@@ -245,30 +249,38 @@ public sealed class TextBuffer : IDisposable
 
     #region Memory Registry
 
-    /// <summary>Registers a memory buffer and returns its ID.</summary>
-    public ushort RegisterMemory(byte[] data, bool copy = true)
+    /// <summary>Registers a memory buffer and returns its ID.
+    /// Data is copied to native memory; the caller can release the byte[] immediately.</summary>
+    public unsafe ushort RegisterMemory(byte[] data, bool copy = true)
     {
-        unsafe
-        {
-            fixed (byte* ptr = data)
-            {
-                return OpenTuiNative.TextBufferRegisterMemBuffer(
-                    Handle, (nint)ptr, (nuint)data.Length, copy);
-            }
-        }
+        if (data.Length == 0)
+            return OpenTuiNative.TextBufferRegisterMemBuffer(Handle, nint.Zero, 0, false);
+
+        // Zig's "owned" flag means "I will GPA-free this pointer on cleanup".
+        // We must allocate via NativeMemory so it's valid for the buffer's lifetime,
+        // then pass owned=false so Zig won't try to GPA-free our allocation.
+        nint nativeMem = (nint)NativeMemory.Alloc((nuint)data.Length);
+        fixed (byte* src = data)
+            NativeMemory.Copy(src, (void*)nativeMem, (nuint)data.Length);
+
+        ushort id = OpenTuiNative.TextBufferRegisterMemBuffer(
+            Handle, nativeMem, (nuint)data.Length, false);
+        _nativeAllocations.Add(nativeMem);
+        return id;
     }
 
-    /// <summary>Replaces an existing registered memory buffer by ID.</summary>
-    public bool ReplaceMemory(byte id, byte[] data, bool copy = true)
+    /// <summary>Replaces an existing registered memory buffer by ID.
+    /// Data is copied to native memory; the caller can release the byte[] immediately.</summary>
+    public unsafe bool ReplaceMemory(byte id, byte[] data, bool copy = true)
     {
-        unsafe
-        {
-            fixed (byte* ptr = data)
-            {
-                return OpenTuiNative.TextBufferReplaceMemBuffer(
-                    Handle, id, (nint)ptr, (nuint)data.Length, copy);
-            }
-        }
+        nint nativeMem = (nint)NativeMemory.Alloc((nuint)data.Length);
+        fixed (byte* src = data)
+            NativeMemory.Copy(src, (void*)nativeMem, (nuint)data.Length);
+
+        bool ok = OpenTuiNative.TextBufferReplaceMemBuffer(
+            Handle, id, nativeMem, (nuint)data.Length, false);
+        _nativeAllocations.Add(nativeMem);
+        return ok;
     }
 
     /// <summary>Clears all registered memory buffers.</summary>
@@ -292,7 +304,7 @@ public sealed class TextBuffer : IDisposable
     #region IDisposable
 
     /// <summary>Destroys the native text buffer and releases all resources.</summary>
-    public void Dispose()
+    public unsafe void Dispose()
     {
         if (!_disposed)
         {
@@ -302,6 +314,10 @@ public sealed class TextBuffer : IDisposable
                 OpenTuiNative.TextBufferDestroy(_handle);
                 _handle = nint.Zero;
             }
+            // Free native memory allocations AFTER Zig deinit (which no longer tries to free them)
+            foreach (nint alloc in _nativeAllocations)
+                NativeMemory.Free((void*)alloc);
+            _nativeAllocations.Clear();
         }
     }
 
