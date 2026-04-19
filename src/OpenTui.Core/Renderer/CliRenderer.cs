@@ -108,6 +108,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private readonly InterceptingTextWriter _interceptingStderr;
     private bool _stdoutInterceptInstalled;
     private bool _stderrInterceptInstalled;
+    private volatile bool _forceFullRenderPending;
     private readonly object _interceptedOutputListenerLock = new();
     private readonly List<Action<string>> _stdoutInterceptionListeners = [];
     private readonly List<Action<string>> _stderrInterceptionListeners = [];
@@ -292,13 +293,14 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     internal void PresentTestFrame(float deltaTime = 16f)
     {
         _frameId++;
+        bool forceFullRender = false;
         if (_splitHeight > 0 && _externalOutputMode == ExternalOutputMode.CaptureStdout)
-            FlushCapturedStdout(_splitHeight);
+            forceFullRender = FlushCapturedStdout(_splitHeight);
 
         Root.Render(NextRenderBuffer, deltaTime);
         foreach (var fn in _postProcessFns)
             fn(NextRenderBuffer, deltaTime);
-        _nativeRenderer.Render();
+        _nativeRenderer.Render(forceFullRender);
     }
 
     #endregion
@@ -1166,38 +1168,94 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             }
 
             if (_splitHeight > 0 && _externalOutputMode == ExternalOutputMode.CaptureStdout)
-                FlushCapturedStdout(_splitHeight);
-
-            // Render the tree
-            Root.Render(NextRenderBuffer, deltaTime);
-
-            // Post-process hooks
-            foreach (var fn in _postProcessFns)
-                fn(NextRenderBuffer, deltaTime);
-
-            // Native render
-            if (!_isDestroyed)
             {
-                _nativeRenderer.Render();
-
-                // Recheck hover if hit grid changed
-                if (_useMouse && _nativeRenderer.GetHitGridDirty())
-                    RecheckHoverState();
-
-                // Schedule next frame if running or immediate requested
-                if (_isRunning || _immediateRerenderRequested)
+                bool syncBracket = _capabilities?.Sync == true;
+                if (syncBracket)
+                    WriteRaw("\x1b[?2026h");
+                try
                 {
-                    var targetMs = _immediateRerenderRequested ? _minTargetFrameTimeMs : _targetFrameTimeMs;
-                    var frameTimeMs = _clock.ElapsedMilliseconds - nowMs;
-                    var delay = Math.Max(1, targetMs - frameTimeMs);
-                    _immediateRerenderRequested = false;
+                    bool forceFullRender = FlushCapturedStdout(_splitHeight);
 
-                    _renderTimer = new Timer(
-                        _ => Loop(),
-                        null,
-                        (int)delay,
-                        Timeout.Infinite
-                    );
+                    // Render the tree
+                    Root.Render(NextRenderBuffer, deltaTime);
+
+                    // Post-process hooks
+                    foreach (var fn in _postProcessFns)
+                        fn(NextRenderBuffer, deltaTime);
+
+                    // Native render
+                    if (!_isDestroyed)
+                    {
+                        _nativeRenderer.Render(forceFullRender);
+
+                        // Recheck hover if hit grid changed
+                        if (_useMouse && _nativeRenderer.GetHitGridDirty())
+                            RecheckHoverState();
+
+                        // Schedule next frame if running or immediate requested
+                        if (_isRunning || _immediateRerenderRequested)
+                        {
+                            var targetMs = _immediateRerenderRequested ? _minTargetFrameTimeMs : _targetFrameTimeMs;
+                            var frameTimeMs = _clock.ElapsedMilliseconds - nowMs;
+                            var delay = Math.Max(1, targetMs - frameTimeMs);
+                            _immediateRerenderRequested = false;
+
+                            _renderTimer = new Timer(
+                                _ => Loop(),
+                                null,
+                                (int)delay,
+                                Timeout.Infinite
+                            );
+                        }
+                    }
+                }
+                finally
+                {
+                    if (syncBracket)
+                        WriteRaw("\x1b[?2026l");
+                }
+            }
+            else
+            {
+                // Consume pending force flag from fullscreen passthrough output
+                bool forceFullRender = _forceFullRenderPending;
+                if (forceFullRender)
+                {
+                    _forceFullRenderPending = false;
+                    CurrentRenderBuffer.Clear(_backgroundColor);
+                }
+
+                // Render the tree
+                Root.Render(NextRenderBuffer, deltaTime);
+
+                // Post-process hooks
+                foreach (var fn in _postProcessFns)
+                    fn(NextRenderBuffer, deltaTime);
+
+                // Native render
+                if (!_isDestroyed)
+                {
+                    _nativeRenderer.Render(forceFullRender);
+
+                    // Recheck hover if hit grid changed
+                    if (_useMouse && _nativeRenderer.GetHitGridDirty())
+                        RecheckHoverState();
+
+                    // Schedule next frame if running or immediate requested
+                    if (_isRunning || _immediateRerenderRequested)
+                    {
+                        var targetMs = _immediateRerenderRequested ? _minTargetFrameTimeMs : _targetFrameTimeMs;
+                        var frameTimeMs = _clock.ElapsedMilliseconds - nowMs;
+                        var delay = Math.Max(1, targetMs - frameTimeMs);
+                        _immediateRerenderRequested = false;
+
+                        _renderTimer = new Timer(
+                            _ => Loop(),
+                            null,
+                            (int)delay,
+                            Timeout.Infinite
+                        );
+                    }
                 }
             }
         }
@@ -1413,10 +1471,17 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             lock (_capturedStdoutLock)
                 _capturedStdout.Append(text);
         }
+        else if (_screenMode == ScreenMode.MainScreen)
+        {
+            // In fullscreen mode, Console.WriteLine from timer threads would corrupt the
+            // display. Set a flag so the render thread forces a full repaint next frame,
+            // matching upstream TS where the output is immediately overwritten.
+            _forceFullRenderPending = true;
+        }
 
         NotifyInterceptedOutputListeners(text, error: false);
 
-        if (splitCaptureActive)
+        if (splitCaptureActive || _screenMode == ScreenMode.MainScreen)
             RequestRender();
     }
 
@@ -1434,7 +1499,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         bool shouldInterceptStderr;
         lock (_interceptedOutputListenerLock)
         {
-            shouldInterceptStdout = _externalOutputMode == ExternalOutputMode.CaptureStdout || _stdoutInterceptionListeners.Count > 0;
+            shouldInterceptStdout = _externalOutputMode == ExternalOutputMode.CaptureStdout
+                || _screenMode == ScreenMode.MainScreen
+                || _stdoutInterceptionListeners.Count > 0;
             shouldInterceptStderr = _stderrInterceptionListeners.Count > 0;
         }
 
@@ -1470,13 +1537,13 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
-    private void FlushCapturedStdout(int space, bool force = false)
+    private bool FlushCapturedStdout(int space, bool force = false)
     {
         string output;
         lock (_capturedStdoutLock)
         {
             if (_capturedStdout.Length == 0 && !force)
-                return;
+                return false;
 
             output = _capturedStdout.ToString();
             _capturedStdout.Clear();
@@ -1485,7 +1552,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         CurrentRenderBuffer.Clear(_backgroundColor);
 
         if (_config.Testing || _isDestroyed)
-            return;
+            return true;
 
         int rendererStartLine = Math.Max(1, _terminalHeight - _splitHeight);
         var builder = new StringBuilder();
@@ -1497,6 +1564,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             builder.Append(ClearFooterArea(space));
 
         WriteRaw(builder.ToString());
+        return true;
     }
 
     private string ClearFooterArea(int space)
@@ -1552,6 +1620,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _screenMode = screenMode;
         _splitHeight = nextSplitHeight;
         _renderOffset = nextSplitHeight > 0 ? _terminalHeight - nextSplitHeight : 0;
+
+        UpdateStdoutInterception();
         Width = _terminalWidth;
         Height = nextSplitHeight > 0 ? nextSplitHeight : _terminalHeight;
 

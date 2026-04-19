@@ -43,11 +43,9 @@ renderer.KeyInput.On<KeyEvent>("keypress", key =>
         case "0":
             if (renderer.ScreenMode == ScreenMode.SplitFooter)
             {
-                outputTimer?.Dispose();
-                outputTimer = null;
                 renderer.ExternalOutputMode = ExternalOutputMode.Passthrough;
                 renderer.ScreenMode = ScreenMode.MainScreen;
-                ReportStatus("Switched to main-screen mode (test output paused)");
+                ReportStatus("Switched to main-screen mode");
             }
             else
             {
@@ -95,9 +93,6 @@ void RestartOutputTimer()
     outputTimer?.Dispose();
     outputTimer = null;
 
-    if (renderer.ScreenMode != ScreenMode.SplitFooter || renderer.ExternalOutputMode != ExternalOutputMode.CaptureStdout)
-        return;
-
     outputTimer = new Timer(_ =>
     {
         int count = Interlocked.Increment(ref messageCount);
@@ -108,8 +103,7 @@ void RestartOutputTimer()
 void ReportStatus(string message)
 {
     dashboard.SetNotice(message);
-    if (renderer.ScreenMode == ScreenMode.SplitFooter && renderer.ExternalOutputMode == ExternalOutputMode.CaptureStdout)
-        Console.WriteLine(message);
+    Console.WriteLine(message);
 }
 
 file sealed class SplitModeDashboard
