@@ -32,14 +32,17 @@ var rootGroup = new BoxRenderable(renderer, new BoxOptions
 });
 renderer.Root.Add(rootGroup);
 
+// Use concrete terminal dimensions (Point), matching the upstream reference.
+// This ensures the private buffer is allocated immediately at construction,
+// so the first frame callback can draw into it without waiting for layout.
 var background = new FrameBufferRenderable(renderer, new FrameBufferOptions
 {
     Id = "grapheme-bg",
     Position = PositionValue.Absolute,
     Left = 0,
     Top = 0,
-    Width = DimensionValue.Percent(100),
-    Height = DimensionValue.Percent(100),
+    Width = renderer.TerminalWidth,
+    Height = renderer.TerminalHeight,
     RespectAlpha = false,
 });
 rootGroup.Add(background);
@@ -236,7 +239,12 @@ renderer.AddFrameCallback(_ =>
     return Task.CompletedTask;
 });
 
-renderer.On<(int Width, int Height)>(RendererEventNames.Resize, _ => MarkDirty());
+renderer.On<(int Width, int Height)>(RendererEventNames.Resize, e =>
+{
+    background.WidthDimension = e.Width;
+    background.HeightDimension = e.Height;
+    MarkDirty();
+});
 
 renderer.KeyInput.On("keypress", (KeyEvent keyEvent) =>
 {
