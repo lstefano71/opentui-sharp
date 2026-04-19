@@ -488,7 +488,7 @@ public class ASCIIFontRenderable : FrameBufferRenderable
             RequestRender();
         }
 
-        return changed;
+        return HasSelection();
     }
 
     public override string GetSelectedText()

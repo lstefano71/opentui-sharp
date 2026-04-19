@@ -120,4 +120,40 @@ public sealed class ASCIIFontRenderableTests : IDisposable
         Assert.Equal(selectionFg, ReadCellFg(buffer, 0, 0));
         Assert.Equal(selectionBg, ReadCellBg(buffer, 0, 0));
     }
+
+    /// <summary>
+    /// Regression: OnSelectionChanged must return true whenever the renderable
+    /// holds an active selection, not only when the char indices changed from
+    /// the previous call. WalkSelectableRenderables rebuilds selectedRenderables
+    /// from scratch each tick, so returning false causes GetSelectedText() to
+    /// report an empty selection even though text is visually highlighted.
+    /// </summary>
+    [Fact]
+    public void OnSelectionChanged_ReturnsTrue_WhenSelectionUnchangedButActive()
+    {
+        var ascii = new ASCIIFontRenderable(_renderer, new ASCIIFontOptions
+        {
+            Id = "ascii-stable-selection",
+            Text = "SHADE",
+            Font = "tiny",
+        });
+
+        _renderer.Root.Add(ascii);
+        RenderFrame();
+
+        int[] positions = ASCIIFontRenderable.GetCharacterPositions("SHADE", "tiny");
+        var selection = new Selection(ascii, ascii.X + positions[1], ascii.Y);
+        selection.UpdateFocus(ascii.X + positions[4], ascii.Y);
+
+        // First call: selection changes from none → "HAD"
+        bool first = ascii.OnSelectionChanged(selection);
+        Assert.True(first);
+        Assert.Equal("HAD", ascii.GetSelectedText());
+
+        // Second call with identical bounds: selection didn't change,
+        // but the renderable still has an active selection.
+        bool second = ascii.OnSelectionChanged(selection);
+        Assert.True(second, "OnSelectionChanged must return true while a selection is active, even when char indices are unchanged");
+        Assert.Equal("HAD", ascii.GetSelectedText());
+    }
 }

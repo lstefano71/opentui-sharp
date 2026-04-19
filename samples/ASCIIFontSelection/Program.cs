@@ -31,8 +31,6 @@ var fontGroup = new BoxRenderable(renderer, new BoxOptions
     Left = 2,
     Top = 2,
     ZIndex = 10,
-    FlexDirection = FlexDirectionValue.Column,
-    Gap = 1,
 });
 mainContainer.Add(fontGroup);
 
