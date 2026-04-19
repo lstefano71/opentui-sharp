@@ -10,6 +10,8 @@ if (samples.Count == 0)
     return;
 }
 
+int lastSelectedIndex = 0;
+
 while (true)
 {
     using var renderer = CliRenderer.Create(new CliRendererConfig
@@ -20,13 +22,15 @@ while (true)
 
     renderer.SetBackgroundColor(Rgba.Transparent);
 
-    var selector = new ExampleSelector(renderer, samples);
+    var selector = new ExampleSelector(renderer, samples, lastSelectedIndex);
     var selected = await selector.WaitForSelectionAsync();
 
     renderer.Destroy();
 
     if (selected is null)
         break; // User pressed Ctrl+C — exit
+
+    lastSelectedIndex = samples.IndexOf(selected);
 
     // Small delay to let the terminal restore
     await Task.Delay(50);

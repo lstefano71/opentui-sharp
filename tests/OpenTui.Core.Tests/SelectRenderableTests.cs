@@ -109,4 +109,84 @@ public sealed class SelectRenderableTests : IDisposable
         Assert.Contains("Avocado", secondContentRow);
         Assert.DoesNotContain("Avocado", bottomBorderRow);
     }
+
+    [Fact]
+    public void Mouse_SingleClick_SelectsItem()
+    {
+        var select = new SelectRenderable(_renderer, new SelectOptions
+        {
+            Id = "click-select",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(5),
+            Border = true,
+            ShowDescription = false,
+            Options =
+            [
+                new() { Name = "Alpha" },
+                new() { Name = "Beta" },
+                new() { Name = "Gamma" },
+            ],
+        });
+
+        _renderer.Root.Add(select);
+        RenderFrame();
+
+        // Click on the second item (Y = screenY + 1 border + 1 item)
+        int clickY = (int)select.ScreenY + 1 + 1;
+        select.ProcessMouseEvent(new UiMouseEvent
+        {
+            Type = MouseEventType.Down,
+            Button = (int)MouseButton.Left,
+            X = (int)select.ScreenX + 2,
+            Y = clickY,
+        });
+
+        Assert.Equal(1, select.SelectedIndex);
+    }
+
+    [Fact]
+    public void Mouse_DoubleClick_EmitsItemSelected()
+    {
+        var select = new SelectRenderable(_renderer, new SelectOptions
+        {
+            Id = "dblclick-select",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(5),
+            Border = true,
+            ShowDescription = false,
+            Options =
+            [
+                new() { Name = "Alpha" },
+                new() { Name = "Beta" },
+                new() { Name = "Gamma" },
+            ],
+        });
+
+        _renderer.Root.Add(select);
+        RenderFrame();
+
+        (int Index, SelectOption? Option)? emitted = null;
+        select.On<(int Index, SelectOption? Option)>(
+            SelectRenderable.Events.ItemSelected,
+            args => emitted = args);
+
+        int clickY = (int)select.ScreenY + 1 + 1; // border + second item
+        var evt = new UiMouseEvent
+        {
+            Type = MouseEventType.Down,
+            Button = (int)MouseButton.Left,
+            X = (int)select.ScreenX + 2,
+            Y = clickY,
+        };
+
+        // First click — selects, no ItemSelected
+        select.ProcessMouseEvent(evt);
+        Assert.Null(emitted);
+
+        // Second click — double-click triggers ItemSelected
+        select.ProcessMouseEvent(evt);
+        Assert.NotNull(emitted);
+        Assert.Equal(1, emitted.Value.Index);
+        Assert.Equal("Beta", emitted.Value.Option?.Name);
+    }
 }

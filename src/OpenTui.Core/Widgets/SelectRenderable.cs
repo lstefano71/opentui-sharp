@@ -34,6 +34,11 @@ public class SelectRenderable : BoxRenderable
     private Rgba _descriptionColor;
     private Rgba _selectedDescriptionColor;
 
+    // Double-click tracking
+    private long _lastMouseClickTick;
+    private int _lastMouseClickIndex = -1;
+    private const int DoubleClickThresholdMs = 400;
+
     public SelectRenderable(IRenderContext ctx, SelectOptions? options = null)
         : base(ctx, options ?? new SelectOptions { Buffered = true })
     {
@@ -205,6 +210,38 @@ public class SelectRenderable : BoxRenderable
         }
 
         base.HandleKeyPress(key);
+    }
+
+    #endregion
+
+    #region Mouse
+
+    protected override void OnMouseEvent(UiMouseEvent evt)
+    {
+        if (evt.Type != MouseEventType.Down || evt.Button != (int)MouseButton.Left)
+            return;
+        if (_options.Length == 0) return;
+
+        int topInset = (ActiveBorderSides & BorderSides.Top) != 0 ? 1 : 0;
+        int localY = evt.Y - (int)_screenY - topInset;
+        if (localY < 0) return;
+
+        int linesPerItem = LinesPerItem;
+        int itemVisualIndex = localY / linesPerItem;
+        int itemIndex = _scrollOffset + itemVisualIndex;
+        if (itemIndex < 0 || itemIndex >= _options.Length) return;
+
+        long now = Environment.TickCount64;
+        bool isDoubleClick = itemIndex == _lastMouseClickIndex
+            && (now - _lastMouseClickTick) <= DoubleClickThresholdMs;
+
+        _lastMouseClickTick = now;
+        _lastMouseClickIndex = itemIndex;
+
+        SetSelectedIndex(itemIndex);
+
+        if (isDoubleClick)
+            SelectCurrent();
     }
 
     #endregion

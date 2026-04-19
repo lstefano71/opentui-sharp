@@ -12,6 +12,7 @@ internal sealed class ExampleSelector
     private readonly CliRenderer _renderer;
     private readonly List<SampleInfo> _allSamples;
     private readonly TaskCompletionSource<SampleInfo?> _selectedTcs = new();
+    private readonly int _initialSelectedIndex;
 
     private BoxRenderable _menuContainer = null!;
     private ASCIIFontRenderable _title = null!;
@@ -35,12 +36,16 @@ internal sealed class ExampleSelector
     private static readonly Rgba SelectedDescColor = Rgba.FromHex("#94A3B8");
     private static readonly Rgba InstructionsColor = Rgba.FromHex("#94A3B8");
 
-    public ExampleSelector(CliRenderer renderer, List<SampleInfo> samples)
+    public ExampleSelector(CliRenderer renderer, List<SampleInfo> samples, int initialSelectedIndex = 0)
     {
         _renderer = renderer;
         _allSamples = samples;
+        _initialSelectedIndex = initialSelectedIndex;
 
-        CreateLayout();
+        using (_renderer.SuspendRenderRequests())
+        {
+            CreateLayout();
+        }
         SetupKeyboard();
     }
 
@@ -152,6 +157,9 @@ internal sealed class ExampleSelector
         });
         _selectBox.Add(_selectElement);
 
+        if (_initialSelectedIndex > 0)
+            _selectElement.SelectedIndex = _initialSelectedIndex;
+
         _selectElement.On<(int Index, SelectOption? Option)>(
             SelectRenderable.Events.ItemSelected,
             args =>
@@ -166,12 +174,10 @@ internal sealed class ExampleSelector
             Height = DimensionValue.Point(1),
             FlexShrink = 0,
             AlignSelf = AlignValue.Center,
-            Content = "Type to filter │ ↑↓/j/k navigate │ Enter run │ Esc clear/return │ Ctrl+C quit",
+            Content = "Type to filter │ ↑↓/j/k navigate │ Enter/double-click run │ Esc clear/return │ Ctrl+C quit",
             Fg = InstructionsColor,
         });
         _menuContainer.Add(_instructions);
-
-        _renderer.RequestRender();
     }
 
     private void SetupKeyboard()
