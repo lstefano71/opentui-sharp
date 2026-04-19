@@ -31,6 +31,22 @@ public sealed class TextTableRenderableTests : IDisposable
         return ((uint*)charPtr)[offset];
     }
 
+    private static unsafe Rgba ReadCellFg(OptimizedBuffer buf, uint x, uint y)
+    {
+        nint fgPtr = buf.GetFgPtr();
+        int floatOff = (int)(y * buf.Width + x) * 4;
+        float* fp = (float*)fgPtr;
+        return new Rgba(fp[floatOff], fp[floatOff + 1], fp[floatOff + 2], fp[floatOff + 3]);
+    }
+
+    private static unsafe Rgba ReadCellBg(OptimizedBuffer buf, uint x, uint y)
+    {
+        nint bgPtr = buf.GetBgPtr();
+        int floatOff = (int)(y * buf.Width + x) * 4;
+        float* fp = (float*)bgPtr;
+        return new Rgba(fp[floatOff], fp[floatOff + 1], fp[floatOff + 2], fp[floatOff + 3]);
+    }
+
     private static string ReadRowText(OptimizedBuffer buf, int x, int y, int width)
     {
         var chars = new char[width];
@@ -154,5 +170,76 @@ public sealed class TextTableRenderableTests : IDisposable
         Assert.NotEqual(proportionalHeaderRow, balancedHeaderRow);
         Assert.True(balancedWidths[0] > proportionalWidths[0]);
         Assert.True(balancedSpread < proportionalSpread);
+    }
+
+    [Fact]
+    public void Selection_DragWithinCell_UpdatesHighlightAndSelectedText()
+    {
+        var baseBg = Rgba.FromHex("#101820");
+        var baseFg = Rgba.FromHex("#f59e0b");
+        var selectionBg = Rgba.FromHex("#4a5568");
+        var selectionFg = Rgba.FromHex("#ffffff");
+
+        var table = new TextTableRenderable(_renderer, new TextTableOptions
+        {
+            Width = DimensionValue.Point(18),
+            Bg = baseBg,
+            Fg = baseFg,
+            SelectionBg = selectionBg,
+            SelectionFg = selectionFg,
+            Content =
+            [
+                [[TextChunk.Plain("ALPHA BETA")]],
+            ],
+        });
+
+        _renderer.Root.Add(table);
+        RenderFrame();
+
+        int startX = table.X + 1;
+        int startY = table.Y + 1;
+        int endX = table.X + 6;
+
+        Assert.True(table.ShouldStartSelection(startX, startY));
+
+        var selection = new Selection(table, startX, startY);
+        selection.UpdateFocus(endX, startY);
+
+        Assert.True(table.OnSelectionChanged(selection));
+        RenderFrame();
+
+        Assert.True(table.HasSelection());
+        Assert.Equal("ALPHA", table.GetSelectedText());
+        Assert.NotEqual(baseFg, ReadCellFg(_renderer.NextRenderBuffer, (uint)startX, (uint)startY));
+        Assert.NotEqual(baseBg, ReadCellBg(_renderer.NextRenderBuffer, (uint)startX, (uint)startY));
+    }
+
+    [Fact]
+    public void StyledCell_PreservesChunkForegroundColor()
+    {
+        var tableFg = Rgba.FromHex("#f8fafc");
+        var statusFg = Rgba.FromHex("#22c55e");
+
+        var table = new TextTableRenderable(_renderer, new TextTableOptions
+        {
+            Width = DimensionValue.Point(6),
+            Fg = tableFg,
+            ShowBorders = false,
+            Border = false,
+            OuterBorder = false,
+            Content =
+            [
+                [[TextChunk.Styled("OK", fg: statusFg)]],
+            ],
+        });
+
+        _renderer.Root.Add(table);
+        RenderFrame();
+
+        uint x = (uint)table.X;
+        uint y = (uint)table.Y;
+
+        Assert.Equal((uint)'O', ReadCellChar(_renderer.NextRenderBuffer, x, y));
+        Assert.Equal(statusFg, ReadCellFg(_renderer.NextRenderBuffer, x, y));
     }
 }

@@ -85,6 +85,10 @@ public sealed class CliRendererTests : IDisposable
         Assert.True(condition(), $"Condition was not met within {timeoutMs} ms.");
     }
 
+    private static bool GetForceFullRenderPending(CliRenderer renderer) =>
+        (bool)(typeof(CliRenderer).GetField("_forceFullRenderPending", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(renderer)!);
+
     #region Creation & Properties
 
     [Fact]
@@ -691,6 +695,16 @@ public sealed class CliRendererTests : IDisposable
         _renderer.On<(int W, int H)>(RendererEventNames.Resize, e => resized = true);
         _renderer.Resize(100, 50);
         Assert.True(resized);
+    }
+
+    [Fact]
+    public void Resize_SetsForceFullRenderPending()
+    {
+        Assert.False(GetForceFullRenderPending(_renderer));
+
+        _renderer.Resize(100, 50);
+
+        Assert.True(GetForceFullRenderPending(_renderer));
     }
 
     [Fact]

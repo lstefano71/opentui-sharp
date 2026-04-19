@@ -35,6 +35,17 @@ public class TextTableOptions : RenderableOptions
 /// </summary>
 public class TextTableRenderable : Renderable
 {
+    private readonly record struct CellPosition(int RowIdx, int ColIdx);
+    private readonly record struct CellSelectionCoords(int AnchorX, int AnchorY, int FocusX, int FocusY);
+    private readonly record struct SelectionResolution(TableSelectionMode Mode, CellPosition? AnchorCell, int? AnchorColumn);
+
+    private enum TableSelectionMode
+    {
+        SingleCell,
+        ColumnLocked,
+        Grid,
+    }
+
     private TextChunk[][][] _content;
     private byte _wrapMode;
     private string _columnWidthMode;
@@ -50,6 +61,10 @@ public class TextTableRenderable : Renderable
     private Rgba _fg;
     private Rgba _bg;
     private TextAttributes _attributes;
+    private Rgba? _selectionBg;
+    private Rgba? _selectionFg;
+    private LocalSelectionBounds? _lastLocalSelection;
+    private TableSelectionMode? _lastSelectionMode;
 
     // Grid of text buffer cells
     private CellState[,]? _cells;
@@ -76,10 +91,13 @@ public class TextTableRenderable : Renderable
     {
         public TextBuffer TextBuffer { get; }
         public TextBufferView TextBufferView { get; }
+        public SyntaxStyle SyntaxStyle { get; }
 
         public CellState(WidthMethod widthMethod)
         {
             TextBuffer = TextBuffer.Create(widthMethod);
+            SyntaxStyle = SyntaxStyle.Create();
+            TextBuffer.SetSyntaxStyle(SyntaxStyle.Handle);
             TextBufferView = TextBufferView.Create(TextBuffer);
         }
 
@@ -87,6 +105,7 @@ public class TextTableRenderable : Renderable
         {
             TextBufferView.Dispose();
             TextBuffer.Dispose();
+            SyntaxStyle.Dispose();
         }
     }
 
@@ -109,7 +128,10 @@ public class TextTableRenderable : Renderable
         _fg = options.Fg ?? Rgba.FromInts(255, 255, 255);
         _bg = options.Bg ?? Rgba.Transparent;
         _attributes = options.Attributes;
+        _selectionBg = options.SelectionBg;
+        _selectionFg = options.SelectionFg;
 
+        Selectable = options.Selectable;
         YGNodeAPI.YGNodeSetMeasureFunc(YogaNode, MeasureFunc);
         RebuildCells();
     }
@@ -623,6 +645,304 @@ public class TextTableRenderable : Renderable
 
     #endregion
 
+    #region Selection
+
+    public override bool ShouldStartSelection(int x, int y)
+    {
+        if (!Selectable || _cells is null || _rowCount == 0 || _colCount == 0 || Width <= 0 || Height <= 0)
+            return false;
+
+        var layout = GetSelectionLayout();
+        int localX = x - X;
+        int localY = y - Y;
+        return GetCellAtLocalPosition(layout, localX, localY).HasValue;
+    }
+
+    public override bool OnSelectionChanged(Selection? selection)
+    {
+        bool hadSelection = HasSelection();
+        var localSelection = SelectionHelpers.ConvertGlobalToLocalSelection(selection, X, Y);
+        _lastLocalSelection = localSelection;
+
+        if (localSelection is not { IsActive: true } activeSelection ||
+            _cells is null ||
+            _rowCount == 0 ||
+            _colCount == 0 ||
+            Width <= 0 ||
+            Height <= 0)
+        {
+            ResetCellSelections();
+            _lastSelectionMode = null;
+
+            if (hadSelection)
+                RequestRender();
+
+            return false;
+        }
+
+        var layout = GetSelectionLayout();
+        ApplySelectionToCells(layout, activeSelection, selection?.IsStart == true);
+
+        bool hasSelection = HasSelection();
+        if (hadSelection || hasSelection || selection?.IsActive == true)
+            RequestRender();
+
+        return hasSelection;
+    }
+
+    public override bool HasSelection()
+    {
+        if (_cells is null)
+            return false;
+
+        for (int r = 0; r < _rowCount; r++)
+        {
+            for (int c = 0; c < _colCount; c++)
+            {
+                if (_cells[r, c].TextBufferView.HasSelection())
+                    return true;
+            }
+        }
+
+        return false;
+    }
+
+    public override string GetSelectedText()
+    {
+        if (_cells is null)
+            return "";
+
+        var selectedRows = new List<string>();
+
+        for (int rowIdx = 0; rowIdx < _rowCount; rowIdx++)
+        {
+            var rowSelections = new List<string>();
+
+            for (int colIdx = 0; colIdx < _colCount; colIdx++)
+            {
+                var cell = _cells[rowIdx, colIdx];
+                if (!cell.TextBufferView.HasSelection())
+                    continue;
+
+                string selectedText = cell.TextBufferView.GetSelectedText();
+                if (selectedText.Length > 0)
+                    rowSelections.Add(selectedText);
+            }
+
+            if (rowSelections.Count > 0)
+                selectedRows.Add(string.Join("\t", rowSelections));
+        }
+
+        return string.Join("\n", selectedRows);
+    }
+
+    private TableLayout GetSelectionLayout()
+    {
+        int? maxTableWidth = _widthValue > 0 ? _widthValue : null;
+        var layout = ComputeLayout(maxTableWidth);
+        ApplyLayoutToViews(layout);
+        return layout;
+    }
+
+    private CellPosition? GetCellAtLocalPosition(TableLayout layout, int localX, int localY)
+    {
+        if (_rowCount == 0 || _colCount == 0 || localX < 0 || localY < 0 ||
+            localX >= layout.TableWidth || localY >= layout.TableHeight)
+        {
+            return null;
+        }
+
+        int rowIdx = -1;
+        for (int idx = 0; idx < _rowCount; idx++)
+        {
+            int top = layout.RowOffsets[idx] + 1;
+            int bottom = top + layout.RowHeights[idx] - 1;
+            if (localY >= top && localY <= bottom)
+            {
+                rowIdx = idx;
+                break;
+            }
+        }
+
+        if (rowIdx < 0)
+            return null;
+
+        int colIdx = -1;
+        for (int idx = 0; idx < _colCount; idx++)
+        {
+            int left = layout.ColumnOffsets[idx] + 1;
+            int right = left + layout.ColumnWidths[idx] - 1;
+            if (localX >= left && localX <= right)
+            {
+                colIdx = idx;
+                break;
+            }
+        }
+
+        return colIdx >= 0 ? new CellPosition(rowIdx, colIdx) : null;
+    }
+
+    private void ApplySelectionToCells(TableLayout layout, LocalSelectionBounds localSelection, bool isStart)
+    {
+        if (_cells is null)
+            return;
+
+        int minSelY = Math.Min(localSelection.AnchorY, localSelection.FocusY);
+        int maxSelY = Math.Max(localSelection.AnchorY, localSelection.FocusY);
+        int firstRow = FindRowForLocalY(layout, minSelY);
+        int lastRow = FindRowForLocalY(layout, maxSelY);
+        var selection = ResolveSelectionResolution(layout, localSelection);
+        bool modeChanged = _lastSelectionMode != selection.Mode;
+        _lastSelectionMode = selection.Mode;
+        bool lockToAnchorColumn = selection.Mode == TableSelectionMode.ColumnLocked && selection.AnchorColumn.HasValue;
+
+        for (int rowIdx = 0; rowIdx < _rowCount; rowIdx++)
+        {
+            if (rowIdx < firstRow || rowIdx > lastRow)
+            {
+                ResetRowSelection(rowIdx);
+                continue;
+            }
+
+            int cellTop = layout.RowOffsets[rowIdx] + 1 + _cellPadding;
+
+            for (int colIdx = 0; colIdx < _colCount; colIdx++)
+            {
+                var cell = _cells[rowIdx, colIdx];
+
+                if (lockToAnchorColumn && colIdx != selection.AnchorColumn)
+                {
+                    cell.TextBufferView.ResetLocalSelection();
+                    continue;
+                }
+
+                int cellLeft = layout.ColumnOffsets[colIdx] + 1 + _cellPadding;
+                var coords = new CellSelectionCoords(
+                    localSelection.AnchorX - cellLeft,
+                    localSelection.AnchorY - cellTop,
+                    localSelection.FocusX - cellLeft,
+                    localSelection.FocusY - cellTop);
+
+                bool isAnchorCell = selection.AnchorCell is { } anchorCell &&
+                    anchorCell.RowIdx == rowIdx &&
+                    anchorCell.ColIdx == colIdx;
+                bool forceSet = isAnchorCell && selection.Mode != TableSelectionMode.SingleCell;
+
+                if (forceSet)
+                    coords = GetFullCellSelectionCoords(layout, rowIdx, colIdx);
+
+                bool shouldUseSet = isStart || modeChanged || forceSet;
+                if (shouldUseSet)
+                {
+                    cell.TextBufferView.SetLocalSelection(
+                        coords.AnchorX,
+                        coords.AnchorY,
+                        coords.FocusX,
+                        coords.FocusY,
+                        _selectionFg,
+                        _selectionBg);
+                }
+                else
+                {
+                    cell.TextBufferView.UpdateLocalSelection(
+                        coords.AnchorX,
+                        coords.AnchorY,
+                        coords.FocusX,
+                        coords.FocusY,
+                        _selectionFg,
+                        _selectionBg);
+                }
+            }
+        }
+    }
+
+    private SelectionResolution ResolveSelectionResolution(TableLayout layout, LocalSelectionBounds localSelection)
+    {
+        CellPosition? anchorCell = GetCellAtLocalPosition(layout, localSelection.AnchorX, localSelection.AnchorY);
+        CellPosition? focusCell = GetCellAtLocalPosition(layout, localSelection.FocusX, localSelection.FocusY);
+        int? anchorColumn = anchorCell?.ColIdx ?? GetColumnAtLocalX(layout, localSelection.AnchorX);
+
+        if (anchorCell is { } anchor &&
+            focusCell is { } focus &&
+            anchor.RowIdx == focus.RowIdx &&
+            anchor.ColIdx == focus.ColIdx)
+        {
+            return new SelectionResolution(TableSelectionMode.SingleCell, anchorCell, anchorColumn);
+        }
+
+        int? focusColumn = GetColumnAtLocalX(layout, localSelection.FocusX);
+        if (anchorColumn.HasValue && focusColumn == anchorColumn)
+            return new SelectionResolution(TableSelectionMode.ColumnLocked, anchorCell, anchorColumn);
+
+        return new SelectionResolution(TableSelectionMode.Grid, anchorCell, anchorColumn);
+    }
+
+    private int? GetColumnAtLocalX(TableLayout layout, int localX)
+    {
+        if (_colCount == 0 || localX < 0 || localX >= layout.TableWidth)
+            return null;
+
+        for (int colIdx = 0; colIdx < _colCount; colIdx++)
+        {
+            int colStart = layout.ColumnOffsets[colIdx] + 1;
+            int colEnd = colStart + layout.ColumnWidths[colIdx] - 1;
+            if (localX >= colStart && localX <= colEnd)
+                return colIdx;
+        }
+
+        return null;
+    }
+
+    private CellSelectionCoords GetFullCellSelectionCoords(TableLayout layout, int rowIdx, int colIdx)
+    {
+        int colWidth = layout.ColumnWidths[colIdx];
+        int rowHeight = layout.RowHeights[rowIdx];
+        int contentWidth = Math.Max(1, colWidth - GetHorizontalCellPadding());
+        int contentHeight = Math.Max(1, rowHeight - GetVerticalCellPadding());
+
+        return new CellSelectionCoords(
+            AnchorX: -1,
+            AnchorY: 0,
+            FocusX: contentWidth,
+            FocusY: contentHeight);
+    }
+
+    private int FindRowForLocalY(TableLayout layout, int localY)
+    {
+        if (_rowCount == 0 || localY < 0)
+            return 0;
+
+        for (int rowIdx = 0; rowIdx < _rowCount; rowIdx++)
+        {
+            int rowStart = layout.RowOffsets[rowIdx] + 1;
+            int rowEnd = rowStart + layout.RowHeights[rowIdx] - 1;
+            if (localY <= rowEnd)
+                return rowIdx;
+        }
+
+        return _rowCount - 1;
+    }
+
+    private void ResetRowSelection(int rowIdx)
+    {
+        if (_cells is null)
+            return;
+
+        for (int colIdx = 0; colIdx < _colCount; colIdx++)
+            _cells[rowIdx, colIdx].TextBufferView.ResetLocalSelection();
+    }
+
+    private void ResetCellSelections()
+    {
+        if (_cells is null)
+            return;
+
+        for (int rowIdx = 0; rowIdx < _rowCount; rowIdx++)
+            ResetRowSelection(rowIdx);
+    }
+
+    #endregion
+
     #region Rendering
 
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
@@ -638,6 +958,8 @@ public class TextTableRenderable : Renderable
 
         var layout = ComputeLayout(_widthValue);
         ApplyLayoutToViews(layout);
+        if (_lastLocalSelection is { IsActive: true } activeSelection)
+            ApplySelectionToCells(layout, activeSelection, isStart: true);
 
         // Draw borders
         DrawBorders(buffer, layout, baseX, baseY);

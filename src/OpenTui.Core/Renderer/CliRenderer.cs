@@ -1174,7 +1174,13 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                     WriteRaw("\x1b[?2026h");
                 try
                 {
-                    bool forceFullRender = FlushCapturedStdout(_splitHeight);
+                    bool forceFullRender = _forceFullRenderPending || FlushCapturedStdout(_splitHeight);
+                    if (forceFullRender)
+                    {
+                        _forceFullRenderPending = false;
+                        CurrentRenderBuffer.Clear(_backgroundColor);
+                        NextRenderBuffer.Clear(_backgroundColor);
+                    }
 
                     // Render the tree
                     Root.Render(NextRenderBuffer, deltaTime);
@@ -1223,6 +1229,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                 {
                     _forceFullRenderPending = false;
                     CurrentRenderBuffer.Clear(_backgroundColor);
+                    NextRenderBuffer.Clear(_backgroundColor);
                 }
 
                 // Render the tree
@@ -1654,6 +1661,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         CurrentRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetCurrentBuffer());
         CurrentRenderBuffer.Clear(_backgroundColor);
         NextRenderBuffer.Clear(_backgroundColor);
+        _forceFullRenderPending = true;
     }
 
     public void ClearPaletteCache() => _cachedPalette = null;
