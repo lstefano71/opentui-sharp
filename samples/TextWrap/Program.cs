@@ -460,68 +460,26 @@ void HandleGlobalMouse(UiMouseEvent mouseEvent)
                 int deltaX = mouseEvent.X - resizeStartX;
                 int deltaY = mouseEvent.Y - resizeStartY;
 
-                int newWidth = resizeStartWidth;
-                int newHeight = resizeStartHeight;
-                int newLeft = resizeStartLeft;
-                int newTop = resizeStartTop;
+                if (contentBox is null)
+                    break;
 
-                switch (resizeDirection)
-                {
-                    case "nw":
-                        newWidth = Math.Max(MinTextBoxWidth, resizeStartWidth - deltaX);
-                        newHeight = Math.Max(MinTextBoxHeight, resizeStartHeight - deltaY);
-                        newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
-                        newTop = resizeStartTop + (resizeStartHeight - newHeight);
-                        break;
-                    case "ne":
-                        newWidth = Math.Max(MinTextBoxWidth, resizeStartWidth + deltaX);
-                        newHeight = Math.Max(MinTextBoxHeight, resizeStartHeight - deltaY);
-                        newTop = resizeStartTop + (resizeStartHeight - newHeight);
-                        break;
-                    case "sw":
-                        newWidth = Math.Max(MinTextBoxWidth, resizeStartWidth - deltaX);
-                        newHeight = Math.Max(MinTextBoxHeight, resizeStartHeight + deltaY);
-                        newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
-                        break;
-                    case "se":
-                        newWidth = Math.Max(MinTextBoxWidth, resizeStartWidth + deltaX);
-                        newHeight = Math.Max(MinTextBoxHeight, resizeStartHeight + deltaY);
-                        break;
-                    case "n":
-                        newHeight = Math.Max(MinTextBoxHeight, resizeStartHeight - deltaY);
-                        newTop = resizeStartTop + (resizeStartHeight - newHeight);
-                        break;
-                    case "s":
-                        newHeight = Math.Max(MinTextBoxHeight, resizeStartHeight + deltaY);
-                        break;
-                    case "w":
-                        newWidth = Math.Max(MinTextBoxWidth, resizeStartWidth - deltaX);
-                        newLeft = resizeStartLeft + (resizeStartWidth - newWidth);
-                        break;
-                    case "e":
-                        newWidth = Math.Max(MinTextBoxWidth, resizeStartWidth + deltaX);
-                        break;
-                }
+                var resizedBounds = TextWrapDemoLogic.ComputeResizedBounds(
+                    resizeDirection,
+                    deltaX,
+                    deltaY,
+                    resizeStartLeft,
+                    resizeStartTop,
+                    resizeStartWidth,
+                    resizeStartHeight,
+                    MinTextBoxWidth,
+                    MinTextBoxHeight,
+                    contentBox.Width,
+                    contentBox.Height);
 
-                if (contentBox is not null)
-                {
-                    int maxWidth = contentBox.Width - (2 * ContentPadding);
-                    int maxHeight = contentBox.Height - (2 * ContentPadding);
-                    int minLeft = ContentPadding;
-                    int minTop = ContentPadding;
-                    int maxLeft = contentBox.Width - newWidth - ContentPadding;
-                    int maxTop = contentBox.Height - newHeight - ContentPadding;
-
-                    newWidth = Math.Min(newWidth, maxWidth);
-                    newHeight = Math.Min(newHeight, maxHeight);
-                    newLeft = Math.Max(minLeft, Math.Min(newLeft, maxLeft));
-                    newTop = Math.Max(minTop, Math.Min(newTop, maxTop));
-                }
-
-                textBox.WidthDimension = DimensionValue.Point(newWidth);
-                textBox.HeightDimension = DimensionValue.Point(newHeight);
-                textBox.Left = DimensionValue.Point(newLeft);
-                textBox.Top = DimensionValue.Point(newTop);
+                textBox.WidthDimension = DimensionValue.Point(resizedBounds.Width);
+                textBox.HeightDimension = DimensionValue.Point(resizedBounds.Height);
+                textBox.Left = DimensionValue.Point(resizedBounds.Left);
+                textBox.Top = DimensionValue.Point(resizedBounds.Top);
             }
             break;
 
@@ -631,15 +589,15 @@ renderer.Root.OnMouse = HandleGlobalMouse;
         BackgroundColor = Hex("#1e1e2e"),
         Border = true,
         BorderColor = Hex("#565f89"),
-        Padding = DimensionValue.Point(1),
+        Padding = DimensionValue.Point(ContentPadding),
     });
 
     textBox = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
     {
         Id = "text-box",
         Position = PositionValue.Absolute,
-        Left = DimensionValue.Point(2),
-        Top = DimensionValue.Point(2),
+        Left = DimensionValue.Point(TextWrapDemoLogic.InitialTextBoxInset),
+        Top = DimensionValue.Point(TextWrapDemoLogic.InitialTextBoxInset),
         Width = DimensionValue.Point(80),
         Height = DimensionValue.Point(15),
         Border = true,
@@ -667,7 +625,7 @@ renderer.Root.OnMouse = HandleGlobalMouse;
         BackgroundColor = Hex("#1e1e2e"),
         Border = true,
         BorderColor = Hex("#565f89"),
-        Padding = DimensionValue.Point(1),
+        Padding = DimensionValue.Point(ContentPadding),
     });
 
     instructionsText1 = new TextRenderable(renderer, new TextOptions
@@ -735,14 +693,17 @@ renderer.Root.OnMouse = HandleGlobalMouse;
 
 renderer.KeyInput.On<KeyEvent>("keypress", keyEvent =>
 {
+    if (!isInputVisible && string.Equals(keyEvent.Name, "l", StringComparison.OrdinalIgnoreCase))
+    {
+        ShowFileInput();
+        keyEvent.StopPropagation();
+        return;
+    }
+
     if (isInputVisible)
         return;
 
-    if (string.Equals(keyEvent.Name, "l", StringComparison.OrdinalIgnoreCase))
-    {
-        ShowFileInput();
-    }
-    else if (string.Equals(keyEvent.Name, "w", StringComparison.OrdinalIgnoreCase))
+    if (string.Equals(keyEvent.Name, "w", StringComparison.OrdinalIgnoreCase))
     {
         if (textRenderable is null || instructionsText2 is null)
             return;

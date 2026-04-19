@@ -90,3 +90,6 @@ Key lookup patterns:
 - TS text buffer wrapper: `opentui/packages/core/src/text-buffer.ts`, `text-buffer-view.ts`
 
 When a bug gets fixed, a non regression test should be added to the test suite.
+
+for quick one-off experiments, remember file based apps in .NET 10: https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps
+

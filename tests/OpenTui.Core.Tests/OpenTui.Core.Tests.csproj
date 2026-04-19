@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\OpenTui.Core\OpenTui.Core.csproj" />
+    <ProjectReference Include="..\..\samples\TextWrap\TextWrap.csproj" />
   </ItemGroup>
 
   <ItemGroup>

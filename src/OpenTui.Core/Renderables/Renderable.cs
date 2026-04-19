@@ -124,6 +124,7 @@ public abstract class Renderable : EventEmitter
 
         _width = options.Width ?? DimensionValue.Auto;
         _height = options.Height ?? DimensionValue.Auto;
+        _position = (options.Top, options.Right, options.Bottom, options.Left);
 
         if (_width.IsPoint) _widthValue = (int)_width.Value;
         if (_height.IsPoint) _heightValue = (int)_height.Value;
