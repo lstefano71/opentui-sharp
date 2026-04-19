@@ -298,6 +298,53 @@ public class RenderableTests
     }
 
     [Fact]
+    public void UpdateLayout_AllowsChildrenToBeAddedDuringPendingLayoutUpdates()
+    {
+        var ctx = new TestRenderContext { Width = 80, Height = 24, FrameId = 1 };
+        var root = new RootRenderable(ctx);
+        var firstChild = new TestRenderable(ctx, new RenderableOptions { Id = "first", FlexGrow = 1f });
+        var lateChild = new TestRenderable(ctx, new RenderableOptions { Id = "late", Width = DimensionValue.Point(10), Height = DimensionValue.Point(1) });
+
+        firstChild.OnSizeChange = () => root.Add(lateChild);
+
+        root.Add(firstChild);
+        root.CalculateLayout();
+        root.UpdateLayout(0f, []);
+
+        Assert.Same(lateChild, root.GetRenderable("late"));
+        Assert.Equal(2, root.GetChildrenCount());
+
+        root.DestroyRecursively();
+    }
+
+    [Fact]
+    public void UpdateLayout_DoesNotUpdateChildrenRemovedDuringPendingLayoutUpdates()
+    {
+        var ctx = new TestRenderContext { Width = 80, Height = 24, FrameId = 1 };
+        var root = new RootRenderable(ctx);
+        var firstChild = new TestRenderable(ctx, new RenderableOptions { Id = "first", FlexGrow = 1f });
+        var transientChild = new TestRenderable(ctx, new RenderableOptions { Id = "late", Width = DimensionValue.Point(10), Height = DimensionValue.Point(1) });
+        var transientChildResizeCount = 0;
+
+        transientChild.OnSizeChange = () => transientChildResizeCount++;
+        firstChild.OnSizeChange = () =>
+        {
+            root.Add(transientChild);
+            root.Remove(transientChild.Id);
+        };
+
+        root.Add(firstChild);
+        root.CalculateLayout();
+        root.UpdateLayout(0f, []);
+
+        Assert.Equal(0, transientChildResizeCount);
+        Assert.Null(root.GetRenderable("late"));
+        Assert.Null(transientChild.Parent);
+
+        root.DestroyRecursively();
+    }
+
+    [Fact]
     public void InsertBefore_PlacesChildAtCorrectPosition()
     {
         var ctx = new TestRenderContext();

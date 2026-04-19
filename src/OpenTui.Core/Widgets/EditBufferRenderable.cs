@@ -51,6 +51,8 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
     private LineInfo? _cachedLineInfo;
     private bool _lineInfoDirty = true;
     private uint? _selectionAnchorOffset;
+    private Action<(int Line, int VisualColumn)>? _cursorChangeListener;
+    private Action? _contentChangeListener;
     private readonly TextBuffer _textBuffer;
 
     public EditBuffer EditBuffer { get; }
@@ -74,6 +76,8 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         _cursorStyle = options.CursorStyle;
         _tabIndicator = options.TabIndicator;
         _tabIndicatorColor = options.TabIndicatorColor;
+        _cursorChangeListener = options.OnCursorChange;
+        _contentChangeListener = options.OnContentChange;
 
         Focusable = true;
 
@@ -184,29 +188,34 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     public void SetText(string text)
     {
+        var previousState = CaptureState();
         ClearSelection();
         EditBuffer.SetText(text);
         Extmarks.HandleSetText();
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
     }
 
     public string GetText() => EditBuffer.GetText();
 
     public virtual void InsertText(string text)
     {
-        DeleteSelectionIfPresent();
+        var previousState = CaptureState();
+        DeleteSelectionIfPresent(previousState, notify: false);
         Extmarks.SaveSnapshot();
         uint insertOffset = EditBuffer.GetCursorPosition().Offset;
         EditBuffer.InsertText(text);
         Extmarks.HandleInsertion(insertOffset, (uint)text.Length);
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
     }
 
     public virtual bool DeleteCharBackward()
     {
-        if (DeleteSelectionIfPresent())
+        var previousState = CaptureState();
+        if (DeleteSelectionIfPresent(previousState))
             return true;
 
         ClearSelection();
@@ -215,6 +224,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         {
             InvalidateLineInfo();
             RequestRender();
+            NotifyContentAndCursorChanges(previousState);
             return true;
         }
 
@@ -222,6 +232,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         {
             EditBuffer.DeleteCharBackward();
             RequestRender();
+            NotifyContentAndCursorChanges(previousState);
             return true;
         }
 
@@ -230,12 +241,14 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         Extmarks.HandleDeletion(deleteOffset, 1);
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool DeleteChar()
     {
-        if (DeleteSelectionIfPresent())
+        var previousState = CaptureState();
+        if (DeleteSelectionIfPresent(previousState))
             return true;
 
         ClearSelection();
@@ -244,6 +257,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         {
             InvalidateLineInfo();
             RequestRender();
+            NotifyContentAndCursorChanges(previousState);
             return true;
         }
 
@@ -251,6 +265,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         {
             EditBuffer.DeleteChar();
             RequestRender();
+            NotifyContentAndCursorChanges(previousState);
             return true;
         }
 
@@ -259,11 +274,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         Extmarks.HandleDeletion(deleteOffset, 1);
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool NewLine()
     {
+        var previousState = CaptureState();
         ClearSelection();
         Extmarks.SaveSnapshot();
         uint insertOffset = EditBuffer.GetCursorPosition().Offset;
@@ -271,26 +288,31 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         Extmarks.HandleInsertion(insertOffset, 1);
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool Undo()
     {
+        var previousState = CaptureState();
         ClearSelection();
         Extmarks.RestoreUndoState();
         EditBuffer.Undo();
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool Redo()
     {
+        var previousState = CaptureState();
         ClearSelection();
         Extmarks.RestoreRedoState();
         EditBuffer.Redo();
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
@@ -300,18 +322,21 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     public bool MoveCursorLeft(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         if (!select && EditorView.HasSelection())
         {
             var selection = EditorView.GetSelectionRange()!.Value;
             EditBuffer.SetCursorByOffset(selection.Start);
             ClearSelection();
             RequestRender();
+            NotifyCursorChangeIfNeeded(previousCursor);
             return true;
         }
 
         if (!select && Extmarks.TryMoveCursorLeft(EditorView.HasSelection()))
         {
             RequestRender();
+            NotifyCursorChangeIfNeeded(previousCursor);
             return true;
         }
 
@@ -319,11 +344,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         EditBuffer.MoveCursorLeft();
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool MoveCursorRight(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         if (!select && EditorView.HasSelection())
         {
             var selection = EditorView.GetSelectionRange()!.Value;
@@ -334,12 +361,14 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             EditBuffer.SetCursorByOffset(targetOffset);
             ClearSelection();
             RequestRender();
+            NotifyCursorChangeIfNeeded(previousCursor);
             return true;
         }
 
         if (!select && Extmarks.TryMoveCursorRight(EditorView.HasSelection()))
         {
             RequestRender();
+            NotifyCursorChangeIfNeeded(previousCursor);
             return true;
         }
 
@@ -347,11 +376,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         EditBuffer.MoveCursorRight();
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool MoveCursorUp(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditorView.GetVisualCursor().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         EditorView.MoveUpVisual();
@@ -359,11 +390,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterVerticalMove(previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool MoveCursorDown(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditorView.GetVisualCursor().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         EditorView.MoveDownVisual();
@@ -371,11 +404,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterVerticalMove(previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool GotoLineHome(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         var (logical, _) = EditorView.GetCursor();
@@ -394,11 +429,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(EditBuffer.GetCursorPosition().Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool GotoLineEnd(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         var (logical, _) = EditorView.GetCursor();
@@ -412,11 +449,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(EditBuffer.GetCursorPosition().Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool GotoVisualLineHome(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         var sol = EditorView.GetVisualSOL();
@@ -425,11 +464,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(EditBuffer.GetCursorPosition().Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool GotoVisualLineEnd(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         var eol = EditorView.GetVisualEOL();
@@ -438,11 +479,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(EditBuffer.GetCursorPosition().Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool GotoBufferHome(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         EditBuffer.SetCursor(0, 0);
@@ -450,11 +493,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(EditBuffer.GetCursorPosition().Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool GotoBufferEnd(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         EditBuffer.GotoLine(uint.MaxValue);
@@ -462,11 +507,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(EditBuffer.GetCursorPosition().Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool MoveWordForward(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         var boundary = EditBuffer.GetNextWordBoundary();
@@ -475,11 +522,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(boundary.Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public bool MoveWordBackward(bool select = false)
     {
+        var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
         var boundary = EditBuffer.GetPrevWordBoundary();
@@ -488,12 +537,14 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
             Extmarks.AdjustCursorAfterSetOffset(boundary.Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);
         RequestRender();
+        NotifyCursorChangeIfNeeded(previousCursor);
         return true;
     }
 
     public virtual bool DeleteWordForward()
     {
-        if (DeleteSelectionIfPresent())
+        var previousState = CaptureState();
+        if (DeleteSelectionIfPresent(previousState))
             return true;
 
         Extmarks.SaveSnapshot();
@@ -508,12 +559,14 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         ClearSelection();
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool DeleteWordBackward()
     {
-        if (DeleteSelectionIfPresent())
+        var previousState = CaptureState();
+        if (DeleteSelectionIfPresent(previousState))
             return true;
 
         Extmarks.SaveSnapshot();
@@ -528,11 +581,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         ClearSelection();
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool DeleteLine()
     {
+        var previousState = CaptureState();
         ClearSelection();
         Extmarks.SaveSnapshot();
         string text = EditBuffer.GetText();
@@ -555,12 +610,14 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         Extmarks.HandleDeletion(lineStart, lineEnd - lineStart);
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool DeleteToLineEnd()
     {
-        if (DeleteSelectionIfPresent())
+        var previousState = CaptureState();
+        if (DeleteSelectionIfPresent(previousState))
             return true;
 
         Extmarks.SaveSnapshot();
@@ -574,12 +631,14 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
     public virtual bool DeleteToLineStart()
     {
-        if (DeleteSelectionIfPresent())
+        var previousState = CaptureState();
+        if (DeleteSelectionIfPresent(previousState))
             return true;
 
         Extmarks.SaveSnapshot();
@@ -597,6 +656,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
         InvalidateLineInfo();
         RequestRender();
+        NotifyContentAndCursorChanges(previousState);
         return true;
     }
 
@@ -758,18 +818,21 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Helpers
 
-    protected bool DeleteSelectionIfPresent()
+    protected bool DeleteSelectionIfPresent((string Text, LogicalCursor Cursor)? previousState = null, bool notify = true)
     {
         var selection = EditorView.GetSelectionRange();
         if (selection is null)
             return false;
 
+        var stateBeforeChange = previousState ?? CaptureState();
         EditorView.DeleteSelectedText();
         var (start, end) = selection.Value;
         Extmarks.HandleSelectionDeletion(Math.Min(start, end), Math.Max(start, end) - Math.Min(start, end));
         _selectionAnchorOffset = null;
         InvalidateLineInfo();
         RequestRender();
+        if (notify)
+            NotifyContentAndCursorChanges(stateBeforeChange);
         return true;
     }
 
@@ -834,6 +897,38 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
         return 0;
     }
+
+    private (string Text, LogicalCursor Cursor) CaptureState() =>
+        (EditBuffer.GetText(), EditBuffer.GetCursorPosition());
+
+    private void NotifyContentAndCursorChanges((string Text, LogicalCursor Cursor) previousState)
+    {
+        var currentCursor = EditBuffer.GetCursorPosition();
+        bool cursorChanged = HasCursorChanged(previousState.Cursor, currentCursor);
+        string currentText = EditBuffer.GetText();
+        bool contentChanged = !string.Equals(previousState.Text, currentText, StringComparison.Ordinal);
+
+        if (contentChanged)
+        {
+            YGNodeAPI.YGNodeMarkDirty(YogaNode);
+            _contentChangeListener?.Invoke();
+        }
+
+        if (cursorChanged)
+            _cursorChangeListener?.Invoke(((int)currentCursor.Row, (int)currentCursor.Col));
+    }
+
+    private void NotifyCursorChangeIfNeeded(LogicalCursor previousCursor)
+    {
+        var currentCursor = EditBuffer.GetCursorPosition();
+        if (HasCursorChanged(previousCursor, currentCursor))
+            _cursorChangeListener?.Invoke(((int)currentCursor.Row, (int)currentCursor.Col));
+    }
+
+    private static bool HasCursorChanged(in LogicalCursor previousCursor, in LogicalCursor currentCursor) =>
+        previousCursor.Row != currentCursor.Row
+        || previousCursor.Col != currentCursor.Col
+        || previousCursor.Offset != currentCursor.Offset;
 
     #endregion
 }

@@ -842,6 +842,7 @@ public abstract class Renderable : EventEmitter
 
         _childrenInLayoutOrder.RemoveAll(c => c.Id == id);
         _childrenInZIndexOrder.RemoveAll(c => c.Id == id);
+        _shouldUpdateBefore.Remove(obj);
         _childrenPrimarySortDirty = true;
     }
 
@@ -932,14 +933,18 @@ public abstract class Renderable : EventEmitter
 
         UpdateFromLayout();
 
-        // Update newly added children before culling
-        if (_shouldUpdateBefore.Count > 0)
+        // Update newly added children before culling. Layout callbacks can
+        // add/remove siblings here, so process stable snapshots until drained.
+        while (_shouldUpdateBefore.Count > 0)
         {
-            foreach (var child in _shouldUpdateBefore)
-            {
-                if (!child._isDestroyed) child.UpdateFromLayout();
-            }
+            var pendingChildren = _shouldUpdateBefore.ToArray();
             _shouldUpdateBefore.Clear();
+
+            foreach (var child in pendingChildren)
+            {
+                if (!child._isDestroyed && child._parent == this)
+                    child.UpdateFromLayout();
+            }
         }
 
         if (_isDestroyed) return;

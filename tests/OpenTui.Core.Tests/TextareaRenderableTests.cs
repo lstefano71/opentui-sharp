@@ -135,6 +135,92 @@ public sealed class TextareaRenderableTests : IDisposable
     }
 
     [Fact]
+    public void TextareaRenderable_Keypress_FiresCursorAndContentCallbacks()
+    {
+        int cursorChanges = 0;
+        int contentChanges = 0;
+
+        var textarea = new TextareaRenderable(_renderer, new TextareaOptions
+        {
+            Id = "textarea-callbacks-keypress",
+            Width = DimensionValue.Point(12),
+            Height = DimensionValue.Point(4),
+            OnCursorChange = _ => cursorChanges++,
+            OnContentChange = () => contentChanges++,
+        });
+
+        _renderer.Root.Add(textarea);
+        textarea.Focus();
+
+        int initialCursorChanges = cursorChanges;
+        int initialContentChanges = contentChanges;
+
+        _renderer.InternalKeyInput.ProcessParsedKey(new ParsedKey
+        {
+            Name = "h",
+            Sequence = "h",
+        });
+
+        Assert.Equal("h", textarea.GetText());
+        Assert.True(cursorChanges > initialCursorChanges);
+        Assert.True(contentChanges > initialContentChanges);
+    }
+
+    [Fact]
+    public void TextareaRenderable_CursorMovement_FiresCursorButNotContentCallback()
+    {
+        int cursorChanges = 0;
+        int contentChanges = 0;
+
+        var textarea = new TextareaRenderable(_renderer, new TextareaOptions
+        {
+            Id = "textarea-callbacks-move",
+            Width = DimensionValue.Point(12),
+            Height = DimensionValue.Point(4),
+            InitialValue = "hello",
+            OnCursorChange = _ => cursorChanges++,
+            OnContentChange = () => contentChanges++,
+        });
+
+        _renderer.Root.Add(textarea);
+        textarea.Focus();
+        textarea.GotoBufferEnd();
+
+        int initialCursorChanges = cursorChanges;
+        int initialContentChanges = contentChanges;
+
+        textarea.MoveCursorLeft();
+
+        Assert.Equal("hello", textarea.GetText());
+        Assert.True(cursorChanges > initialCursorChanges);
+        Assert.Equal(initialContentChanges, contentChanges);
+    }
+
+    [Fact]
+    public void TextareaRenderable_SetText_FiresContentChangeCallback()
+    {
+        int contentChanges = 0;
+
+        var textarea = new TextareaRenderable(_renderer, new TextareaOptions
+        {
+            Id = "textarea-callbacks-settext",
+            Width = DimensionValue.Point(12),
+            Height = DimensionValue.Point(4),
+            InitialValue = "initial",
+            OnContentChange = () => contentChanges++,
+        });
+
+        _renderer.Root.Add(textarea);
+
+        int initialContentChanges = contentChanges;
+
+        textarea.SetText("updated");
+
+        Assert.Equal("updated", textarea.GetText());
+        Assert.True(contentChanges > initialContentChanges);
+    }
+
+    [Fact]
     public void LineNumberRenderable_ShowLineNumbersFalse_CollapsesGutterWidth()
     {
         var textarea = new TextareaRenderable(_renderer, new TextareaOptions
