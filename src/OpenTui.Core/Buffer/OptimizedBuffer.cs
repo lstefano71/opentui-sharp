@@ -285,10 +285,20 @@ public sealed class OptimizedBuffer : IDisposable
 
     #region Color Matrix
 
-    /// <summary>Applies a color matrix transformation to the buffer within a per-cell float mask.</summary>
+    /// <summary>
+    /// Applies a color matrix transformation to the buffer within a packed per-cell mask.
+    /// The mask format is [x, y, strength, x, y, strength, ...].
+    /// </summary>
     public void ColorMatrix(float[] matrix, float[] cellMask, float opacity = 1f, TargetChannel channel = TargetChannel.Both)
     {
-        if (matrix.Length == 0 || cellMask.Length == 0)
+        ArgumentNullException.ThrowIfNull(matrix);
+        ArgumentNullException.ThrowIfNull(cellMask);
+
+        if (matrix.Length < 16)
+            throw new ArgumentException("Color matrix must contain at least 16 elements.", nameof(matrix));
+
+        int cellCount = cellMask.Length / 3;
+        if (cellCount == 0)
             return;
 
         unsafe
@@ -297,7 +307,7 @@ public sealed class OptimizedBuffer : IDisposable
             fixed (float* cellMaskPtr = cellMask)
             {
                 OpenTuiNative.BufferColorMatrix(Handle,
-                    (nint)matrixPtr, (nint)cellMaskPtr, (nuint)cellMask.Length,
+                    (nint)matrixPtr, (nint)cellMaskPtr, (nuint)cellCount,
                     opacity, (byte)channel);
             }
         }
@@ -327,6 +337,10 @@ public sealed class OptimizedBuffer : IDisposable
     /// <summary>Applies a uniform color matrix transformation to the entire buffer.</summary>
     public void ColorMatrixUniform(float[] matrix, float opacity = 1f, TargetChannel channel = TargetChannel.Both)
     {
+        ArgumentNullException.ThrowIfNull(matrix);
+        if (matrix.Length < 16)
+            throw new ArgumentException("Color matrix must contain at least 16 elements.", nameof(matrix));
+
         unsafe
         {
             fixed (float* matrixPtr = matrix)
