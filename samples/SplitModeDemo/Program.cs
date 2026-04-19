@@ -33,26 +33,29 @@ renderer.KeyInput.On<KeyEvent>("keypress", key =>
         case "+":
             renderer.FooterHeight = Math.Min(renderer.FooterHeight + 1, Math.Max(5, renderer.TerminalHeight - 5));
             dashboard.SyncLayout();
-            Console.WriteLine($"Split height increased to {renderer.FooterHeight}");
+            ReportStatus($"Split height increased to {renderer.FooterHeight}");
             break;
         case "-":
             renderer.FooterHeight = Math.Max(renderer.FooterHeight - 1, 5);
             dashboard.SyncLayout();
-            Console.WriteLine($"Split height decreased to {renderer.FooterHeight}");
+            ReportStatus($"Split height decreased to {renderer.FooterHeight}");
             break;
         case "0":
             if (renderer.ScreenMode == ScreenMode.SplitFooter)
             {
+                outputTimer?.Dispose();
+                outputTimer = null;
                 renderer.ExternalOutputMode = ExternalOutputMode.Passthrough;
                 renderer.ScreenMode = ScreenMode.MainScreen;
-                Console.WriteLine("Switched to main-screen mode");
+                ReportStatus("Switched to main-screen mode (test output paused)");
             }
             else
             {
                 renderer.FooterHeight = 20;
                 renderer.ScreenMode = ScreenMode.SplitFooter;
                 renderer.ExternalOutputMode = ExternalOutputMode.CaptureStdout;
-                Console.WriteLine("Switched to split-footer mode (height 20)");
+                RestartOutputTimer();
+                ReportStatus("Switched to split-footer mode (height 20)");
             }
 
             dashboard.SyncLayout();
@@ -60,16 +63,16 @@ renderer.KeyInput.On<KeyEvent>("keypress", key =>
         case "m":
             outputIntervalMs = Math.Max(5, outputIntervalMs - 5);
             RestartOutputTimer();
-            Console.WriteLine($"Test output speed increased (interval: {outputIntervalMs}ms)");
+            ReportStatus($"Test output speed increased (interval: {outputIntervalMs}ms)");
             break;
         case "l":
             outputIntervalMs = Math.Min(1000, outputIntervalMs + 5);
             RestartOutputTimer();
-            Console.WriteLine($"Test output speed decreased (interval: {outputIntervalMs}ms)");
+            ReportStatus($"Test output speed decreased (interval: {outputIntervalMs}ms)");
             break;
         case "u":
             renderer.UseMouse = !renderer.UseMouse;
-            Console.WriteLine($"Mouse functionality {(renderer.UseMouse ? "enabled" : "disabled")}");
+            ReportStatus($"Mouse functionality {(renderer.UseMouse ? "enabled" : "disabled")}");
             break;
     }
 });
@@ -90,11 +93,23 @@ await Task.Delay(Timeout.Infinite);
 void RestartOutputTimer()
 {
     outputTimer?.Dispose();
+    outputTimer = null;
+
+    if (renderer.ScreenMode != ScreenMode.SplitFooter || renderer.ExternalOutputMode != ExternalOutputMode.CaptureStdout)
+        return;
+
     outputTimer = new Timer(_ =>
     {
         int count = Interlocked.Increment(ref messageCount);
         Console.WriteLine($"Test output {count}: This should appear above the renderer and scroll naturally");
     }, null, outputIntervalMs, outputIntervalMs);
+}
+
+void ReportStatus(string message)
+{
+    dashboard.SetNotice(message);
+    if (renderer.ScreenMode == ScreenMode.SplitFooter && renderer.ExternalOutputMode == ExternalOutputMode.CaptureStdout)
+        Console.WriteLine(message);
 }
 
 file sealed class SplitModeDashboard
@@ -104,11 +119,15 @@ file sealed class SplitModeDashboard
     private readonly TextRenderable _headerText;
     private readonly TextRenderable _instructionsText;
     private readonly TextRenderable _statusText;
+    private readonly BoxRenderable _statusPanel;
+    private readonly BoxRenderable _statsPanel;
+    private readonly BoxRenderable[] _systemBackgroundBars;
     private readonly BoxRenderable[] _systemLoadingBars;
     private readonly TextRenderable[] _statusCounters;
     private readonly BoxRenderable[] _movingOrbs;
     private readonly BoxRenderable[] _pulsingElements;
     private float _elapsedMs;
+    private string? _notice;
 
     public SplitModeDashboard(CliRenderer renderer)
     {
@@ -117,6 +136,11 @@ file sealed class SplitModeDashboard
         _container = new BoxRenderable(renderer, new BoxOptions
         {
             Id = "split-mode-container",
+            Position = PositionValue.Absolute,
+            Left = 0,
+            Top = 0,
+            Width = renderer.Width,
+            Height = renderer.Height,
             ZIndex = 5,
         });
         renderer.Root.Add(_container);
@@ -133,12 +157,13 @@ file sealed class SplitModeDashboard
         });
         _container.Add(_headerText);
 
-        var statusPanel = new BoxRenderable(renderer, new BoxOptions
+        _statusPanel = new BoxRenderable(renderer, new BoxOptions
         {
             Id = "status-panel",
             Position = PositionValue.Absolute,
             Left = 2,
             Top = 5,
+            Width = Math.Max(1, renderer.Width - 6),
             Height = 8,
             BackgroundColor = Rgba.FromHex("#1a1a2e"),
             ZIndex = 1,
@@ -148,10 +173,11 @@ file sealed class SplitModeDashboard
             Title = "◆ SYSTEM MONITOR ◆",
             TitleAlignment = TitleAlignment.Center,
         });
-        _container.Add(statusPanel);
+        _container.Add(_statusPanel);
 
         string[] systems = ["CPU", "MEM", "NET", "DSK"];
         string[] systemColors = ["#6a5acd", "#4682b4", "#20b2aa", "#daa520"];
+        _systemBackgroundBars = new BoxRenderable[systems.Length];
         _systemLoadingBars = new BoxRenderable[systems.Length];
         for (int i = 0; i < systems.Length; i++)
         {
@@ -167,16 +193,18 @@ file sealed class SplitModeDashboard
                 ZIndex = 2,
             }));
 
-            _container.Add(new BoxRenderable(renderer, new BoxOptions
+            _systemBackgroundBars[i] = new BoxRenderable(renderer, new BoxOptions
             {
                 Id = $"{systems[i].ToLowerInvariant()}-bg",
                 Position = PositionValue.Absolute,
                 Left = 9,
                 Top = y,
+                Width = Math.Max(1, renderer.Width - 16),
                 Height = 1,
                 BackgroundColor = Rgba.FromHex("#333333"),
                 ZIndex = 1,
-            }));
+            });
+            _container.Add(_systemBackgroundBars[i]);
 
             _systemLoadingBars[i] = new BoxRenderable(renderer, new BoxOptions
             {
@@ -192,12 +220,13 @@ file sealed class SplitModeDashboard
             _container.Add(_systemLoadingBars[i]);
         }
 
-        var statsPanel = new BoxRenderable(renderer, new BoxOptions
+        _statsPanel = new BoxRenderable(renderer, new BoxOptions
         {
             Id = "stats-panel",
             Position = PositionValue.Absolute,
             Left = 2,
             Top = 14,
+            Width = Math.Max(1, renderer.Width - 6),
             Height = 4,
             BackgroundColor = Rgba.FromHex("#2d1b2e"),
             ZIndex = 1,
@@ -207,7 +236,7 @@ file sealed class SplitModeDashboard
             Title = "◇ REAL-TIME STATS ◇",
             TitleAlignment = TitleAlignment.Center,
         });
-        _container.Add(statsPanel);
+        _container.Add(_statsPanel);
 
         _statusCounters = new TextRenderable[4];
         string[] counterLabels = ["PACKETS", "CONN", "PROC", "UP"];
@@ -269,6 +298,16 @@ file sealed class SplitModeDashboard
 
     public void SyncLayout()
     {
+        _container.WidthDimension = DimensionValue.Point(Math.Max(1, _renderer.Width));
+        _container.HeightDimension = DimensionValue.Point(Math.Max(1, _renderer.Height));
+
+        _statusPanel.WidthDimension = DimensionValue.Point(Math.Max(1, _renderer.Width - 6));
+        _statsPanel.WidthDimension = DimensionValue.Point(Math.Max(1, _renderer.Width - 6));
+
+        int backgroundBarWidth = Math.Max(1, _renderer.Width - 16);
+        for (int i = 0; i < _systemBackgroundBars.Length; i++)
+            _systemBackgroundBars[i].WidthDimension = DimensionValue.Point(backgroundBarWidth);
+
         _headerText.WidthDimension = DimensionValue.Point(Math.Max(10, _renderer.Width - 4));
         _headerText.HeightDimension = DimensionValue.Point(2);
 
@@ -321,9 +360,16 @@ file sealed class SplitModeDashboard
         UpdateStatus();
     }
 
+    public void SetNotice(string? notice)
+    {
+        _notice = notice;
+        UpdateStatus();
+    }
+
     private void UpdateStatus()
     {
-        _statusText.Content = new StyledText(
+        var chunks = new List<TextChunk>
+        {
             TextChunk.Styled("Mode: ", fg: Rgba.FromHex("#7dd3fc"), attributes: TextAttributes.Bold),
             TextChunk.Styled($"{_renderer.ScreenMode}  ", fg: Rgba.White),
             TextChunk.Styled("Footer: ", fg: Rgba.FromHex("#c4b5fd"), attributes: TextAttributes.Bold),
@@ -331,7 +377,16 @@ file sealed class SplitModeDashboard
             TextChunk.Styled("Terminal: ", fg: Rgba.FromHex("#86efac"), attributes: TextAttributes.Bold),
             TextChunk.Styled($"{_renderer.TerminalWidth}x{_renderer.TerminalHeight}  ", fg: Rgba.White),
             TextChunk.Styled("Mouse: ", fg: Rgba.FromHex("#f9a8d4"), attributes: TextAttributes.Bold),
-            TextChunk.Styled(_renderer.UseMouse ? "on" : "off", fg: Rgba.White));
+            TextChunk.Styled(_renderer.UseMouse ? "on" : "off", fg: Rgba.White),
+        };
+
+        if (!string.IsNullOrWhiteSpace(_notice))
+        {
+            chunks.Add(TextChunk.Styled("  |  ", fg: Rgba.FromHex("#64748b")));
+            chunks.Add(TextChunk.Styled(_notice, fg: Rgba.FromHex("#fbbf24"), attributes: TextAttributes.Bold));
+        }
+
+        _statusText.Content = new StyledText([.. chunks]);
     }
 
     private BoxRenderable CreateOrb(CliRenderer renderer, string id, string color)

@@ -99,6 +99,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private int _renderOffset;
     private int _terminalWidth;
     private int _terminalHeight;
+    private Rgba _backgroundColor = Rgba.Transparent;
     private readonly StringBuilder _capturedStdout = new();
     private readonly object _capturedStdoutLock = new();
     private readonly TextWriter _originalStdout;
@@ -291,6 +292,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     internal void PresentTestFrame(float deltaTime = 16f)
     {
         _frameId++;
+        if (_splitHeight > 0 && _externalOutputMode == ExternalOutputMode.CaptureStdout)
+            FlushCapturedStdout(_splitHeight);
+
         Root.Render(NextRenderBuffer, deltaTime);
         foreach (var fn in _postProcessFns)
             fn(NextRenderBuffer, deltaTime);
@@ -351,7 +355,10 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
         // Background color
         if (config.BackgroundColor is { } bg)
+        {
+            _backgroundColor = bg;
             _nativeRenderer.SetBackgroundColor(bg);
+        }
 
         _capabilities = _nativeRenderer.GetTerminalCapabilities();
 
@@ -1389,7 +1396,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     public void SetBackgroundColor(Rgba color)
     {
+        _backgroundColor = color;
         _nativeRenderer.SetBackgroundColor(color);
+        NextRenderBuffer.Clear(color);
         RequestRender();
     }
 
@@ -1461,20 +1470,22 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
-    private bool FlushCapturedStdout(int space, bool force = false)
+    private void FlushCapturedStdout(int space, bool force = false)
     {
         string output;
         lock (_capturedStdoutLock)
         {
             if (_capturedStdout.Length == 0 && !force)
-                return false;
+                return;
 
             output = _capturedStdout.ToString();
             _capturedStdout.Clear();
         }
 
+        CurrentRenderBuffer.Clear(_backgroundColor);
+
         if (_config.Testing || _isDestroyed)
-            return true;
+            return;
 
         int rendererStartLine = Math.Max(1, _terminalHeight - _splitHeight);
         var builder = new StringBuilder();
@@ -1486,7 +1497,6 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             builder.Append(ClearFooterArea(space));
 
         WriteRaw(builder.ToString());
-        return true;
     }
 
     private string ClearFooterArea(int space)
@@ -1494,7 +1504,12 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         if (space <= 0 || Width <= 0)
             return string.Empty;
 
-        return string.Concat(Enumerable.Repeat(new string(' ', Width) + '\n', space));
+        string clearLines = string.Concat(Enumerable.Repeat(new string(' ', Width) + '\n', space));
+        if (_backgroundColor.A <= 0f)
+            return clearLines;
+
+        var (r, g, b, _) = _backgroundColor.ToInts();
+        return $"\x1b[48;2;{r};{g};{b}m{clearLines}\x1b[49m";
     }
 
     private void ApplyScreenMode(ScreenMode screenMode, bool emitResize = true, bool requestRender = true)
@@ -1567,6 +1582,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         CurrentRenderBuffer.Dispose();
         NextRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetNextBuffer());
         CurrentRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetCurrentBuffer());
+        CurrentRenderBuffer.Clear(_backgroundColor);
+        NextRenderBuffer.Clear(_backgroundColor);
     }
 
     public void ClearPaletteCache() => _cachedPalette = null;

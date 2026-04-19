@@ -752,6 +752,143 @@ public sealed class CliRendererTests : IDisposable
         _renderer.RequestRender(); // should not throw
     }
 
+    [Fact]
+    public void PresentTestFrame_CapturedStdoutInvalidatesFooterBeforeRepaint()
+    {
+        using var renderer = CliRenderer.Create(new CliRendererConfig
+        {
+            Testing = true,
+            Width = 40,
+            Height = 16,
+            ScreenMode = ScreenMode.SplitFooter,
+            FooterHeight = 6,
+            ExternalOutputMode = ExternalOutputMode.CaptureStdout,
+        });
+
+        var header = new TextRenderable(renderer, new TextOptions
+        {
+            Id = "header",
+            Position = PositionValue.Absolute,
+            Left = 1,
+            Top = 1,
+            Content = "STATIC HEADER",
+        });
+        var status = new TextRenderable(renderer, new TextOptions
+        {
+            Id = "status",
+            Position = PositionValue.Absolute,
+            Left = 1,
+            Top = 2,
+            Content = "Value: 1",
+        });
+
+        renderer.Root.Add(header);
+        renderer.Root.Add(status);
+
+        renderer.PresentTestFrame();
+        string initialOutput = StripAnsi(renderer.Native.GetLastOutputForTest());
+        Assert.Contains("STATIC HEADER", initialOutput);
+        Assert.Contains("Value: 1", initialOutput);
+
+        renderer.CaptureExternalOutput("log line\n");
+        status.SetContent("Value: 2");
+
+        renderer.PresentTestFrame();
+        string outputAfterCapturedStdout = StripAnsi(renderer.Native.GetLastOutputForTest());
+
+        Assert.Equal(0, renderer.CapturedOutputLength);
+        Assert.Contains("STATIC HEADER", outputAfterCapturedStdout);
+        Assert.Contains("Value: 2", outputAfterCapturedStdout);
+    }
+
+    [Fact]
+    public void PresentTestFrame_CapturedStdoutKeepsStaticContainerWidgetsVisible()
+    {
+        using var renderer = CliRenderer.Create(new CliRendererConfig
+        {
+            Testing = true,
+            Width = 40,
+            Height = 16,
+            ScreenMode = ScreenMode.SplitFooter,
+            FooterHeight = 8,
+            ExternalOutputMode = ExternalOutputMode.CaptureStdout,
+        });
+
+        var container = new BoxRenderable(renderer, new BoxOptions
+        {
+            Id = "container",
+            ZIndex = 5,
+        });
+        renderer.Root.Add(container);
+
+        var header = new TextRenderable(renderer, new TextOptions
+        {
+            Id = "header",
+            Position = PositionValue.Absolute,
+            Left = 1,
+            Top = 0,
+            Width = 24,
+            Height = 1,
+            StyledContent = new StyledText(TextChunk.Styled("STATIC HEADER", fg: Rgba.FromHex("#00ffff"))),
+        });
+        container.Add(header);
+
+        var panel = new BoxRenderable(renderer, new BoxOptions
+        {
+            Id = "panel",
+            Position = PositionValue.Absolute,
+            Left = 1,
+            Top = 2,
+            Width = 20,
+            Height = 4,
+            BackgroundColor = Rgba.FromHex("#1a1a2e"),
+            Border = true,
+            BorderStyle = BorderStyle.Single,
+            BorderColor = Rgba.FromHex("#8a4a8a"),
+            Title = "SYSTEM MONITOR",
+            TitleAlignment = TitleAlignment.Center,
+        });
+        container.Add(panel);
+
+        var staticLabel = new TextRenderable(renderer, new TextOptions
+        {
+            Id = "label",
+            Position = PositionValue.Absolute,
+            Left = 2,
+            Top = 3,
+            Content = "CPU:",
+        });
+        container.Add(staticLabel);
+
+        var dynamicText = new TextRenderable(renderer, new TextOptions
+        {
+            Id = "dynamic",
+            Position = PositionValue.Absolute,
+            Left = 2,
+            Top = 6,
+            Content = "PACKETS: 1",
+        });
+        container.Add(dynamicText);
+
+        renderer.PresentTestFrame();
+        string initialOutput = StripAnsi(renderer.Native.GetLastOutputForTest());
+        Assert.Contains("STATIC HEADER", initialOutput);
+        Assert.Contains("SYSTEM MONITOR", initialOutput);
+        Assert.Contains("CPU:", initialOutput);
+        Assert.Contains("PACKETS: 1", initialOutput);
+
+        renderer.CaptureExternalOutput("log line\n");
+        dynamicText.SetContent("PACKETS: 2");
+
+        renderer.PresentTestFrame();
+        string outputAfterCapturedStdout = StripAnsi(renderer.Native.GetLastOutputForTest());
+
+        Assert.Contains("STATIC HEADER", outputAfterCapturedStdout);
+        Assert.Contains("SYSTEM MONITOR", outputAfterCapturedStdout);
+        Assert.Contains("CPU:", outputAfterCapturedStdout);
+        Assert.Contains("PACKETS: 2", outputAfterCapturedStdout);
+    }
+
     #endregion
 
     #region Live Mode
@@ -927,5 +1064,18 @@ public sealed class CliRendererTests : IDisposable
         }
 
         protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime) { }
+    }
+
+    private static string StripAnsi(string value)
+    {
+        string withoutCsi = System.Text.RegularExpressions.Regex.Replace(
+            value,
+            @"\x1b\[[0-9;?]*[ -/]*[@-~]",
+            string.Empty);
+
+        return System.Text.RegularExpressions.Regex.Replace(
+            withoutCsi,
+            @"\x1b\].*?(?:\x07|\x1b\\)",
+            string.Empty);
     }
 }
