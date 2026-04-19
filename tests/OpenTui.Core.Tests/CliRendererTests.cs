@@ -26,6 +26,12 @@ public sealed class CliRendererTests : IDisposable
             typeof(CliRendererConfig),
         ],
         modifiers: null)!;
+    private static readonly MethodInfo s_activateFrameMethod = typeof(CliRenderer).GetMethod(
+        "ActivateFrame",
+        BindingFlags.Instance | BindingFlags.NonPublic)!;
+    private static readonly FieldInfo s_updateScheduledField = typeof(CliRenderer).GetField(
+        "_updateScheduled",
+        BindingFlags.Instance | BindingFlags.NonPublic)!;
 
     public CliRendererTests()
     {
@@ -88,6 +94,18 @@ public sealed class CliRendererTests : IDisposable
     private static bool GetForceFullRenderPending(CliRenderer renderer) =>
         (bool)(typeof(CliRenderer).GetField("_forceFullRenderPending", BindingFlags.Instance | BindingFlags.NonPublic)!
             .GetValue(renderer)!);
+
+    private sealed class DestroyBlockingRenderable(
+        IRenderContext ctx,
+        ManualResetEventSlim destroyStarted,
+        ManualResetEventSlim releaseDestroy) : Renderable(ctx, new RenderableOptions { Id = "destroy-blocker" })
+    {
+        protected override void DestroySelf()
+        {
+            destroyStarted.Set();
+            releaseDestroy.Wait(TimeSpan.FromSeconds(2));
+        }
+    }
 
     #region Creation & Properties
 
@@ -747,6 +765,31 @@ public sealed class CliRendererTests : IDisposable
     {
         _renderer.Destroy();
         _renderer.Destroy(); // should not throw
+    }
+
+    [Fact]
+    public async Task Destroy_BlocksScheduledFrameActivation_UntilTeardownCompletes()
+    {
+        using var renderer = CreateAsyncSchedulerRenderer();
+        using var destroyStarted = new ManualResetEventSlim(false);
+        using var releaseDestroy = new ManualResetEventSlim(false);
+        var blocker = new DestroyBlockingRenderable(renderer, destroyStarted, releaseDestroy);
+        renderer.Root.Add(blocker);
+        s_updateScheduledField.SetValue(renderer, true);
+
+        var destroyTask = Task.Run(renderer.Destroy);
+        Assert.True(destroyStarted.Wait(TimeSpan.FromSeconds(1)));
+
+        var activateTask = Task.Run(() => s_activateFrameMethod.Invoke(renderer, []));
+
+        await Task.Delay(25);
+        Assert.False(activateTask.IsCompleted);
+
+        releaseDestroy.Set();
+        await destroyTask;
+        await activateTask;
+
+        Assert.True(renderer.IsDestroyed);
     }
 
     #endregion

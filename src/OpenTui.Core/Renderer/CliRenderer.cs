@@ -53,6 +53,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private readonly NativeRenderer _nativeRenderer;
     private readonly CliRendererConfig _config;
     private readonly Stopwatch _clock = Stopwatch.StartNew();
+    private readonly object _renderLoopLock = new();
 
     private bool _isDestroyed;
     private bool _rendering;
@@ -1028,38 +1029,41 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     /// <inheritdoc/>
     public void RequestRender()
     {
-        if (_isDestroyed) return;
-
-        if (_renderRequestSuspensionCount > 0)
+        lock (_renderLoopLock)
         {
-            _deferredRenderRequested = true;
-            return;
+            if (_isDestroyed) return;
+
+            if (_renderRequestSuspensionCount > 0)
+            {
+                _deferredRenderRequested = true;
+                return;
+            }
+
+            _deferredRenderRequested = false;
+
+            // In testing mode, don't schedule async renders — tests call RenderFrame()
+            // explicitly. Scheduling background renders causes data races with native
+            // handles when the test also renders on its own thread.
+            if (_config.Testing) return;
+
+            if (_isRunning) return;
+
+            if (_rendering)
+            {
+                _immediateRerenderRequested = true;
+                return;
+            }
+
+            if (_updateScheduled)
+            {
+                if (_renderTimer is not null)
+                    ScheduleIdleFrame();
+                return;
+            }
+
+            _updateScheduled = true;
+            ScheduleIdleFrame();
         }
-
-        _deferredRenderRequested = false;
-
-        // In testing mode, don't schedule async renders — tests call RenderFrame()
-        // explicitly. Scheduling background renders causes data races with native
-        // handles when the test also renders on its own thread.
-        if (_config.Testing) return;
-
-        if (_isRunning) return;
-
-        if (_rendering)
-        {
-            _immediateRerenderRequested = true;
-            return;
-        }
-
-        if (_updateScheduled)
-        {
-            if (_renderTimer is not null)
-                ScheduleIdleFrame();
-            return;
-        }
-
-        _updateScheduled = true;
-        ScheduleIdleFrame();
     }
 
     private void ScheduleIdleFrame()
@@ -1114,20 +1118,31 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     private void ActivateFrame()
     {
-        if (!_updateScheduled)
-            return;
+        lock (_renderLoopLock)
+        {
+            if (_isDestroyed || !_updateScheduled)
+                return;
 
-        try
-        {
-            Loop();
-        }
-        finally
-        {
-            _updateScheduled = false;
+            try
+            {
+                LoopCore();
+            }
+            finally
+            {
+                _updateScheduled = false;
+            }
         }
     }
 
     private void Loop()
+    {
+        lock (_renderLoopLock)
+        {
+            LoopCore();
+        }
+    }
+
+    private void LoopCore()
     {
         if (_rendering || _isDestroyed) return;
         _renderTimer?.Dispose();
@@ -2106,43 +2121,49 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     public void Destroy()
     {
-        if (_isDestroyed) return;
-
-        if (_rendering)
+        lock (_renderLoopLock)
         {
-            // Defer destruction until after current frame
-            _destroyRequested = true;
-            _immediateRerenderRequested = false;
-            _isRunning = false;
-            return;
+            if (_isDestroyed) return;
+
+            if (_rendering)
+            {
+                // Defer destruction until after current frame
+                _destroyRequested = true;
+                _immediateRerenderRequested = false;
+                _isRunning = false;
+                return;
+            }
+
+            _isDestroyed = true;
+            _destroyRequested = false;
+            _updateScheduled = false;
+            _renderScheduleVersion++;
+
+            _renderTimer?.Dispose();
+            _renderTimer = null;
+
+            StopRunning();
+            Console.Dispose();
+            Root.DestroyRecursively();
+            FlushCapturedStdout(_terminalHeight, force: true);
+            if (_stdoutInterceptInstalled)
+                System.Console.SetOut(_originalStdout);
+            _stdoutInterceptInstalled = false;
+            if (_stderrInterceptInstalled)
+                System.Console.SetError(_originalStderr);
+            _stderrInterceptInstalled = false;
+
+            TeardownTerminal();
+
+            Emit(RendererEventNames.Destroy);
+            _config.OnDestroy?.Invoke();
+
+            _stdinParser = null;
+            _nativeRenderer.Dispose();
+
+            if (_exitOnDestroy)
+                Environment.Exit(0);
         }
-
-        _isDestroyed = true;
-
-        _renderTimer?.Dispose();
-        _renderTimer = null;
-
-        StopRunning();
-        Console.Dispose();
-        Root.DestroyRecursively();
-        FlushCapturedStdout(_terminalHeight, force: true);
-        if (_stdoutInterceptInstalled)
-            System.Console.SetOut(_originalStdout);
-        _stdoutInterceptInstalled = false;
-        if (_stderrInterceptInstalled)
-            System.Console.SetError(_originalStderr);
-        _stderrInterceptInstalled = false;
-
-        TeardownTerminal();
-
-        Emit(RendererEventNames.Destroy);
-        _config.OnDestroy?.Invoke();
-
-        _stdinParser = null;
-        _nativeRenderer.Dispose();
-
-        if (_exitOnDestroy)
-            Environment.Exit(0);
     }
 
     public void Dispose() => Destroy();
