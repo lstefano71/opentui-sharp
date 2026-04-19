@@ -15,14 +15,12 @@ TextRenderable textUnderAlpha = null!;
 TextRenderable moreTextUnder = null!;
 List<DraggableTransparentBox> draggableBoxes = [];
 
-using (renderer.SuspendRenderRequests())
+var parentContainer = new BoxRenderable(renderer, new BoxOptions
 {
-    var parentContainer = new BoxRenderable(renderer, new BoxOptions
-    {
-        Id = "parent-container",
-        ZIndex = 10,
-    });
-    renderer.Root.Add(parentContainer);
+    Id = "parent-container",
+    ZIndex = 10,
+});
+renderer.Root.Add(parentContainer);
 
     headerDisplay = new TextRenderable(renderer, new TextOptions
     {
@@ -72,8 +70,7 @@ using (renderer.SuspendRenderRequests())
     AddDraggableBox(parentContainer, "alpha-yellow", 25, 13, 20, 6, Rgba.FromValues(1f, 183f / 255f, 77f / 255f, 128f / 255f), 40);
     AddDraggableBox(parentContainer, "alpha-overlay", 10, 17, 65, 4, Rgba.FromValues(200f / 255f, 162f / 255f, 1f, 32f / 255f), 60);
 
-    ApplyTheme(currentTheme);
-}
+ApplyTheme(currentTheme);
 
 renderer.KeyInput.On<KeyEvent>("keypress", key =>
 {

@@ -1,10 +1,9 @@
-using Facebook.Yoga;
-
 namespace OpenTui.Core;
 
 /// <summary>
-/// Options for FrameBuffer renderable.
-/// Matches TypeScript FrameBufferOptions.
+/// Options for <see cref="FrameBufferRenderable"/>.
+/// Unlike upstream, the C# port currently inherits the full LayoutOptions surface,
+/// so framebuffers may participate in Yoga sizing as well as fixed point sizing.
 /// </summary>
 public class FrameBufferOptions : RenderableOptions
 {
@@ -16,7 +15,8 @@ public class FrameBufferOptions : RenderableOptions
 /// Raw pixel/cell direct-painting surface.
 /// Provides a private OptimizedBuffer that the user draws into;
 /// RenderSelf blits it onto the main render buffer.
-/// Matches TypeScript FrameBufferRenderable from FrameBuffer.ts.
+/// The core blit/resize semantics are aligned with the upstream FrameBufferRenderable,
+/// but the C# type still supports layout-driven sizing via inherited LayoutOptions.
 /// </summary>
 public class FrameBufferRenderable : Renderable
 {
@@ -71,7 +71,11 @@ public class FrameBufferRenderable : Renderable
     /// <summary>
     /// Clears the private buffer to the background color.
     /// </summary>
-    public void Clear() => _privateBuffer?.Clear(_backgroundColor);
+    public void Clear()
+    {
+        EnsureBuffer();
+        _privateBuffer?.Clear(_backgroundColor);
+    }
 
     private void EnsureBuffer()
     {
@@ -84,15 +88,19 @@ public class FrameBufferRenderable : Renderable
             return;
         }
 
-        if (_privateBuffer == null || _lastWidth != _widthValue || _lastHeight != _heightValue)
+        if (_privateBuffer is null)
         {
-            _privateBuffer?.Dispose();
             _privateBuffer = OptimizedBuffer.Create(
                 (uint)_widthValue, (uint)_heightValue, _ctx.WidthMethod, _respectAlpha, $"framebuf-{Id}");
             _privateBuffer.Clear(_backgroundColor);
-            _lastWidth = _widthValue;
-            _lastHeight = _heightValue;
         }
+        else if (_lastWidth != _widthValue || _lastHeight != _heightValue)
+        {
+            _privateBuffer.Resize((uint)_widthValue, (uint)_heightValue);
+        }
+
+        _lastWidth = _widthValue;
+        _lastHeight = _heightValue;
     }
 
     protected override void OnResize(int width, int height)
@@ -104,10 +112,6 @@ public class FrameBufferRenderable : Renderable
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_privateBuffer == null || _widthValue == 0 || _heightValue == 0) return;
-
-        // Fill background
-        buffer.FillRect((uint)_screenX, (uint)_screenY,
-            (uint)_widthValue, (uint)_heightValue, _backgroundColor);
 
         // Blit private buffer onto main buffer
         buffer.DrawFrameBuffer((int)_screenX, (int)_screenY,

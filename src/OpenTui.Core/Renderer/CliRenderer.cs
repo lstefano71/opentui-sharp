@@ -33,6 +33,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     #endregion
 
+    private const int IdleRenderCoalesceWindowMs = 5;
+
     #region Default env keys
 
     private static readonly string[] DefaultForwardedEnvKeys =
@@ -60,6 +62,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private int _renderRequestSuspensionCount;
     private bool _deferredRenderRequested;
     private Timer? _renderTimer;
+    private int _renderScheduleVersion;
     private long _lastTimeMs;
     private int _frameCount;
     private long _lastFpsTimeMs;
@@ -1039,27 +1042,46 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             return;
         }
 
-        if (!_updateScheduled && _renderTimer is null)
+        if (_updateScheduled)
         {
-            _updateScheduled = true;
-            var nowMs = _clock.ElapsedMilliseconds;
-            var elapsed = nowMs - _lastTimeMs;
-            var delay = Math.Max(_minTargetFrameTimeMs - elapsed, 0);
-
-            if (delay <= 0)
-            {
-                ThreadPool.QueueUserWorkItem(_ => ActivateFrame());
-            }
-            else
-            {
-                _renderTimer = new Timer(
-                    _ => ActivateFrame(),
-                    null,
-                    (int)delay,
-                    Timeout.Infinite
-                );
-            }
+            if (_renderTimer is not null)
+                ScheduleIdleFrame();
+            return;
         }
+
+        _updateScheduled = true;
+        ScheduleIdleFrame();
+    }
+
+    private void ScheduleIdleFrame()
+    {
+        // Upstream requestRender() runs later on the same event-loop thread, so
+        // a burst of synchronous tree mutations naturally coalesces into one
+        // render. In C#, timer/thread-pool callbacks can interleave with the
+        // caller, so we wait for a short quiet window before rendering idle
+        // frames. This keeps startup tree construction from racing layout.
+        _renderTimer?.Dispose();
+        _renderTimer = null;
+
+        var nowMs = _clock.ElapsedMilliseconds;
+        var elapsed = nowMs - _lastTimeMs;
+        var frameBudgetDelayMs = Math.Max(_minTargetFrameTimeMs - elapsed, 0);
+        var delayMs = Math.Max(frameBudgetDelayMs, IdleRenderCoalesceWindowMs);
+        var dueTimeMs = Math.Max(1, (int)Math.Ceiling(delayMs));
+        var scheduleVersion = ++_renderScheduleVersion;
+
+        _renderTimer = new Timer(
+            _ =>
+            {
+                if (scheduleVersion != _renderScheduleVersion)
+                    return;
+
+                ActivateFrame();
+            },
+            null,
+            dueTimeMs,
+            Timeout.Infinite
+        );
     }
 
     public IDisposable SuspendRenderRequests()

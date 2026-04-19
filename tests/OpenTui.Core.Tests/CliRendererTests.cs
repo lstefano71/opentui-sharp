@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Reflection;
 using Xunit;
 
 namespace OpenTui.Core.Tests;
@@ -9,6 +11,21 @@ namespace OpenTui.Core.Tests;
 public sealed class CliRendererTests : IDisposable
 {
     private readonly CliRenderer _renderer;
+    private static readonly ConstructorInfo s_cliRendererConstructor = typeof(CliRenderer).GetConstructor(
+        BindingFlags.Instance | BindingFlags.NonPublic,
+        binder: null,
+        [
+            typeof(NativeRenderer),
+            typeof(int),
+            typeof(int),
+            typeof(int),
+            typeof(int),
+            typeof(ScreenMode),
+            typeof(int),
+            typeof(ExternalOutputMode),
+            typeof(CliRendererConfig),
+        ],
+        modifiers: null)!;
 
     public CliRendererTests()
     {
@@ -21,6 +38,52 @@ public sealed class CliRendererTests : IDisposable
     }
 
     public void Dispose() => _renderer.Dispose();
+
+    private static CliRenderer CreateAsyncSchedulerRenderer(int maxFps = 1000)
+    {
+        var config = new CliRendererConfig
+        {
+            Testing = false,
+            Width = 80,
+            Height = 24,
+            MaxFps = maxFps,
+        };
+
+        var nativeRenderer = NativeRenderer.Create(80, 24, testing: true);
+        return (CliRenderer)s_cliRendererConstructor.Invoke(
+        [
+            nativeRenderer,
+            80,
+            24,
+            80,
+            24,
+            ScreenMode.AlternateScreen,
+            12,
+            ExternalOutputMode.Passthrough,
+            config,
+        ]);
+    }
+
+    private static void BusyWait(int milliseconds)
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while (stopwatch.ElapsedMilliseconds < milliseconds)
+            Thread.SpinWait(10_000);
+    }
+
+    private static async Task WaitForConditionAsync(Func<bool> condition, int timeoutMs = 250)
+    {
+        var started = Stopwatch.StartNew();
+        while (started.ElapsedMilliseconds < timeoutMs)
+        {
+            if (condition())
+                return;
+
+            await Task.Delay(5);
+        }
+
+        Assert.True(condition(), $"Condition was not met within {timeoutMs} ms.");
+    }
 
     #region Creation & Properties
 
@@ -143,6 +206,36 @@ public sealed class CliRendererTests : IDisposable
 
         Assert.Equal(0, _renderer.RenderRequestSuspensionCount);
         Assert.False(_renderer.HasDeferredRenderRequest);
+    }
+
+    [Fact]
+    public async Task RequestRender_IdleEventuallyRenders_WithAsyncScheduler()
+    {
+        using var renderer = CreateAsyncSchedulerRenderer();
+
+        renderer.RequestRender();
+
+        await WaitForConditionAsync(() => renderer.FrameId > 0);
+
+        Assert.Equal(1, renderer.FrameId);
+    }
+
+    [Fact]
+    public async Task RequestRender_BurstWaitsForQuietWindow_WithAsyncScheduler()
+    {
+        using var renderer = CreateAsyncSchedulerRenderer();
+
+        for (int i = 0; i < 8; i++)
+        {
+            renderer.RequestRender();
+            BusyWait(1);
+            Assert.Equal(0, renderer.FrameId);
+        }
+
+        await WaitForConditionAsync(() => renderer.FrameId > 0);
+        await Task.Delay(25);
+
+        Assert.Equal(1, renderer.FrameId);
     }
 
     [Fact]

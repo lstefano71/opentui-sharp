@@ -16,15 +16,13 @@ PaletteGridRenderable paletteGrid = null!;
 FrameBufferRenderable specialColorsBuffer = null!;
 HexListRenderable hexList = null!;
 
-using (renderer.SuspendRenderRequests())
+var mainContainer = new BoxRenderable(renderer, new BoxOptions
 {
-    var mainContainer = new BoxRenderable(renderer, new BoxOptions
-    {
-        Id = "main-container",
-        FlexGrow = 1,
-        FlexDirection = FlexDirectionValue.Column,
-    });
-    renderer.Root.Add(mainContainer);
+    Id = "main-container",
+    FlexGrow = 1,
+    FlexDirection = FlexDirectionValue.Column,
+});
+renderer.Root.Add(mainContainer);
 
     var scrollBox = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
     {
@@ -112,10 +110,9 @@ using (renderer.SuspendRenderRequests())
     contentContainer.Add(specialColorsBuffer);
     DrawSpecialColors(null);
 
-    hexList = new HexListRenderable(renderer, "hex-list", []);
-    hexList.MarginTop = DimensionValue.Point(2);
-    contentContainer.Add(hexList);
-}
+hexList = new HexListRenderable(renderer, "hex-list", []);
+hexList.MarginTop = DimensionValue.Point(2);
+contentContainer.Add(hexList);
 
 paletteSizeInput.On<string>(InputRenderable.Events.Enter, value =>
 {

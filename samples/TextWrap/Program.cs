@@ -611,127 +611,127 @@ async Task DownloadBabylonAsync()
 
 renderer.Root.OnMouse = HandleGlobalMouse;
 
-mainContainer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "mainContainer",
-    Width = DimensionValue.Percent(100),
-    Height = DimensionValue.Percent(100),
-    FlexGrow = 1,
-    MaxWidth = DimensionValue.Percent(100),
-    MaxHeight = DimensionValue.Percent(100),
-    BackgroundColor = Hex("#0f0f23"),
-    FlexDirection = FlexDirectionValue.Column,
-});
-renderer.Root.Add(mainContainer);
-
-contentBox = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "content-box",
-    FlexGrow = 1,
-    BackgroundColor = Hex("#1e1e2e"),
-    Border = true,
-    BorderColor = Hex("#565f89"),
-    Padding = DimensionValue.Point(1),
-});
-
-textBox = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
-{
-    Id = "text-box",
-    Position = PositionValue.Absolute,
-    Left = DimensionValue.Point(2),
-    Top = DimensionValue.Point(2),
-    Width = DimensionValue.Point(80),
-    Height = DimensionValue.Point(15),
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Hex("#9ece6a"),
-    BackgroundColor = Hex("#11111b"),
-    OnMouse = HandleTextBoxMouse,
-});
-contentBox.Add(textBox);
-
-textRenderable = new TextRenderable(renderer, new TextOptions
-{
-    Id = "text-renderable",
-    Fg = Hex("#c0caf5"),
-    WrapMode = WrapMode.Word,
-});
-textBox.Add(textRenderable);
-SetTextContent(CreateDemoText());
-
-instructionsBox = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "instructions-box",
-    Width = DimensionValue.Percent(100),
-    FlexDirection = FlexDirectionValue.Column,
-    BackgroundColor = Hex("#1e1e2e"),
-    Border = true,
-    BorderColor = Hex("#565f89"),
-    Padding = DimensionValue.Point(1),
-});
-
-instructionsText1 = new TextRenderable(renderer, new TextOptions
-{
-    Id = "instructions-1",
-    StyledContent = BuildInstructionsLine1(),
-});
-instructionsBox.Add(instructionsText1);
-
-instructionsText2 = new TextRenderable(renderer, new TextOptions
-{
-    Id = "instructions-2",
-    StyledContent = BuildWrapModeStatus(),
-});
-instructionsBox.Add(instructionsText2);
-
-fileInputContainer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "file-input-container",
-    Position = PositionValue.Absolute,
-    Left = DimensionValue.Percent(50),
-    Top = DimensionValue.Percent(50),
-    Width = DimensionValue.Point(60),
-    Height = DimensionValue.Point(3),
-    MarginLeft = DimensionValue.Point(-30),
-    MarginTop = DimensionValue.Point(-2),
-    ZIndex = 200,
-    Border = true,
-    BorderStyle = BorderStyle.Rounded,
-    BorderColor = Hex("#7aa2f7"),
-    BackgroundColor = Hex("#1e1e2e"),
-    Visible = false,
-    JustifyContent = JustifyValue.Center,
-});
-mainContainer.Add(fileInputContainer);
-
-filePathInput = new InputRenderable(renderer, new InputOptions
-{
-    Id = "file-path-input",
-    Width = DimensionValue.Percent(100),
-    BackgroundColor = Hex("#1e1e2e"),
-    TextColor = Hex("#c0caf5"),
-    FocusedBackgroundColor = Hex("#1e1e2e"),
-    FocusedTextColor = Hex("#c0caf5"),
-    Placeholder = "Enter file path (relative to cwd or absolute)...",
-    PlaceholderColor = Hex("#565f89"),
-    CursorColor = Hex("#7aa2f7"),
-    Value = "",
-    MaxLength = 500,
-    OnKeyDown = keyEvent =>
+    mainContainer = new BoxRenderable(renderer, new BoxOptions
     {
-        if (keyEvent.Name == "backspace" && filePathInput?.Value == "" && isInputVisible)
-            HideFileInput();
-    },
-});
-fileInputContainer.Add(filePathInput);
+        Id = "mainContainer",
+        Width = DimensionValue.Percent(100),
+        Height = DimensionValue.Percent(100),
+        FlexGrow = 1,
+        MaxWidth = DimensionValue.Percent(100),
+        MaxHeight = DimensionValue.Percent(100),
+        BackgroundColor = Hex("#0f0f23"),
+        FlexDirection = FlexDirectionValue.Column,
+    });
+    renderer.Root.Add(mainContainer);
 
-filePathInput.On<string>(InputRenderable.Events.Enter, async value =>
-{
-    await LoadFileAsync(value);
-});
+    contentBox = new BoxRenderable(renderer, new BoxOptions
+    {
+        Id = "content-box",
+        FlexGrow = 1,
+        BackgroundColor = Hex("#1e1e2e"),
+        Border = true,
+        BorderColor = Hex("#565f89"),
+        Padding = DimensionValue.Point(1),
+    });
 
-mainContainer.Add(contentBox);
-mainContainer.Add(instructionsBox);
+    textBox = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
+    {
+        Id = "text-box",
+        Position = PositionValue.Absolute,
+        Left = DimensionValue.Point(2),
+        Top = DimensionValue.Point(2),
+        Width = DimensionValue.Point(80),
+        Height = DimensionValue.Point(15),
+        Border = true,
+        BorderStyle = BorderStyle.Rounded,
+        BorderColor = Hex("#9ece6a"),
+        BackgroundColor = Hex("#11111b"),
+        OnMouse = HandleTextBoxMouse,
+    });
+    contentBox.Add(textBox);
+
+    textRenderable = new TextRenderable(renderer, new TextOptions
+    {
+        Id = "text-renderable",
+        Fg = Hex("#c0caf5"),
+        WrapMode = WrapMode.Word,
+    });
+    textBox.Add(textRenderable);
+    SetTextContent(CreateDemoText());
+
+    instructionsBox = new BoxRenderable(renderer, new BoxOptions
+    {
+        Id = "instructions-box",
+        Width = DimensionValue.Percent(100),
+        FlexDirection = FlexDirectionValue.Column,
+        BackgroundColor = Hex("#1e1e2e"),
+        Border = true,
+        BorderColor = Hex("#565f89"),
+        Padding = DimensionValue.Point(1),
+    });
+
+    instructionsText1 = new TextRenderable(renderer, new TextOptions
+    {
+        Id = "instructions-1",
+        StyledContent = BuildInstructionsLine1(),
+    });
+    instructionsBox.Add(instructionsText1);
+
+    instructionsText2 = new TextRenderable(renderer, new TextOptions
+    {
+        Id = "instructions-2",
+        StyledContent = BuildWrapModeStatus(),
+    });
+    instructionsBox.Add(instructionsText2);
+
+    fileInputContainer = new BoxRenderable(renderer, new BoxOptions
+    {
+        Id = "file-input-container",
+        Position = PositionValue.Absolute,
+        Left = DimensionValue.Percent(50),
+        Top = DimensionValue.Percent(50),
+        Width = DimensionValue.Point(60),
+        Height = DimensionValue.Point(3),
+        MarginLeft = DimensionValue.Point(-30),
+        MarginTop = DimensionValue.Point(-2),
+        ZIndex = 200,
+        Border = true,
+        BorderStyle = BorderStyle.Rounded,
+        BorderColor = Hex("#7aa2f7"),
+        BackgroundColor = Hex("#1e1e2e"),
+        Visible = false,
+        JustifyContent = JustifyValue.Center,
+    });
+    mainContainer.Add(fileInputContainer);
+
+    filePathInput = new InputRenderable(renderer, new InputOptions
+    {
+        Id = "file-path-input",
+        Width = DimensionValue.Percent(100),
+        BackgroundColor = Hex("#1e1e2e"),
+        TextColor = Hex("#c0caf5"),
+        FocusedBackgroundColor = Hex("#1e1e2e"),
+        FocusedTextColor = Hex("#c0caf5"),
+        Placeholder = "Enter file path (relative to cwd or absolute)...",
+        PlaceholderColor = Hex("#565f89"),
+        CursorColor = Hex("#7aa2f7"),
+        Value = "",
+        MaxLength = 500,
+        OnKeyDown = keyEvent =>
+        {
+            if (keyEvent.Name == "backspace" && filePathInput?.Value == "" && isInputVisible)
+                HideFileInput();
+        },
+    });
+    fileInputContainer.Add(filePathInput);
+
+    filePathInput.On<string>(InputRenderable.Events.Enter, async value =>
+    {
+        await LoadFileAsync(value);
+    });
+
+    mainContainer.Add(contentBox);
+    mainContainer.Add(instructionsBox);
 
 renderer.KeyInput.On<KeyEvent>("keypress", keyEvent =>
 {
@@ -774,5 +774,4 @@ renderer.KeyInput.On<KeyEvent>("keypress", keyEvent =>
     }
 });
 
-renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);

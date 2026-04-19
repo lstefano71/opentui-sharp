@@ -113,7 +113,6 @@ file sealed class SplitModeDashboard
     public SplitModeDashboard(CliRenderer renderer)
     {
         _renderer = renderer;
-        using var suspendRenderRequests = renderer.SuspendRenderRequests();
 
         _container = new BoxRenderable(renderer, new BoxOptions
         {

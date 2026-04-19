@@ -58,8 +58,6 @@ file sealed class TimelineExample
 
     public TimelineExample(CliRenderer renderer)
     {
-        using var suspendRenderRequests = renderer.SuspendRenderRequests();
-
         _renderer = renderer;
         _mainTimeline = new Timeline(new TimelineOptions
         {

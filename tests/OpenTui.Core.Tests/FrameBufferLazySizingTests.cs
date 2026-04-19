@@ -74,11 +74,28 @@ public sealed class FrameBufferLazySizingTests : IDisposable
         b.DrawText(line, 0, 0, Rgba.FromInts(220, 220, 220, 255), color);
     }
 
-    private static unsafe bool RowContainsCodepoint(OptimizedBuffer buf, uint y, uint cp)
+    private static unsafe uint ReadCellChar(OptimizedBuffer buf, uint x, uint y)
     {
         var ptr = (uint*)buf.GetCharPtr();
+        return ptr[y * buf.Width + x];
+    }
+
+    private static string ReadRowText(OptimizedBuffer buf, int x, int y, int width)
+    {
+        var chars = new char[width];
+        for (int i = 0; i < width; i++)
+        {
+            uint codepoint = ReadCellChar(buf, (uint)(x + i), (uint)y);
+            chars[i] = codepoint is > 0 and <= char.MaxValue ? (char)codepoint : ' ';
+        }
+
+        return new string(chars);
+    }
+
+    private static bool RowContainsCodepoint(OptimizedBuffer buf, uint y, uint cp)
+    {
         for (uint x = 0; x < buf.Width; x++)
-            if (ptr[y * buf.Width + x] == cp) return true;
+            if (ReadCellChar(buf, x, y) == cp) return true;
         return false;
     }
 
@@ -164,5 +181,74 @@ public sealed class FrameBufferLazySizingTests : IDisposable
 
         Assert.True(RowContainsCodepoint(_renderer.NextRenderBuffer, 0, '#'),
             "Background content must persist after a MarkDirty-driven redraw.");
+    }
+
+    [Fact]
+    public void TransparentFrameBuffer_SkipsFullyTransparentCells()
+    {
+        var underlay = new TextRenderable(_renderer, new TextOptions
+        {
+            Id = "underlay",
+            Position = PositionValue.Absolute,
+            Left = 0,
+            Top = 0,
+            Content = "AAAA",
+            Fg = Rgba.White,
+            Bg = Rgba.FromInts(0, 0, 0, 255),
+            ZIndex = 0,
+        });
+        _renderer.Root.Add(underlay);
+
+        var overlay = new FrameBufferRenderable(_renderer, new FrameBufferOptions
+        {
+            Id = "overlay",
+            Position = PositionValue.Absolute,
+            Left = 0,
+            Top = 0,
+            Width = 4,
+            Height = 1,
+            ZIndex = 1,
+        });
+        _renderer.Root.Add(overlay);
+
+        // Upstream drawFrameBuffer skips cells only when both fg and bg alpha are
+        // zero. A transparent clear still leaves space characters with opaque fg,
+        // so make the unused cells explicitly empty/transparent to model a sparse
+        // overlay correctly.
+        for (uint x = 0; x < 4; x++)
+            overlay.Buffer!.SetCell(x, 0, 0, Rgba.Transparent, Rgba.Transparent);
+        overlay.Buffer!.SetCell(1, 0, 'B', Rgba.White, Rgba.Transparent);
+        _renderer.RenderTestFrame();
+
+        Assert.Equal("ABAA", ReadRowText(_renderer.NextRenderBuffer, 0, 0, 4));
+    }
+
+    [Fact]
+    public void Resize_UsesSamePrivateBufferInstanceAndClearsCells()
+    {
+        var frameBuffer = new FrameBufferRenderable(_renderer, new FrameBufferOptions
+        {
+            Id = "resizable",
+            Position = PositionValue.Absolute,
+            Left = 0,
+            Top = 0,
+            Width = 4,
+            Height = 2,
+        });
+        _renderer.Root.Add(frameBuffer);
+
+        var initialBuffer = frameBuffer.Buffer;
+        Assert.NotNull(initialBuffer);
+        initialBuffer!.DrawText("AB", 0, 0, Rgba.White, Rgba.FromInts(0, 0, 0, 255));
+
+        frameBuffer.WidthDimension = DimensionValue.Point(6);
+        frameBuffer.HeightDimension = DimensionValue.Point(3);
+        _renderer.PresentTestFrame();
+
+        Assert.Same(initialBuffer, frameBuffer.Buffer);
+        Assert.Equal((uint)' ', ReadCellChar(frameBuffer.Buffer!, 0, 0));
+        Assert.Equal((uint)' ', ReadCellChar(frameBuffer.Buffer!, 1, 0));
+        Assert.Equal(6u, frameBuffer.Buffer!.Width);
+        Assert.Equal(3u, frameBuffer.Buffer!.Height);
     }
 }
