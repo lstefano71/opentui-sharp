@@ -75,6 +75,179 @@ public sealed class CliRendererTests : IDisposable
         Assert.Same(_renderer.KeyInput, _renderer.InternalKeyInput);
     }
 
+    [Fact]
+    public void Create_SplitFooterConfig_UsesFooterRenderSize()
+    {
+        using var renderer = CliRenderer.Create(new CliRendererConfig
+        {
+            Testing = true,
+            Width = 80,
+            Height = 24,
+            ScreenMode = ScreenMode.SplitFooter,
+            FooterHeight = 6,
+            ExternalOutputMode = ExternalOutputMode.CaptureStdout,
+        });
+
+        Assert.Equal(ScreenMode.SplitFooter, renderer.ScreenMode);
+        Assert.Equal(ExternalOutputMode.CaptureStdout, renderer.ExternalOutputMode);
+        Assert.Equal(80, renderer.Width);
+        Assert.Equal(6, renderer.Height);
+        Assert.Equal(80, renderer.TerminalWidth);
+        Assert.Equal(24, renderer.TerminalHeight);
+    }
+
+    [Fact]
+    public void Create_RejectsCapturedOutputOutsideSplitFooter()
+    {
+        var exception = Assert.Throws<InvalidOperationException>(() => CliRenderer.Create(new CliRendererConfig
+        {
+            Testing = true,
+            Width = 80,
+            Height = 24,
+            ScreenMode = ScreenMode.MainScreen,
+            ExternalOutputMode = ExternalOutputMode.CaptureStdout,
+        }));
+
+        Assert.Equal("externalOutputMode \"CaptureStdout\" requires screenMode \"SplitFooter\".", exception.Message);
+    }
+
+    [Fact]
+    public void Create_ExposesTerminalCapabilities()
+    {
+        Assert.IsType<TerminalCapabilities>(_renderer.Capabilities);
+    }
+
+    [Fact]
+    public void Create_ExposesKittyKeyboardUsage()
+    {
+        Assert.True(_renderer.UseKittyKeyboard);
+    }
+
+    [Fact]
+    public void Create_HasConsoleOverlay()
+    {
+        Assert.NotNull(_renderer.Console);
+    }
+
+    [Fact]
+    public void SuspendRenderRequests_DefersAndFlushesDeferredRequest()
+    {
+        using (var suspension = _renderer.SuspendRenderRequests())
+        {
+            Assert.Equal(1, _renderer.RenderRequestSuspensionCount);
+
+            _renderer.RequestRender();
+
+            Assert.True(_renderer.HasDeferredRenderRequest);
+        }
+
+        Assert.Equal(0, _renderer.RenderRequestSuspensionCount);
+        Assert.False(_renderer.HasDeferredRenderRequest);
+    }
+
+    [Fact]
+    public void Resize_SplitFooterPreservesFooterHeight()
+    {
+        using var renderer = CliRenderer.Create(new CliRendererConfig
+        {
+            Testing = true,
+            Width = 80,
+            Height = 24,
+            ScreenMode = ScreenMode.SplitFooter,
+            FooterHeight = 6,
+            ExternalOutputMode = ExternalOutputMode.CaptureStdout,
+        });
+
+        renderer.Resize(100, 30);
+
+        Assert.Equal(100, renderer.Width);
+        Assert.Equal(6, renderer.Height);
+        Assert.Equal(100, renderer.TerminalWidth);
+        Assert.Equal(30, renderer.TerminalHeight);
+    }
+
+    [Fact]
+    public void ScreenMode_LeavingSplitFooterFlushesCapturedOutput()
+    {
+        using var renderer = CliRenderer.Create(new CliRendererConfig
+        {
+            Testing = true,
+            Width = 80,
+            Height = 24,
+            ScreenMode = ScreenMode.SplitFooter,
+            FooterHeight = 6,
+            ExternalOutputMode = ExternalOutputMode.CaptureStdout,
+        });
+
+        renderer.CaptureExternalOutput("pending output\n");
+        Assert.True(renderer.CapturedOutputLength > 0);
+
+        renderer.ExternalOutputMode = ExternalOutputMode.Passthrough;
+        renderer.ScreenMode = ScreenMode.MainScreen;
+
+        Assert.Equal(0, renderer.CapturedOutputLength);
+    }
+
+    [Fact]
+    public void Console_Show_UsesBottomBoundsAndFocuses()
+    {
+        var console = _renderer.Console;
+
+        console.Show();
+
+        Assert.True(console.Visible);
+        Assert.True(console.Focused);
+        Assert.Equal(ConsolePosition.Bottom, console.Position);
+        Assert.Equal((0, 17, 80, 7), console.Bounds);
+    }
+
+    [Fact]
+    public void Console_DirectLogsAreStoredWithLevels()
+    {
+        var console = _renderer.Console;
+
+        console.Log("alpha");
+        console.Warn("beta");
+
+        Assert.Collection(
+            console.Entries,
+            entry =>
+            {
+                Assert.Equal(ConsoleLogLevel.Log, entry.Level);
+                Assert.Equal("alpha", entry.Text);
+            },
+            entry =>
+            {
+                Assert.Equal(ConsoleLogLevel.Warn, entry.Level);
+                Assert.Equal("beta", entry.Text);
+            });
+    }
+
+    [Fact]
+    public void Console_KeyBindingsCyclePositionAndSize()
+    {
+        var console = _renderer.Console;
+        console.Show();
+
+        _renderer.DispatchTestKeyInput(new ParsedKey
+        {
+            Name = "p",
+            Raw = "\x10",
+            Ctrl = true,
+        });
+
+        Assert.Equal(ConsolePosition.Right, console.Position);
+
+        _renderer.DispatchTestKeyInput(new ParsedKey
+        {
+            Name = "+",
+            Raw = "+",
+        });
+
+        Assert.Equal(35, console.SizePercent);
+        Assert.Equal((52, 0, 28, 24), console.Bounds);
+    }
+
     #endregion
 
     #region Focus
@@ -126,6 +299,84 @@ public sealed class CliRendererTests : IDisposable
 
         _renderer.FocusRenderable(b);
         Assert.Same(b, _renderer.CurrentFocusedRenderable);
+    }
+
+    [Fact]
+    public void DispatchTestResponse_ThemeModeSequence_UpdatesThemeModeAndEmitsEvent()
+    {
+        ThemeMode? emitted = null;
+        _renderer.On<ThemeMode>(RendererEventNames.ThemeMode, mode => emitted = mode);
+
+        _renderer.DispatchTestResponse("\x1b[?997;2n");
+
+        Assert.Equal(ThemeMode.Light, _renderer.TerminalThemeMode);
+        Assert.Equal(ThemeMode.Light, emitted);
+    }
+
+    [Fact]
+    public async Task GetPalette_ParsesOscResponsesAndCachesResult()
+    {
+        var paletteTask = _renderer.GetPalette(new GetPaletteOptions { Size = 2, Timeout = 250 });
+
+        Assert.Equal("detecting", _renderer.PaletteDetectionStatus);
+
+        _renderer.DispatchTestResponse("\x1b]4;0;rgb:11/22/33\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]4;1;#445566\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]10;#abcdef\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]11;#123456\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]12;#654321\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]13;#111111\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]14;#222222\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]15;#333333\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]16;#444444\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]17;#555555\x07", "osc");
+        _renderer.DispatchTestResponse("\x1b]19;#666666\x07", "osc");
+
+        var colors = await paletteTask;
+
+        Assert.Equal(["#112233", "#445566"], colors.Palette);
+        Assert.Equal("#abcdef", colors.DefaultForeground);
+        Assert.Equal("#123456", colors.DefaultBackground);
+        Assert.Equal("#654321", colors.CursorColor);
+        Assert.Equal("cached", _renderer.PaletteDetectionStatus);
+
+        _renderer.ClearPaletteCache();
+
+        Assert.Equal("idle", _renderer.PaletteDetectionStatus);
+    }
+
+    [Fact]
+    public void InputHandlers_HandledRawKeySuppressesParsedKeyDispatch()
+    {
+        int keypressCount = 0;
+        _renderer.KeyInput.On<KeyEvent>(KeyHandlerEvents.Keypress, _ => keypressCount++);
+        _renderer.AddInputHandler(_ => true);
+
+        _renderer.DispatchTestKeyInput(new ParsedKey
+        {
+            Name = "a",
+            Sequence = "a",
+            Raw = "a",
+        });
+
+        Assert.Equal(0, keypressCount);
+    }
+
+    [Fact]
+    public void DebugInputs_KeyDispatchIsCapturedWhenDebugModeEnabled()
+    {
+        _renderer.SetDebugMode(true);
+
+        _renderer.DispatchTestKeyInput(new ParsedKey
+        {
+            Name = "a",
+            Sequence = "a",
+            Raw = "a",
+        });
+
+        var records = _renderer.GetDebugInputs();
+        var record = Assert.Single(records);
+        Assert.Equal("a", record.Sequence);
     }
 
     #endregion

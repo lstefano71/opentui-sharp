@@ -126,6 +126,32 @@ public sealed class TerminalCapabilities
     public bool TermFromXtversion { get; init; }
 }
 
+/// <summary>
+/// Options for querying the terminal palette.
+/// </summary>
+public sealed class GetPaletteOptions
+{
+    public int Timeout { get; init; } = 1200;
+    public int Size { get; init; } = 16;
+}
+
+/// <summary>
+/// Terminal palette colors and special color slots returned by OSC queries.
+/// </summary>
+public sealed class TerminalColors
+{
+    public string?[] Palette { get; init; } = [];
+    public string? DefaultForeground { get; init; }
+    public string? DefaultBackground { get; init; }
+    public string? CursorColor { get; init; }
+    public string? MouseForeground { get; init; }
+    public string? MouseBackground { get; init; }
+    public string? TekForeground { get; init; }
+    public string? TekBackground { get; init; }
+    public string? HighlightBackground { get; init; }
+    public string? HighlightForeground { get; init; }
+}
+
 /// <summary>Build options reported by the native library.</summary>
 public readonly record struct BuildOptions(bool GpaSafeStats, bool GpaMemoryLimitTracking);
 

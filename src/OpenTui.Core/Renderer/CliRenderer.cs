@@ -1,5 +1,7 @@
 using System.Diagnostics;
+using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 
 namespace OpenTui.Core;
 
@@ -55,6 +57,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private bool _immediateRerenderRequested;
     private bool _updateScheduled;
     private bool _isRunning;
+    private int _renderRequestSuspensionCount;
+    private bool _deferredRenderRequested;
     private Timer? _renderTimer;
     private long _lastTimeMs;
     private int _frameCount;
@@ -81,18 +85,46 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private CancellationTokenSource? _inputCts;
     private Thread? _inputThread;
 
-    private readonly bool _useMouse;
+    private bool _useMouse;
     private readonly bool _autoFocus;
     private readonly bool _enableMouseMovement;
     private readonly List<Action<OptimizedBuffer, float>> _postProcessFns;
+    private ScreenMode _screenMode;
+    private int _footerHeight;
+    private ExternalOutputMode _externalOutputMode;
+    private int _splitHeight;
+    private int _renderOffset;
+    private int _terminalWidth;
+    private int _terminalHeight;
+    private readonly StringBuilder _capturedStdout = new();
+    private readonly object _capturedStdoutLock = new();
+    private readonly TextWriter _originalStdout;
+    private readonly TextWriter _originalStderr;
+    private readonly InterceptingTextWriter _interceptingStdout;
+    private readonly InterceptingTextWriter _interceptingStderr;
+    private bool _stdoutInterceptInstalled;
+    private bool _stderrInterceptInstalled;
+    private readonly object _interceptedOutputListenerLock = new();
+    private readonly List<Action<string>> _stdoutInterceptionListeners = [];
+    private readonly List<Action<string>> _stderrInterceptionListeners = [];
 
     private bool _terminalIsSetup;
     private bool? _terminalFocusState;
+    private ThemeMode? _themeMode;
     private bool _shouldRestoreModesOnNextFocus;
     private uint _savedConsoleMode;
     private bool _hasConsoleMode;
     private volatile bool _exitOnDestroy;
     private bool _destroyRequested;
+    private TerminalCapabilities? _capabilities;
+    private readonly object _responseListenerLock = new();
+    private readonly List<Action<StdinEvent.Response>> _responseListeners = [];
+    private readonly List<Func<string, bool>> _sequenceHandlers = [];
+    private readonly List<DebugInputRecord> _debugInputs = [];
+    private readonly object _debugInputsLock = new();
+    private bool _debugModeEnabled;
+    private TerminalColors? _cachedPalette;
+    private Task<TerminalColors>? _paletteDetectionTask;
 
     // Resize detection (polled from a timer, applied on the render thread)
     private Timer? _resizeTimer;
@@ -133,6 +165,88 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     public string CurrentControlState => _liveRequestCounter > 0 ? "auto_started" : "idle";
 
+    public ThemeMode? ThemeMode => _themeMode;
+
+    public ScreenMode ScreenMode
+    {
+        get => _screenMode;
+        set
+        {
+            if (_externalOutputMode == ExternalOutputMode.CaptureStdout && value != ScreenMode.SplitFooter)
+                throw new InvalidOperationException("externalOutputMode \"CaptureStdout\" requires screenMode \"SplitFooter\".");
+
+            ApplyScreenMode(value);
+        }
+    }
+
+    public int FooterHeight
+    {
+        get => _footerHeight;
+        set
+        {
+            int normalized = NormalizeFooterHeight(value);
+            if (normalized == _footerHeight)
+                return;
+
+            _footerHeight = normalized;
+            if (_screenMode == ScreenMode.SplitFooter)
+                ApplyScreenMode(ScreenMode.SplitFooter);
+        }
+    }
+
+    public ExternalOutputMode ExternalOutputMode
+    {
+        get => _externalOutputMode;
+        set
+        {
+            if (value == ExternalOutputMode.CaptureStdout && _screenMode != ScreenMode.SplitFooter)
+                throw new InvalidOperationException("externalOutputMode \"CaptureStdout\" requires screenMode \"SplitFooter\".");
+
+            if (_externalOutputMode == value)
+                return;
+
+            _externalOutputMode = value;
+            UpdateStdoutInterception();
+        }
+    }
+
+    public bool UseMouse
+    {
+        get => _useMouse;
+        set
+        {
+            if (_useMouse == value)
+                return;
+
+            _useMouse = value;
+            SetCapturedRenderable(null);
+            _stdinParser?.ResetMouseState();
+
+            if (_terminalIsSetup)
+            {
+                if (_useMouse)
+                    _nativeRenderer.EnableMouse();
+                else
+                    _nativeRenderer.DisableMouse();
+            }
+        }
+    }
+
+    public int TerminalWidth => _terminalWidth;
+
+    public int TerminalHeight => _terminalHeight;
+
+    public bool UseKittyKeyboard => _config.UseKittyKeyboard is not null;
+
+    public TerminalCapabilities? TerminalCapabilities => _capabilities;
+
+    public TerminalConsole Console { get; }
+
+    public string PaletteDetectionStatus =>
+        _cachedPalette is not null ? "cached" :
+        _paletteDetectionTask is not null ? "detecting" :
+        "idle";
+
     /// <summary>
     /// Advances the frame counter and renders the tree. For use in tests only —
     /// mirrors the essential steps of the real render loop (frame ID increment +
@@ -149,9 +263,27 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     internal void DispatchTestResponse(string sequence, string protocol = "csi") =>
         HandleStdinEvent(new StdinEvent.Response(protocol, sequence));
 
+    internal void DispatchTestKeyInput(ParsedKey parsedKey, string? raw = null) =>
+        HandleStdinEvent(new StdinEvent.Key(raw ?? parsedKey.Raw, parsedKey));
+
     internal bool? TerminalFocusState => _terminalFocusState;
 
+    internal ThemeMode? TerminalThemeMode => _themeMode;
+
     internal bool ShouldRestoreModesOnNextFocus => _shouldRestoreModesOnNextFocus;
+
+    internal bool HasDeferredRenderRequest => _deferredRenderRequested;
+
+    internal int RenderRequestSuspensionCount => _renderRequestSuspensionCount;
+
+    internal int CapturedOutputLength
+    {
+        get
+        {
+            lock (_capturedStdoutLock)
+                return _capturedStdout.Length;
+        }
+    }
 
     internal void PresentTestFrame(float deltaTime = 16f)
     {
@@ -166,12 +298,28 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     #region Constructor
 
-    private CliRenderer(NativeRenderer nativeRenderer, int width, int height, CliRendererConfig config)
+    private CliRenderer(
+        NativeRenderer nativeRenderer,
+        int renderWidth,
+        int renderHeight,
+        int terminalWidth,
+        int terminalHeight,
+        ScreenMode screenMode,
+        int footerHeight,
+        ExternalOutputMode externalOutputMode,
+        CliRendererConfig config)
     {
         _nativeRenderer = nativeRenderer;
         _config = config;
-        Width = width;
-        Height = height;
+        Width = renderWidth;
+        Height = renderHeight;
+        _terminalWidth = terminalWidth;
+        _terminalHeight = terminalHeight;
+        _screenMode = screenMode;
+        _footerHeight = footerHeight;
+        _externalOutputMode = externalOutputMode;
+        _splitHeight = screenMode == ScreenMode.SplitFooter ? footerHeight : 0;
+        _renderOffset = _splitHeight > 0 ? terminalHeight - _splitHeight : 0;
 
         _targetFrameTimeMs = 1000.0 / config.TargetFps;
         _minTargetFrameTimeMs = 1000.0 / config.MaxFps;
@@ -179,6 +327,10 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _autoFocus = config.AutoFocus;
         _enableMouseMovement = config.EnableMouseMovement;
         _postProcessFns = config.PostProcessFns ?? [];
+        _originalStdout = System.Console.Out;
+        _originalStderr = System.Console.Error;
+        _interceptingStdout = new InterceptingTextWriter(_originalStdout.Encoding, CaptureExternalOutput);
+        _interceptingStderr = new InterceptingTextWriter(_originalStderr.Encoding, CaptureErrorOutput);
 
         // Forward env vars to native
         var envKeys = config.ForwardEnvKeys ?? DefaultForwardedEnvKeys;
@@ -198,8 +350,11 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         if (config.BackgroundColor is { } bg)
             _nativeRenderer.SetBackgroundColor(bg);
 
+        _capabilities = _nativeRenderer.GetTerminalCapabilities();
+
         // Threading
         _nativeRenderer.SetUseThread(config.UseThread);
+        _nativeRenderer.SetRenderOffset((uint)_renderOffset);
 
         // Buffers (wrapped, non-owning — the native renderer owns these)
         NextRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetNextBuffer());
@@ -222,10 +377,16 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         {
             UseKittyKeyboard = useKitty,
             TimeoutMs = 20,
+            ProtocolContext = new ProtocolContext
+            {
+                PrivateCapabilityRepliesActive = true,
+            },
         });
 
         // Root renderable
         Root = new RootRenderable(this);
+        Console = new TerminalConsole(this);
+        UpdateStdoutInterception();
     }
 
     /// <summary>
@@ -235,16 +396,29 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     {
         config ??= new CliRendererConfig();
 
-        int width = config.Width ?? TryGetConsoleWidth();
-        int height = config.Height ?? TryGetConsoleHeight();
+        int terminalWidth = config.Width ?? TryGetConsoleWidth();
+        int terminalHeight = config.Height ?? TryGetConsoleHeight();
+        var resolvedModes = ResolveModes(config);
+        int renderHeight = resolvedModes.ScreenMode == ScreenMode.SplitFooter
+            ? Math.Min(resolvedModes.FooterHeight, terminalHeight)
+            : terminalHeight;
 
         var nativeRenderer = NativeRenderer.Create(
-            (uint)width, (uint)height,
+            (uint)terminalWidth, (uint)renderHeight,
             testing: config.Testing,
             remote: config.Remote
         );
 
-        var renderer = new CliRenderer(nativeRenderer, width, height, config);
+        var renderer = new CliRenderer(
+            nativeRenderer,
+            terminalWidth,
+            renderHeight,
+            terminalWidth,
+            terminalHeight,
+            resolvedModes.ScreenMode,
+            resolvedModes.FooterHeight,
+            resolvedModes.ExternalOutputMode,
+            config);
 
         if (!config.Testing)
             renderer.SetupTerminal();
@@ -254,13 +428,13 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     private static int TryGetConsoleWidth()
     {
-        try { return Console.WindowWidth; }
+        try { return System.Console.WindowWidth; }
         catch { return 80; }
     }
 
     private static int TryGetConsoleHeight()
     {
-        try { return Console.WindowHeight; }
+        try { return System.Console.WindowHeight; }
         catch { return 24; }
     }
 
@@ -273,7 +447,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         if (_terminalIsSetup) return;
         _terminalIsSetup = true;
 
-        bool useAlternateScreen = _config.ScreenMode == ScreenMode.AlternateScreen;
+        bool useAlternateScreen = _screenMode == ScreenMode.AlternateScreen;
         _nativeRenderer.SetupTerminal(useAlternateScreen);
 
         if (_useMouse)
@@ -287,21 +461,23 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         SetupRawInput();
 
         // Handle Ctrl+C
-        Console.CancelKeyPress += OnCancelKeyPress;
+        System.Console.CancelKeyPress += OnCancelKeyPress;
 
         // Start input reading thread
         StartInputLoop();
 
         // Start resize polling timer
         StartResizeWatcher();
+
+        WriteRaw("\x1b[?2031h\x1b[?2031$p");
     }
 
     private void SetupRawInput()
     {
         if (OperatingSystem.IsWindows())
         {
-            try { Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { }
-            try { Console.InputEncoding = System.Text.Encoding.UTF8; } catch { }
+            try { System.Console.OutputEncoding = System.Text.Encoding.UTF8; } catch { }
+            try { System.Console.InputEncoding = System.Text.Encoding.UTF8; } catch { }
 
             // Enable raw console mode: disable line buffering, echo, and Ctrl+C signal
             // so stdin reads return individual keystrokes silently.
@@ -335,9 +511,10 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             _nativeRenderer.DisableKittyKeyboard();
 
         RestoreConsoleMode();
+        WriteRaw("\x1b[?2031l");
         _nativeRenderer.RestoreTerminalModes();
 
-        Console.CancelKeyPress -= OnCancelKeyPress;
+        System.Console.CancelKeyPress -= OnCancelKeyPress;
     }
 
     private void RestoreConsoleMode()
@@ -375,9 +552,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             if (_isDestroyed) return;
             try
             {
-                int w = Console.WindowWidth;
-                int h = Console.WindowHeight;
-                if (w > 0 && h > 0 && (w != Width || h != Height))
+                int w = System.Console.WindowWidth;
+                int h = System.Console.WindowHeight;
+                if (w > 0 && h > 0 && (w != _terminalWidth || h != _terminalHeight))
                 {
                     _pendingResizeWidth = w;
                     _pendingResizeHeight = h;
@@ -422,7 +599,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     private void ReadInputLoop(CancellationToken ct)
     {
-        var stdin = Console.OpenStandardInput();
+        var stdin = System.Console.OpenStandardInput();
         var buffer = new byte[4096];
 
         try
@@ -491,25 +668,66 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         switch (evt)
         {
             case StdinEvent.Key keyEvt:
+                if (DispatchSequenceHandlers(keyEvt.Raw))
+                    break;
+                if (Console.HandleKey(keyEvt.ParsedKey))
+                    break;
                 _keyHandler.ProcessParsedKey(keyEvt.ParsedKey);
                 break;
             case StdinEvent.Mouse mouseEvt:
                 if (_useMouse)
                     ProcessSingleMouseEvent(mouseEvt.MouseEvent);
+                else
+                    DispatchSequenceHandlers(mouseEvt.Raw);
                 break;
             case StdinEvent.Paste pasteEvt:
                 _keyHandler.ProcessPaste(pasteEvt.Bytes, pasteEvt.Metadata);
                 break;
             case StdinEvent.Response responseEvt:
                 HandleResponseEvent(responseEvt);
+                DispatchSequenceHandlers(responseEvt.Sequence);
                 break;
         }
     }
 
+    private bool DispatchSequenceHandlers(string sequence)
+    {
+        if (_debugModeEnabled)
+        {
+            lock (_debugInputsLock)
+            {
+                _debugInputs.Add(new DebugInputRecord
+                {
+                    Timestamp = DateTime.UtcNow.ToString("O"),
+                    Sequence = sequence,
+                });
+            }
+        }
+
+        if (_sequenceHandlers.Count == 0)
+            return false;
+
+        foreach (var handler in _sequenceHandlers.ToArray())
+        {
+            if (handler(sequence))
+                return true;
+        }
+
+        return false;
+    }
+
     private void HandleResponseEvent(StdinEvent.Response evt)
     {
+        _nativeRenderer.ProcessCapabilityResponse(Encoding.Latin1.GetBytes(evt.Sequence));
+        _capabilities = _nativeRenderer.GetTerminalCapabilities();
+
         if (TryHandleFocusResponse(evt.Sequence))
             return;
+
+        if (TryHandleThemeModeResponse(evt.Sequence))
+            return;
+
+        NotifyResponseListeners(evt);
     }
 
     private bool TryHandleFocusResponse(string sequence)
@@ -547,6 +765,57 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         return false;
     }
 
+    private bool TryHandleThemeModeResponse(string sequence)
+    {
+        if (sequence == "\x1b[?997;1n")
+        {
+            if (_themeMode != OpenTui.Core.ThemeMode.Dark)
+            {
+                _themeMode = OpenTui.Core.ThemeMode.Dark;
+                Emit(RendererEventNames.ThemeMode, OpenTui.Core.ThemeMode.Dark);
+            }
+
+            return true;
+        }
+
+        if (sequence == "\x1b[?997;2n")
+        {
+            if (_themeMode != OpenTui.Core.ThemeMode.Light)
+            {
+                _themeMode = OpenTui.Core.ThemeMode.Light;
+                Emit(RendererEventNames.ThemeMode, OpenTui.Core.ThemeMode.Light);
+            }
+
+            return true;
+        }
+
+        return false;
+    }
+
+    private IDisposable SubscribeResponses(Action<StdinEvent.Response> listener)
+    {
+        lock (_responseListenerLock)
+            _responseListeners.Add(listener);
+
+        return new ResponseUnsubscriber(this, listener);
+    }
+
+    private void NotifyResponseListeners(StdinEvent.Response response)
+    {
+        Action<StdinEvent.Response>[] listeners;
+        lock (_responseListenerLock)
+            listeners = _responseListeners.ToArray();
+
+        foreach (var listener in listeners)
+            listener(response);
+    }
+
+    private void RemoveResponseListener(Action<StdinEvent.Response> listener)
+    {
+        lock (_responseListenerLock)
+            _responseListeners.Remove(listener);
+    }
+
     #endregion
 
     #region Mouse Dispatch
@@ -555,6 +824,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     {
         _latestPointerX = mouseEvent.X;
         _latestPointerY = mouseEvent.Y;
+
+        if (Console.HandleMouse(mouseEvent))
+            return;
 
         if (mouseEvent.Type == MouseEventType.Scroll)
         {
@@ -746,6 +1018,14 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     {
         if (_isDestroyed) return;
 
+        if (_renderRequestSuspensionCount > 0)
+        {
+            _deferredRenderRequested = true;
+            return;
+        }
+
+        _deferredRenderRequested = false;
+
         // In testing mode, don't schedule async renders — tests call RenderFrame()
         // explicitly. Scheduling background renders causes data races with native
         // handles when the test also renders on its own thread.
@@ -779,6 +1059,25 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                     Timeout.Infinite
                 );
             }
+        }
+    }
+
+    public IDisposable SuspendRenderRequests()
+    {
+        _renderRequestSuspensionCount++;
+        return new RenderRequestSuspension(this);
+    }
+
+    private void ResumeRenderRequests()
+    {
+        if (_renderRequestSuspensionCount == 0)
+            return;
+
+        _renderRequestSuspensionCount--;
+        if (_renderRequestSuspensionCount == 0 && _deferredRenderRequested)
+        {
+            _deferredRenderRequested = false;
+            RequestRender();
         }
     }
 
@@ -837,6 +1136,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                 catch { /* swallow */ }
             }
 
+            if (_splitHeight > 0 && _externalOutputMode == ExternalOutputMode.CaptureStdout)
+                FlushCapturedStdout(_splitHeight);
+
             // Render the tree
             Root.Render(NextRenderBuffer, deltaTime);
 
@@ -883,6 +1185,19 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         // TODO: implement hover recheck using hit grid + last pointer position
     }
 
+    private sealed class RenderRequestSuspension : IDisposable
+    {
+        private CliRenderer? _renderer;
+
+        public RenderRequestSuspension(CliRenderer renderer) => _renderer = renderer;
+
+        public void Dispose()
+        {
+            _renderer?.ResumeRenderRequests();
+            _renderer = null;
+        }
+    }
+
     #endregion
 
     #region Live Mode
@@ -923,6 +1238,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     public void AddFrameCallback(Func<float, Task> callback) =>
         _frameCallbacks.Add(callback);
+
+    public void ClearFrameCallbacks() =>
+        _frameCallbacks.Clear();
 
     public bool RemoveFrameCallback(Func<float, Task> callback) =>
         _frameCallbacks.Remove(callback);
@@ -1009,7 +1327,436 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     public WidthMethod WidthMethod => WidthMethod.Unicode;
 
     /// <inheritdoc/>
-    public object? Capabilities => null; // TODO: terminal capability detection
+    public object? Capabilities => _capabilities;
+
+    public void SetDebugMode(bool enabled) => _debugModeEnabled = enabled;
+
+    public IReadOnlyList<DebugInputRecord> GetDebugInputs()
+    {
+        lock (_debugInputsLock)
+            return _debugInputs.Select(record => new DebugInputRecord
+            {
+                Timestamp = record.Timestamp,
+                Sequence = record.Sequence,
+            }).ToArray();
+    }
+
+    public void AddInputHandler(Func<string, bool> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _sequenceHandlers.Add(handler);
+    }
+
+    public void PrependInputHandler(Func<string, bool> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _sequenceHandlers.Insert(0, handler);
+    }
+
+    public void RemoveInputHandler(Func<string, bool> handler)
+    {
+        ArgumentNullException.ThrowIfNull(handler);
+        _sequenceHandlers.RemoveAll(candidate => ReferenceEquals(candidate, handler));
+    }
+
+    public bool CopyToClipboardOSC52(string text, byte register = 0) =>
+        _nativeRenderer.CopyToClipboard(text, register);
+
+    public bool ClearClipboardOSC52(byte register = 0) =>
+        _nativeRenderer.ClearClipboard(register);
+
+    public void SetBackgroundColor(Rgba color)
+    {
+        _nativeRenderer.SetBackgroundColor(color);
+        RequestRender();
+    }
+
+    internal void CaptureExternalOutput(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        bool splitCaptureActive = _splitHeight > 0 && _externalOutputMode == ExternalOutputMode.CaptureStdout;
+        if (splitCaptureActive)
+        {
+            lock (_capturedStdoutLock)
+                _capturedStdout.Append(text);
+        }
+
+        NotifyInterceptedOutputListeners(text, error: false);
+
+        if (splitCaptureActive)
+            RequestRender();
+    }
+
+    private void CaptureErrorOutput(string text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        NotifyInterceptedOutputListeners(text, error: true);
+    }
+
+    private void UpdateStdoutInterception()
+    {
+        bool shouldInterceptStdout;
+        bool shouldInterceptStderr;
+        lock (_interceptedOutputListenerLock)
+        {
+            shouldInterceptStdout = _externalOutputMode == ExternalOutputMode.CaptureStdout || _stdoutInterceptionListeners.Count > 0;
+            shouldInterceptStderr = _stderrInterceptionListeners.Count > 0;
+        }
+
+        if (_config.Testing)
+            return;
+
+        if (shouldInterceptStdout != _stdoutInterceptInstalled)
+        {
+            if (shouldInterceptStdout)
+            {
+                System.Console.SetOut(_interceptingStdout);
+                _stdoutInterceptInstalled = true;
+            }
+            else
+            {
+                System.Console.SetOut(_originalStdout);
+                _stdoutInterceptInstalled = false;
+            }
+        }
+
+        if (shouldInterceptStderr != _stderrInterceptInstalled)
+        {
+            if (shouldInterceptStderr)
+            {
+                System.Console.SetError(_interceptingStderr);
+                _stderrInterceptInstalled = true;
+            }
+            else
+            {
+                System.Console.SetError(_originalStderr);
+                _stderrInterceptInstalled = false;
+            }
+        }
+    }
+
+    private bool FlushCapturedStdout(int space, bool force = false)
+    {
+        string output;
+        lock (_capturedStdoutLock)
+        {
+            if (_capturedStdout.Length == 0 && !force)
+                return false;
+
+            output = _capturedStdout.ToString();
+            _capturedStdout.Clear();
+        }
+
+        if (_config.Testing || _isDestroyed)
+            return true;
+
+        int rendererStartLine = Math.Max(1, _terminalHeight - _splitHeight);
+        var builder = new StringBuilder();
+        builder.Append(MoveCursorAndClear(rendererStartLine, 1));
+        builder.Append(MoveCursor(rendererStartLine, 1));
+        builder.Append(output);
+
+        if (space > 0)
+            builder.Append(ClearFooterArea(space));
+
+        WriteRaw(builder.ToString());
+        return true;
+    }
+
+    private string ClearFooterArea(int space)
+    {
+        if (space <= 0 || Width <= 0)
+            return string.Empty;
+
+        return string.Concat(Enumerable.Repeat(new string(' ', Width) + '\n', space));
+    }
+
+    private void ApplyScreenMode(ScreenMode screenMode, bool emitResize = true, bool requestRender = true)
+    {
+        int nextSplitHeight = screenMode == ScreenMode.SplitFooter
+            ? Math.Min(_terminalHeight, _footerHeight)
+            : 0;
+
+        bool sameMode = _screenMode == screenMode;
+        bool sameSplitHeight = _splitHeight == nextSplitHeight;
+        bool sameRenderSize = Width == _terminalWidth && Height == (nextSplitHeight > 0 ? nextSplitHeight : _terminalHeight);
+        if (sameMode && sameSplitHeight && sameRenderSize)
+            return;
+
+        int previousSplitHeight = _splitHeight;
+        bool previousAlternate = _screenMode == ScreenMode.AlternateScreen;
+        bool nextAlternate = screenMode == ScreenMode.AlternateScreen;
+        bool terminalScreenModeChanged = _terminalIsSetup && previousAlternate != nextAlternate;
+        bool leavingSplitFooter = previousSplitHeight > 0 && nextSplitHeight == 0;
+
+        if (leavingSplitFooter)
+            FlushCapturedStdout(_terminalHeight, force: true);
+
+        if (_terminalIsSetup && !terminalScreenModeChanged)
+        {
+            if (previousSplitHeight == 0 && nextSplitHeight > 0)
+            {
+                WriteRaw(ScrollDown(Math.Max(0, _terminalHeight - nextSplitHeight)));
+            }
+            else if (previousSplitHeight > nextSplitHeight && nextSplitHeight > 0)
+            {
+                WriteRaw(ScrollDown(previousSplitHeight - nextSplitHeight));
+            }
+            else if (previousSplitHeight < nextSplitHeight && previousSplitHeight > 0)
+            {
+                WriteRaw(ScrollUp(nextSplitHeight - previousSplitHeight));
+            }
+        }
+
+        _screenMode = screenMode;
+        _splitHeight = nextSplitHeight;
+        _renderOffset = nextSplitHeight > 0 ? _terminalHeight - nextSplitHeight : 0;
+        Width = _terminalWidth;
+        Height = nextSplitHeight > 0 ? nextSplitHeight : _terminalHeight;
+
+        _nativeRenderer.SetRenderOffset((uint)_renderOffset);
+        _nativeRenderer.Resize((uint)Width, (uint)Height);
+        RebindBuffers();
+        Root.Resize(Width, Height);
+
+        if (terminalScreenModeChanged)
+        {
+            _nativeRenderer.Suspend();
+            _nativeRenderer.SetupTerminal(nextAlternate);
+
+            if (_useMouse)
+                _nativeRenderer.EnableMouse();
+        }
+
+        if (emitResize)
+            Emit<(int Width, int Height)>(RendererEventNames.Resize, (Width, Height));
+
+        if (requestRender)
+            RequestRender();
+    }
+
+    private void RebindBuffers()
+    {
+        NextRenderBuffer.Dispose();
+        CurrentRenderBuffer.Dispose();
+        NextRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetNextBuffer());
+        CurrentRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetCurrentBuffer());
+    }
+
+    public void ClearPaletteCache() => _cachedPalette = null;
+
+    public Task<TerminalColors> GetPalette(GetPaletteOptions? options = null)
+    {
+        options ??= new GetPaletteOptions();
+        if (options.Size is < 1 or > 256)
+            throw new ArgumentOutOfRangeException(nameof(options.Size), "Palette size must be between 1 and 256.");
+
+        if (options.Timeout <= 0)
+            throw new ArgumentOutOfRangeException(nameof(options.Timeout), "Timeout must be greater than 0.");
+
+        if (_cachedPalette is not null && _cachedPalette.Palette.Length != options.Size)
+            _cachedPalette = null;
+
+        if (_cachedPalette is not null)
+            return Task.FromResult(_cachedPalette);
+
+        if (_paletteDetectionTask is not null)
+            return _paletteDetectionTask;
+
+        return _paletteDetectionTask = DetectPaletteAsync(options);
+    }
+
+    private async Task<TerminalColors> DetectPaletteAsync(GetPaletteOptions options)
+    {
+        try
+        {
+            var palette = Enumerable.Range(0, options.Size).ToDictionary(i => i, _ => (string?)null);
+            var specialColors = new Dictionary<int, string?>
+            {
+                [10] = null,
+                [11] = null,
+                [12] = null,
+                [13] = null,
+                [14] = null,
+                [15] = null,
+                [16] = null,
+                [17] = null,
+                [19] = null,
+            };
+
+            var completion = new TaskCompletionSource<TerminalColors>(TaskCreationOptions.RunContinuationsAsynchronously);
+            object gate = new();
+            bool finished = false;
+            bool sawPaletteResponse = false;
+            Timer? idleTimer = null;
+            Timer? timeoutTimer = null;
+
+            TerminalColors BuildResult() => new()
+            {
+                Palette = Enumerable.Range(0, options.Size).Select(i => palette[i]).ToArray(),
+                DefaultForeground = specialColors[10],
+                DefaultBackground = specialColors[11],
+                CursorColor = specialColors[12],
+                MouseForeground = specialColors[13],
+                MouseBackground = specialColors[14],
+                TekForeground = specialColors[15],
+                TekBackground = specialColors[16],
+                HighlightBackground = specialColors[17],
+                HighlightForeground = specialColors[19],
+            };
+
+            void Complete()
+            {
+                if (finished)
+                    return;
+
+                finished = true;
+                idleTimer?.Dispose();
+                timeoutTimer?.Dispose();
+                completion.TrySetResult(BuildResult());
+            }
+
+            using var subscription = SubscribeResponses(response =>
+            {
+                if (!string.Equals(response.Protocol, "osc", StringComparison.Ordinal))
+                    return;
+
+                lock (gate)
+                {
+                    if (finished)
+                        return;
+
+                    bool updated =
+                        TerminalPaletteParser.TryApplyPaletteResponse(response.Sequence, palette) |
+                        TerminalPaletteParser.TryApplySpecialResponse(response.Sequence, specialColors);
+
+                    if (!updated)
+                        return;
+
+                    sawPaletteResponse = true;
+
+                    if (palette.Values.All(value => value is not null) && specialColors.Values.All(value => value is not null))
+                    {
+                        Complete();
+                        return;
+                    }
+
+                    idleTimer?.Change(150, Timeout.Infinite);
+                }
+            });
+
+            timeoutTimer = new Timer(_ =>
+            {
+                lock (gate)
+                    Complete();
+            }, null, options.Timeout, Timeout.Infinite);
+
+            idleTimer = new Timer(_ =>
+            {
+                lock (gate)
+                {
+                    if (sawPaletteResponse)
+                        Complete();
+                }
+            }, null, Timeout.Infinite, Timeout.Infinite);
+
+            WriteRaw(BuildPaletteQuery(options.Size));
+            var result = await completion.Task.ConfigureAwait(false);
+            _cachedPalette = result;
+            return result;
+        }
+        finally
+        {
+            _paletteDetectionTask = null;
+        }
+    }
+
+    private static string BuildPaletteQuery(int size)
+    {
+        var builder = new StringBuilder(size * 8 + 80);
+        for (int i = 0; i < size; i++)
+            builder.Append("\x1b]4;").Append(i).Append(";?\x07");
+
+        builder
+            .Append("\x1b]10;?\x07")
+            .Append("\x1b]11;?\x07")
+            .Append("\x1b]12;?\x07")
+            .Append("\x1b]13;?\x07")
+            .Append("\x1b]14;?\x07")
+            .Append("\x1b]15;?\x07")
+            .Append("\x1b]16;?\x07")
+            .Append("\x1b]17;?\x07")
+            .Append("\x1b]19;?\x07");
+
+        return builder.ToString();
+    }
+
+    private void WriteRaw(string sequence)
+    {
+        if (_config.Testing || _isDestroyed || string.IsNullOrEmpty(sequence))
+            return;
+
+        _nativeRenderer.WriteOut(GetOutputEncoding().GetBytes(sequence));
+    }
+
+    private Encoding GetOutputEncoding()
+    {
+        try { return System.Console.OutputEncoding; }
+        catch { return Encoding.UTF8; }
+    }
+
+    private static (ScreenMode ScreenMode, int FooterHeight, ExternalOutputMode ExternalOutputMode) ResolveModes(CliRendererConfig config)
+    {
+        ScreenMode screenMode = config.ScreenMode;
+        var alternateScreenOverride = Environment.GetEnvironmentVariable("OTUI_USE_ALTERNATE_SCREEN");
+        if (alternateScreenOverride is not null)
+            screenMode = IsTruthy(alternateScreenOverride) ? ScreenMode.AlternateScreen : ScreenMode.MainScreen;
+
+        int footerHeight = screenMode == ScreenMode.SplitFooter
+            ? NormalizeFooterHeight(config.FooterHeight)
+            : CliRendererConfig.DefaultFooterHeight;
+
+        ExternalOutputMode externalOutputMode = config.ExternalOutputMode;
+        if (screenMode == ScreenMode.SplitFooter && externalOutputMode == ExternalOutputMode.Passthrough)
+            externalOutputMode = ExternalOutputMode.CaptureStdout;
+
+        var stdoutOverride = Environment.GetEnvironmentVariable("OTUI_OVERRIDE_STDOUT");
+        if (stdoutOverride is not null)
+            externalOutputMode = IsTruthy(stdoutOverride) && screenMode == ScreenMode.SplitFooter
+                ? ExternalOutputMode.CaptureStdout
+                : ExternalOutputMode.Passthrough;
+
+        if (externalOutputMode == ExternalOutputMode.CaptureStdout && screenMode != ScreenMode.SplitFooter)
+            throw new InvalidOperationException("externalOutputMode \"CaptureStdout\" requires screenMode \"SplitFooter\".");
+
+        return (screenMode, footerHeight, externalOutputMode);
+    }
+
+    private static int NormalizeFooterHeight(int footerHeight)
+    {
+        if (footerHeight <= 0)
+            throw new InvalidOperationException("footerHeight must be greater than 0.");
+
+        return footerHeight;
+    }
+
+    private static bool IsTruthy(string value) =>
+        value.Equals("1", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("true", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("yes", StringComparison.OrdinalIgnoreCase)
+        || value.Equals("on", StringComparison.OrdinalIgnoreCase);
+
+    private static string MoveCursor(int row, int column) => $"\x1b[{Math.Max(1, row)};{Math.Max(1, column)}H";
+
+    private static string MoveCursorAndClear(int row, int column) => MoveCursor(row, column) + "\x1b[J";
+
+    private static string ScrollDown(int lines) => lines > 0 ? $"\x1b[{lines}T" : string.Empty;
+
+    private static string ScrollUp(int lines) => lines > 0 ? $"\x1b[{lines}S" : string.Empty;
 
     #endregion
 
@@ -1219,21 +1966,21 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     public void Resize(int width, int height)
     {
-        if (width == Width && height == Height) return;
-        Width = width;
-        Height = height;
+        if (width == _terminalWidth && height == _terminalHeight)
+            return;
 
-        _nativeRenderer.Resize((uint)width, (uint)height);
+        int previousTerminalWidth = _terminalWidth;
+        _terminalWidth = width;
+        _terminalHeight = height;
 
-        // Re-acquire buffer wrappers (non-owning) after native resize
-        NextRenderBuffer.Dispose();
-        CurrentRenderBuffer.Dispose();
-        NextRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetNextBuffer());
-        CurrentRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetCurrentBuffer());
+        SetCapturedRenderable(null);
+        _stdinParser?.ResetMouseState();
 
-        Root.Resize(width, height);
-        Emit<(int Width, int Height)>(RendererEventNames.Resize, (width, height));
-        RequestRender();
+        if (_splitHeight > 0 && width < previousTerminalWidth)
+            WriteRaw(MoveCursorAndClear(Math.Max(1, _terminalHeight - (_splitHeight * 2)), 1));
+
+        Console.Resize(width, height);
+        ApplyScreenMode(_screenMode);
     }
 
     #endregion
@@ -1259,7 +2006,15 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _renderTimer = null;
 
         StopRunning();
+        Console.Dispose();
         Root.DestroyRecursively();
+        FlushCapturedStdout(_terminalHeight, force: true);
+        if (_stdoutInterceptInstalled)
+            System.Console.SetOut(_originalStdout);
+        _stdoutInterceptInstalled = false;
+        if (_stderrInterceptInstalled)
+            System.Console.SetError(_originalStderr);
+        _stderrInterceptInstalled = false;
 
         TeardownTerminal();
 
@@ -1276,4 +2031,113 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     public void Dispose() => Destroy();
 
     #endregion
+
+    internal IDisposable SubscribeInterceptedOutput(Action<string>? stdoutListener, Action<string>? stderrListener)
+    {
+        lock (_interceptedOutputListenerLock)
+        {
+            if (stdoutListener is not null)
+                _stdoutInterceptionListeners.Add(stdoutListener);
+
+            if (stderrListener is not null)
+                _stderrInterceptionListeners.Add(stderrListener);
+        }
+
+        UpdateStdoutInterception();
+        return new InterceptedOutputUnsubscriber(this, stdoutListener, stderrListener);
+    }
+
+    private void NotifyInterceptedOutputListeners(string text, bool error)
+    {
+        Action<string>[] listeners;
+        lock (_interceptedOutputListenerLock)
+        {
+            listeners = (error ? _stderrInterceptionListeners : _stdoutInterceptionListeners).ToArray();
+        }
+
+        foreach (var listener in listeners)
+            listener(text);
+    }
+
+    private void RemoveInterceptedOutputListener(Action<string>? stdoutListener, Action<string>? stderrListener)
+    {
+        lock (_interceptedOutputListenerLock)
+        {
+            if (stdoutListener is not null)
+                _stdoutInterceptionListeners.RemoveAll(candidate => ReferenceEquals(candidate, stdoutListener));
+
+            if (stderrListener is not null)
+                _stderrInterceptionListeners.RemoveAll(candidate => ReferenceEquals(candidate, stderrListener));
+        }
+
+        UpdateStdoutInterception();
+    }
+
+    private sealed class ResponseUnsubscriber(CliRenderer renderer, Action<StdinEvent.Response> listener) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            renderer.RemoveResponseListener(listener);
+        }
+    }
+
+    private sealed class InterceptedOutputUnsubscriber(
+        CliRenderer renderer,
+        Action<string>? stdoutListener,
+        Action<string>? stderrListener) : IDisposable
+    {
+        private bool _disposed;
+
+        public void Dispose()
+        {
+            if (_disposed)
+                return;
+
+            _disposed = true;
+            renderer.RemoveInterceptedOutputListener(stdoutListener, stderrListener);
+        }
+    }
+
+    private sealed class InterceptingTextWriter(Encoding encoding, Action<string> onWrite) : TextWriter
+    {
+        public override Encoding Encoding => encoding;
+
+        public override void Write(char value) => onWrite(value.ToString());
+
+        public override void Write(string? value)
+        {
+            if (!string.IsNullOrEmpty(value))
+                onWrite(value);
+        }
+
+        public override void Write(char[] buffer, int index, int count)
+        {
+            if (count > 0)
+                onWrite(new string(buffer, index, count));
+        }
+
+        public override Task WriteAsync(char value)
+        {
+            Write(value);
+            return Task.CompletedTask;
+        }
+
+        public override Task WriteAsync(string? value)
+        {
+            Write(value);
+            return Task.CompletedTask;
+        }
+
+        public override Task WriteAsync(char[] buffer, int index, int count)
+        {
+            Write(buffer, index, count);
+            return Task.CompletedTask;
+        }
+    }
 }

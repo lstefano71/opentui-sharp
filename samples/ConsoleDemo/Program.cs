@@ -1,202 +1,293 @@
-// Console Demo — console overlay with clickable buttons
-// Port of console-demo.ts
 using OpenTui.Core;
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
     ExitOnCtrlC = true,
+    UseMouse = true,
 });
 
-var logLines = new List<string>();
-int maxLines = 50;
-bool autoScroll = true;
-
-void Log(string message)
-{
-    logLines.Add($"[{DateTime.Now:HH:mm:ss}] {message}");
-    if (logLines.Count > maxLines)
-        logLines.RemoveAt(0);
-    UpdateLog();
-}
-
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
-    Border = true,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var headerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "header-text",
-    Content = "Console Demo — Interactive Log",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-header.Add(headerText);
-
-// --- Log area ---
-var logArea = new ScrollBoxRenderable(renderer, new ScrollBoxOptions
-{
-    Id = "log-area",
-    Width = DimensionValue.Auto,
-    FlexGrow = 1,
-    ScrollY = true,
-    ScrollX = false,
-    BackgroundColor = Rgba.FromHex("#0d1117"),
-    Border = true,
-    BorderColor = Rgba.FromHex("#30363d"),
-    FlexDirection = FlexDirectionValue.Column,
-});
-var logText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "log-text",
-    Content = "",
-    Fg = Rgba.FromHex("#c9d1d9"),
-    WrapMode = WrapMode.Char,
-    Width = DimensionValue.Auto,
-});
-logText.OnSizeChange = () =>
-{
-    if (autoScroll)
-        logArea.ScrollTo(y: logArea.ScrollHeight);
-};
-logArea.Add(logText);
-
-void UpdateLog()
-{
-    logText.ContentText = string.Join("\n", logLines);
-    if (autoScroll)
-        logArea.ScrollTo(y: logArea.ScrollHeight);
-    renderer.RequestRender();
-}
-
-// --- Button row ---
-var buttonRow = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "button-row",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    FlexDirection = FlexDirectionValue.Row,
-    Gap = 2,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-    Padding = DimensionValue.Point(1),
-});
-
-(string label, string color, string action)[] buttons =
+renderer.SetBackgroundColor(Rgba.FromInts(18, 22, 35));
+renderer.Console.KeyBindings =
 [
-    ("Info", "#3b82f6", "info"),
-    ("Warn", "#f59e0b", "warn"),
-    ("Error", "#ef4444", "error"),
-    ("Clear", "#6b7280", "clear"),
-    ("Debug", "#8b5cf6", "debug"),
+    new ConsoleKeyBinding
+    {
+        Name = "y",
+        Ctrl = true,
+        Action = ConsoleAction.CopySelection,
+    },
 ];
-
-foreach (var (label, color, action) in buttons)
+renderer.Console.OnCopySelection = text =>
 {
-    var btn = new BoxRenderable(renderer, new BoxOptions
+    if (renderer.CopyToClipboardOSC52(text))
     {
-        Id = $"btn-{action}",
-        Width = DimensionValue.Point(12),
-        Height = DimensionValue.Point(1),
-        BackgroundColor = Rgba.FromHex(color),
-        AlignItems = AlignValue.Center,
-        JustifyContent = JustifyValue.Center,
-        ShouldFill = true,
-    });
-    var btnText = new TextRenderable(renderer, new TextOptions
-    {
-        Id = $"btn-text-{action}",
-        Content = $" [{label}] ",
-        Fg = Rgba.FromInts(255, 255, 255),
-    });
-    btn.Add(btnText);
-    buttonRow.Add(btn);
-}
-
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#1e40af"),
-    Border = true,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var footerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    Content = "I: info | W: warn | E: error | D: debug | C: clear | ↑/↓/🖱: scroll | Ctrl+C: exit",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-footer.Add(footerText);
-
-// --- Build tree ---
-renderer.Root.Add(header);
-renderer.Root.Add(logArea);
-renderer.Root.Add(buttonRow);
-renderer.Root.Add(footer);
-
-int messageCount = 0;
-
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
-{
-    switch (e.Name)
-    {
-        case "i":
-            messageCount++;
-            Log($"ℹ️  INFO #{messageCount}: System operating normally");
-            break;
-        case "w":
-            messageCount++;
-            Log($"⚠️  WARN #{messageCount}: Memory usage at 85%");
-            break;
-        case "e":
-            messageCount++;
-            Log($"❌ ERROR #{messageCount}: Connection timeout after 30s");
-            break;
-        case "d":
-            messageCount++;
-            Log($"🔍 DEBUG #{messageCount}: Request processed in 42ms");
-            break;
-        case "c":
-            logLines.Clear();
-            messageCount = 0;
-            autoScroll = true;
-            UpdateLog();
-            break;
-        case "up":
-            autoScroll = false;
-            logArea.ScrollBy(0, -1);
-            renderer.RequestRender();
-            break;
-        case "down":
-            logArea.ScrollBy(0, 1);
-            if (logArea.ScrollTop >= logArea.MaxScrollTop)
-                autoScroll = true;
-            renderer.RequestRender();
-            break;
-        case "pageup":
-            autoScroll = false;
-            logArea.ScrollBy(0, -10);
-            renderer.RequestRender();
-            break;
-        case "pagedown":
-            logArea.ScrollBy(0, 10);
-            if (logArea.ScrollTop >= logArea.MaxScrollTop)
-                autoScroll = true;
-            renderer.RequestRender();
-            break;
+        renderer.Console.Info($"Copied to clipboard: \"{Truncate(text, 50)}\"");
     }
+    else
+    {
+        renderer.Console.Warn("Clipboard copy failed - OSC 52 not supported or stdout is not a TTY");
+    }
+};
+renderer.Console.Show();
+
+var buttonCounters = new Dictionary<ConsoleLogLevel, int>
+{
+    [ConsoleLogLevel.Log] = 0,
+    [ConsoleLogLevel.Info] = 0,
+    [ConsoleLogLevel.Warn] = 0,
+    [ConsoleLogLevel.Error] = 0,
+    [ConsoleLogLevel.Debug] = 0,
+};
+
+var titleText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "console-demo-title",
+    Content = "Console Logging Demo",
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(2),
+    Top = DimensionValue.Point(1),
+    Fg = Rgba.FromInts(255, 215, 135),
+    Attributes = TextAttributes.Bold,
+    ZIndex = 1000,
+});
+renderer.Root.Add(titleText);
+
+var instructionsText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "console-demo-instructions",
+    Content = "Click buttons to trigger different console log levels - Press ` to toggle console - Ctrl+Y to copy selection - Escape exits when the overlay is unfocused",
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(2),
+    Top = DimensionValue.Point(2),
+    Fg = Rgba.FromInts(176, 196, 222),
+    ZIndex = 1000,
+});
+renderer.Root.Add(instructionsText);
+
+var statusText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "console-demo-status",
+    Content = "Click any button to start logging...",
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(2),
+    Top = DimensionValue.Point(4),
+    Fg = Rgba.FromInts(144, 238, 144),
+    Attributes = TextAttributes.Italic,
+    ZIndex = 1000,
+});
+renderer.Root.Add(statusText);
+
+int startY = 7;
+int buttonWidth = 16;
+int buttonHeight = 6;
+int spacing = 18;
+
+var buttons = new[]
+{
+    new ConsoleButton(renderer, "log-btn", 2, startY, buttonWidth, buttonHeight, Rgba.FromInts(160, 160, 170), "LOG", ConsoleLogLevel.Log, buttonCounters, statusText),
+    new ConsoleButton(renderer, "info-btn", 2 + spacing, startY, buttonWidth, buttonHeight, Rgba.FromInts(100, 180, 200), "INFO", ConsoleLogLevel.Info, buttonCounters, statusText),
+    new ConsoleButton(renderer, "warn-btn", 2 + (spacing * 2), startY, buttonWidth, buttonHeight, Rgba.FromInts(220, 180, 100), "WARN", ConsoleLogLevel.Warn, buttonCounters, statusText),
+    new ConsoleButton(renderer, "error-btn", 2 + (spacing * 3), startY, buttonWidth, buttonHeight, Rgba.FromInts(200, 120, 120), "ERROR", ConsoleLogLevel.Error, buttonCounters, statusText),
+    new ConsoleButton(renderer, "debug-btn", 2 + (spacing * 4), startY, buttonWidth, buttonHeight, Rgba.FromInts(140, 140, 150), "DEBUG", ConsoleLogLevel.Debug, buttonCounters, statusText),
+};
+
+foreach (var button in buttons)
+    renderer.Root.Add(button);
+
+renderer.Root.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "console-demo-decor-1",
+    Content = "✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦ ✧ ✦",
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(2),
+    Top = DimensionValue.Point(startY + 12),
+    Fg = Rgba.FromInts(100, 120, 150, 120),
+    ZIndex = 50,
+}));
+
+renderer.Root.Add(new TextRenderable(renderer, new TextOptions
+{
+    Id = "console-demo-decor-2",
+    Content = "Console appears at the bottom. Use Ctrl+P/Ctrl+O to change position, +/- to resize, and drag to select text.",
+    Position = PositionValue.Absolute,
+    Left = DimensionValue.Point(2),
+    Top = DimensionValue.Point(startY + 14),
+    Fg = Rgba.FromInts(120, 140, 160, 200),
+    Attributes = TextAttributes.Italic,
+    ZIndex = 50,
+}));
+
+renderer.Console.Log("Console Demo initialized! Click the buttons above to test different log levels.");
+
+renderer.KeyInput.On("keypress", (KeyEvent keyEvent) =>
+{
+    if (keyEvent.Raw == "`" || keyEvent.Name == "`")
+    {
+        renderer.Console.Toggle();
+        keyEvent.PreventDefault();
+        keyEvent.StopPropagation();
+        return;
+    }
+
+    if (keyEvent.Name == "escape" && !renderer.Console.Focused)
+        renderer.Destroy();
 });
 
-Log("Console initialized. Press keys to add log entries.");
-Log("Use I (info), W (warn), E (error), D (debug), C (clear)");
-renderer.RequestRender();
 await Task.Delay(Timeout.Infinite);
+
+static string Truncate(string text, int maxLength) =>
+    text.Length <= maxLength ? text : text[..maxLength] + "...";
+
+sealed class ConsoleButton : BoxRenderable
+{
+    private readonly CliRenderer _renderer;
+    private readonly ConsoleLogLevel _level;
+    private readonly Dictionary<ConsoleLogLevel, int> _counters;
+    private readonly TextRenderable _statusText;
+    private readonly Rgba _baseColor;
+    private readonly Rgba _hoverColor;
+    private readonly Rgba _pressedColor;
+    private bool _hovered;
+    private bool _pressed;
+    private long _lastClickTicks;
+
+    public ConsoleButton(
+        CliRenderer renderer,
+        string id,
+        int x,
+        int y,
+        int width,
+        int height,
+        Rgba color,
+        string label,
+        ConsoleLogLevel level,
+        Dictionary<ConsoleLogLevel, int> counters,
+        TextRenderable statusText)
+        : base(renderer, new BoxOptions
+        {
+            Id = id,
+            Position = PositionValue.Absolute,
+            Left = DimensionValue.Point(x),
+            Top = DimensionValue.Point(y),
+            Width = DimensionValue.Point(width),
+            Height = DimensionValue.Point(height),
+            ZIndex = 100,
+            BackgroundColor = color,
+            BorderColor = Brighten(color, 1.3f),
+            BorderStyle = BorderStyle.Rounded,
+            Title = label,
+            TitleAlignment = TitleAlignment.Center,
+            Border = true,
+        })
+    {
+        _renderer = renderer;
+        _level = level;
+        _counters = counters;
+        _statusText = statusText;
+        _baseColor = color;
+        _hoverColor = Brighten(color, 1.2f);
+        _pressedColor = Brighten(color, 0.8f);
+    }
+
+    protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
+    {
+        var targetColor = _pressed ? _pressedColor : _hovered ? _hoverColor : _baseColor;
+        if (BackgroundColor != targetColor)
+            BackgroundColor = targetColor;
+        base.RenderSelf(buffer, deltaTime);
+
+        var elapsed = TimeSpan.FromTicks(DateTime.UtcNow.Ticks - _lastClickTicks).TotalMilliseconds;
+        if (elapsed is >= 0 and < 300)
+        {
+            float alpha = 1f - (float)(elapsed / 300d);
+            var sparkle = new Rgba(1f, 1f, 1f, alpha);
+            int centerX = (int)ScreenX + (Width / 2);
+            int centerY = (int)ScreenY + (Height / 2);
+            buffer.SetCell((uint)Math.Max(0, centerX - 1), (uint)Math.Max(0, centerY), (uint)'✦', sparkle, BackgroundColor);
+            buffer.SetCell((uint)Math.Max(0, centerX + 1), (uint)Math.Max(0, centerY), (uint)'✦', sparkle, BackgroundColor);
+        }
+    }
+
+    protected override void OnMouseEvent(UiMouseEvent evt)
+    {
+        switch (evt.Type)
+        {
+            case MouseEventType.Down when evt.Button == (int)MouseButton.Left:
+                _pressed = true;
+                _lastClickTicks = DateTime.UtcNow.Ticks;
+                TriggerConsoleLog();
+                evt.StopPropagation();
+                evt.PreventDefault();
+                break;
+            case MouseEventType.Up:
+                _pressed = false;
+                evt.StopPropagation();
+                evt.PreventDefault();
+                break;
+            case MouseEventType.Over:
+                _hovered = true;
+                break;
+            case MouseEventType.Out:
+                _hovered = false;
+                _pressed = false;
+                break;
+        }
+    }
+
+    private void TriggerConsoleLog()
+    {
+        _counters[_level]++;
+        int count = _counters[_level];
+        string timestamp = DateTime.Now.ToString("HH:mm:ss");
+
+        switch (_level)
+        {
+            case ConsoleLogLevel.Log:
+                _renderer.Console.Log(
+                    $"Console Log #{count} triggered at {timestamp}",
+                    "\n{ data: \"This is a regular log message\", count: ",
+                    count,
+                    ", timestamp: \"",
+                    DateTime.Now.ToString("O"),
+                    "\", metadata: { source: \"console-demo\", type: \"log\" } }");
+                break;
+            case ConsoleLogLevel.Info:
+                _renderer.Console.Info(
+                    $"Info Log #{count} triggered at {timestamp}",
+                    "\n{ message: \"This is an informational message\", details: \"Info messages are used for general information\", level: \"INFO\", count: ",
+                    count,
+                    " }");
+                break;
+            case ConsoleLogLevel.Warn:
+                _renderer.Console.Warn(
+                    $"Warning Log #{count} triggered at {timestamp}",
+                    "\n{ warning: \"This is a warning message\", reason: \"Something might need attention\", severity: \"WARNING\", count: ",
+                    count,
+                    " }");
+                break;
+            case ConsoleLogLevel.Error:
+                _renderer.Console.Error(
+                    $"Error Log #{count} triggered at {timestamp}",
+                    "\n{ error: \"This is an error message\", details: \"Something went wrong (simulated)\", errorCode: \"ERR_",
+                    count,
+                    "\" }");
+                break;
+            case ConsoleLogLevel.Debug:
+                _renderer.Console.Debug(
+                    $"Debug Log #{count} triggered at {timestamp}",
+                    "\n{ debug: \"This is a debug message\", variables: { x: ",
+                    $"{Random.Shared.NextDouble():0.000}",
+                    ", y: ",
+                    $"{Random.Shared.NextDouble():0.000}",
+                    " }, state: \"debugging\" }");
+                break;
+        }
+
+        _statusText.ContentText = $"Last triggered: {_level.ToString().ToUpperInvariant()} #{count} at {timestamp}";
+    }
+
+    private static Rgba Brighten(Rgba color, float factor) => new(
+        Math.Clamp(color.R * factor, 0f, 1f),
+        Math.Clamp(color.G * factor, 0f, 1f),
+        Math.Clamp(color.B * factor, 0f, 1f),
+        color.A);
+}

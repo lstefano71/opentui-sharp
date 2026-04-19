@@ -73,6 +73,15 @@ public sealed class ParsedKey
 }
 
 /// <summary>
+/// Captured raw input sequence used by the keypress debug tooling.
+/// </summary>
+public sealed class DebugInputRecord
+{
+    public required string Timestamp { get; init; }
+    public required string Sequence { get; init; }
+}
+
+/// <summary>
 /// Raw mouse event parsed from terminal escape sequences.
 /// Matches the TypeScript RawMouseEvent interface.
 /// </summary>

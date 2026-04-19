@@ -165,4 +165,103 @@ public sealed class TextareaRenderableTests : IDisposable
 
         Assert.DoesNotContain('1', ReadRowText(_renderer.NextRenderBuffer, (int)gutter.ScreenX, (int)gutter.ScreenY, gutter.Width));
     }
+
+    [Fact]
+    public void TextareaRenderable_Extmarks_MoveCursorSkipsVirtualRange()
+    {
+        using var syntaxStyle = SyntaxStyle.Create();
+        uint styleId = syntaxStyle.Register("virtual", fg: Rgba.FromHex("#4ECDC4"));
+        var textarea = new TextareaRenderable(_renderer, new TextareaOptions
+        {
+            Id = "textarea-extmarks-move",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(4),
+            InitialValue = "a[VIRTUAL]b",
+            SyntaxStyle = syntaxStyle,
+        });
+
+        _renderer.Root.Add(textarea);
+        int extmarkId = textarea.Extmarks.Create(new ExtmarkOptions
+        {
+            Start = 1,
+            End = 10,
+            Virtual = true,
+            StyleId = styleId,
+        });
+        textarea.Focus();
+        textarea.GotoBufferHome();
+
+        textarea.MoveCursorRight();
+        Assert.Equal<uint>(10, textarea.CursorOffset);
+
+        textarea.MoveCursorLeft();
+        Assert.Equal<uint>(0, textarea.CursorOffset);
+
+        var extmark = textarea.Extmarks.Get(extmarkId);
+        Assert.NotNull(extmark);
+        Assert.True(extmark!.Virtual);
+    }
+
+    [Fact]
+    public void TextareaRenderable_Extmarks_BackspaceDeletesWholeVirtualRange()
+    {
+        using var syntaxStyle = SyntaxStyle.Create();
+        uint styleId = syntaxStyle.Register("virtual", fg: Rgba.FromHex("#4ECDC4"));
+        var textarea = new TextareaRenderable(_renderer, new TextareaOptions
+        {
+            Id = "textarea-extmarks-backspace",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(4),
+            InitialValue = "a[VIRTUAL]b",
+            SyntaxStyle = syntaxStyle,
+        });
+
+        _renderer.Root.Add(textarea);
+        textarea.Extmarks.Create(new ExtmarkOptions
+        {
+            Start = 1,
+            End = 10,
+            Virtual = true,
+            StyleId = styleId,
+        });
+
+        textarea.GotoBufferHome();
+        textarea.MoveCursorRight();
+        textarea.DeleteCharBackward();
+
+        Assert.Equal("ab", textarea.GetText());
+        Assert.Empty(textarea.Extmarks.GetVirtual());
+    }
+
+    [Fact]
+    public void TextareaRenderable_Extmarks_AdjustAfterInsertion()
+    {
+        using var syntaxStyle = SyntaxStyle.Create();
+        uint styleId = syntaxStyle.Register("virtual", fg: Rgba.FromHex("#4ECDC4"));
+        var textarea = new TextareaRenderable(_renderer, new TextareaOptions
+        {
+            Id = "textarea-extmarks-insert",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(4),
+            InitialValue = "a[VIRTUAL]b",
+            SyntaxStyle = syntaxStyle,
+        });
+
+        _renderer.Root.Add(textarea);
+        int extmarkId = textarea.Extmarks.Create(new ExtmarkOptions
+        {
+            Start = 1,
+            End = 10,
+            Virtual = true,
+            StyleId = styleId,
+        });
+
+        textarea.GotoBufferHome();
+        textarea.InsertText("x");
+
+        var extmark = textarea.Extmarks.Get(extmarkId);
+        Assert.NotNull(extmark);
+        Assert.Equal<uint>(2, extmark!.Start);
+        Assert.Equal<uint>(11, extmark.End);
+    }
 }

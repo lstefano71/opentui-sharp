@@ -1,173 +1,164 @@
-// Extmarks Demo — virtual text markers
-// Port of extmarks-demo.ts
 using OpenTui.Core;
+
+const string initialContent = """
+Welcome to the Extmarks Demo!
+
+This demo showcases virtual extmarks - text ranges that the cursor jumps over.
+
+Try moving your cursor through the [VIRTUAL] markers below:
+- Use arrow keys to navigate
+- Notice how the cursor skips over [VIRTUAL] ranges
+- Try backspacing at the end of a [VIRTUAL] marker
+- It will delete the entire marker!
+
+Example text with [LINK:https://example.com] embedded links.
+You can also have [TAG:important] tags that act like atoms.
+
+Regular text here can be edited normally.
+
+Press Ctrl+L to add a new [MARKER] at cursor position.
+Press Ctrl+C to exit.
+""";
 
 using var renderer = CliRenderer.Create(new CliRendererConfig
 {
     ExitOnCtrlC = true,
+    TargetFps = 60,
 });
 
-// --- Header ---
-var header = new BoxRenderable(renderer, new BoxOptions
-{
-    Id = "header",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#7c3aed"),
-    Border = true,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var headerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "header-text",
-    Content = "Extmarks Demo — Virtual Text Markers",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-header.Add(headerText);
+renderer.SetBackgroundColor(Rgba.FromHex("#0D1117"));
 
-// --- Code area with extmarks ---
-var codeArea = new BoxRenderable(renderer, new BoxOptions
+using var syntaxStyle = SyntaxStyle.Create();
+uint virtualStyleId = syntaxStyle.Register(
+    "virtual",
+    fg: new Rgba(0.3f, 0.7f, 1.0f, 1.0f),
+    bg: new Rgba(0.1f, 0.2f, 0.3f, 1.0f));
+
+var parentContainer = new BoxRenderable(renderer, new BoxOptions
 {
-    Id = "code-area",
-    Width = DimensionValue.Auto,
-    FlexGrow = 1,
-    FlexDirection = FlexDirectionValue.Column,
+    Id = "parent-container",
+    Width = DimensionValue.Percent(100),
+    Height = DimensionValue.Percent(100),
+    ZIndex = 10,
     Padding = DimensionValue.Point(1),
-    BackgroundColor = Rgba.FromHex("#1e1e1e"),
+    FlexDirection = FlexDirectionValue.Column,
 });
+renderer.Root.Add(parentContainer);
 
-// Simulate code with inline diagnostics (extmarks)
-string[] codeLines =
-[
-    "fn main() {",
-    "    let x: i32 = \"hello\";",
-    "    println!(\"{}\", x);",
-    "    let y = 42 / 0;",
-    "    let z = vec![1, 2, 3];",
-    "    z.push(4);",
-    "}",
-];
-
-// Diagnostic markers
-(int line, string message, string color)[] diagnostics =
-[
-    (1, "  ← error: expected `i32`, found `&str`", "#ef4444"),
-    (3, "  ← warning: division by zero", "#f59e0b"),
-    (5, "  ← error: cannot borrow `z` as mutable", "#ef4444"),
-];
-
-int markerMode = 0;
-string[] modes = ["All Markers", "Errors Only", "Warnings Only", "No Markers"];
-
-void RenderCode()
+var editorBox = new BoxRenderable(renderer, new BoxOptions
 {
-    // Remove old code lines
-    foreach (var child in codeArea.GetChildren().ToList())
-        codeArea.Remove(child.Id);
+    Id = "editor-box",
+    Width = DimensionValue.Percent(100),
+    FlexGrow = 1,
+    BorderStyle = BorderStyle.Single,
+    BorderColor = Rgba.FromHex("#6BCF7F"),
+    BackgroundColor = Rgba.FromHex("#0D1117"),
+    Title = "Extmarks Demo - Virtual Text Ranges",
+    TitleAlignment = TitleAlignment.Left,
+    PaddingLeft = DimensionValue.Point(1),
+    PaddingRight = DimensionValue.Point(1),
+    Border = true,
+});
+parentContainer.Add(editorBox);
 
-    for (int i = 0; i < codeLines.Length; i++)
-    {
-        var lineBox = new BoxRenderable(renderer, new BoxOptions
-        {
-            Id = $"line-{i}",
-            FlexDirection = FlexDirectionValue.Row,
-            Height = DimensionValue.Point(1),
-            Width = DimensionValue.Auto,
-        });
+var editor = new TextareaRenderable(renderer, new TextareaOptions
+{
+    Id = "editor",
+    Width = DimensionValue.Percent(100),
+    Height = DimensionValue.Percent(100),
+    InitialValue = initialContent,
+    TextColor = Rgba.FromHex("#F0F6FC"),
+    SelectionBg = Rgba.FromHex("#264F78"),
+    SelectionFg = Rgba.FromHex("#FFFFFF"),
+    WrapMode = (byte)WrapMode.Word,
+    ShowCursor = true,
+    CursorColor = Rgba.FromHex("#4ECDC4"),
+    SyntaxStyle = syntaxStyle,
+});
+editorBox.Add(editor);
 
-        // Line number
-        var lineNum = new TextRenderable(renderer, new TextOptions
-        {
-            Id = $"linenum-{i}",
-            Content = $"{i + 1,3} │ ",
-            Fg = Rgba.FromHex("#6b7280"),
-        });
-        lineBox.Add(lineNum);
+var helpText = new TextRenderable(renderer, new TextOptions
+{
+    Id = "help",
+    Content = "Move cursor with arrows. Try backspacing at the end of [VIRTUAL] markers!",
+    Fg = Rgba.FromHex("#FFA657"),
+    Height = DimensionValue.Point(1),
+});
+parentContainer.Add(helpText);
 
-        // Code text
-        var codeLine = new TextRenderable(renderer, new TextOptions
-        {
-            Id = $"code-{i}",
-            Content = codeLines[i],
-            Fg = Rgba.FromHex("#d4d4d4"),
-        });
-        lineBox.Add(codeLine);
-
-        // Check for diagnostic on this line
-        var diag = diagnostics.FirstOrDefault(d => d.line == i);
-        if (diag != default)
-        {
-            bool show = markerMode switch
-            {
-                0 => true,
-                1 => diag.color == "#ef4444",
-                2 => diag.color == "#f59e0b",
-                _ => false,
-            };
-
-            if (show)
-            {
-                var marker = new TextRenderable(renderer, new TextOptions
-                {
-                    Id = $"marker-{i}",
-                    Content = diag.message,
-                    Fg = Rgba.FromHex(diag.color),
-                    Attributes = TextAttributes.Italic,
-                });
-                lineBox.Add(marker);
-            }
-        }
-
-        codeArea.Add(lineBox);
-    }
-
-    renderer.RequestRender();
-}
-
-// --- Status ---
 var statusText = new TextRenderable(renderer, new TextOptions
 {
     Id = "status",
-    Content = $"Filter: {modes[markerMode]}",
-    Fg = Rgba.FromHex("#a78bfa"),
-    Attributes = TextAttributes.Bold,
+    Content = string.Empty,
+    Fg = Rgba.FromHex("#A5D6FF"),
+    Height = DimensionValue.Point(1),
 });
-codeArea.Add(statusText);
+parentContainer.Add(statusText);
 
-// --- Footer ---
-var footer = new BoxRenderable(renderer, new BoxOptions
+FindAndMarkVirtualRanges(editor.Extmarks, editor.PlainText, virtualStyleId);
+editor.Focus();
+
+renderer.AddFrameCallback(_ =>
 {
-    Id = "footer",
-    Width = DimensionValue.Auto,
-    Height = DimensionValue.Point(3),
-    BackgroundColor = Rgba.FromHex("#7c3aed"),
-    Border = true,
-    AlignItems = AlignValue.Center,
-    JustifyContent = JustifyValue.Center,
-});
-var footerText = new TextRenderable(renderer, new TextOptions
-{
-    Id = "footer-text",
-    Content = "M: cycle marker filter | Ctrl+C: exit",
-    Fg = Rgba.FromInts(255, 255, 255),
-});
-footer.Add(footerText);
-
-renderer.Root.Add(header);
-renderer.Root.Add(codeArea);
-renderer.Root.Add(footer);
-
-RenderCode();
-
-renderer.KeyInput.On("keypress", (KeyEvent e) =>
-{
-    if (e.Name == "m")
+    if (!editor.IsDestroyed)
     {
-        markerMode = (markerMode + 1) % modes.Length;
-        statusText.ContentText = $"Filter: {modes[markerMode]}";
-        RenderCode();
+        var cursor = editor.LogicalCursor;
+        uint offset = editor.CursorOffset;
+        var extmarksAtCursor = editor.Extmarks.GetAtOffset(offset);
+        int virtualCount = editor.Extmarks.GetVirtual().Count;
+
+        string extmarkInfo = extmarksAtCursor.Count > 0
+            ? $" | Inside extmark(s): {extmarksAtCursor.Count}"
+            : string.Empty;
+
+        statusText.ContentText =
+            $"Line {cursor.Row + 1}, Col {cursor.Col + 1}, Offset {offset} | Virtual extmarks: {virtualCount}{extmarkInfo}";
     }
+
+    return Task.CompletedTask;
+});
+
+renderer.KeyInput.On<KeyEvent>(KeyHandlerEvents.Keypress, keyEvent =>
+{
+    if (!keyEvent.Ctrl || !string.Equals(keyEvent.Name, "l", StringComparison.OrdinalIgnoreCase))
+        return;
+
+    keyEvent.PreventDefault();
+    keyEvent.StopPropagation();
+
+    if (editor.IsDestroyed)
+        return;
+
+    uint offset = editor.CursorOffset;
+    const string markerText = "[MARKER]";
+    editor.InsertText(markerText);
+    editor.Extmarks.Create(new ExtmarkOptions
+    {
+        Start = offset,
+        End = offset + (uint)markerText.Length,
+        Virtual = true,
+        StyleId = virtualStyleId,
+        Data = new MarkerData("marker", "manual")
+    });
+    helpText.ContentText = $"Added virtual marker at offset {offset}!";
 });
 
 await Task.Delay(Timeout.Infinite);
+
+static void FindAndMarkVirtualRanges(ExtmarksController controller, string text, uint styleId)
+{
+    const string pattern = @"\[(VIRTUAL|LINK:[^\]]+|TAG:[^\]]+|MARKER)\]";
+    foreach (System.Text.RegularExpressions.Match match in System.Text.RegularExpressions.Regex.Matches(text, pattern))
+    {
+        controller.Create(new ExtmarkOptions
+        {
+            Start = (uint)match.Index,
+            End = (uint)(match.Index + match.Length),
+            Virtual = true,
+            StyleId = styleId,
+            Data = new MarkerData("auto-detected", match.Value)
+        });
+    }
+}
+
+sealed record MarkerData(string Type, string Content);

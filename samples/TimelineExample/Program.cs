@@ -58,6 +58,8 @@ file sealed class TimelineExample
 
     public TimelineExample(CliRenderer renderer)
     {
+        using var suspendRenderRequests = renderer.SuspendRenderRequests();
+
         _renderer = renderer;
         _mainTimeline = new Timeline(new TimelineOptions
         {
@@ -265,9 +267,6 @@ file sealed class TimelineExample
     public void Start()
     {
         _statusLine1.ContentText = "Starting nested timeline example...";
-        _mainTimeline.Restart();
-        _subTimeline1.Restart();
-        _subTimeline2.Restart();
         _mainTimeline.Play();
         _renderer.RequestRender();
     }

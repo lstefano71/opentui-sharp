@@ -27,7 +27,15 @@ public sealed class KeyEvent(ParsedKey key) : UiEvent
     public bool Super => Key.Super;
     public bool Hyper => Key.Hyper;
     public string Sequence => Key.Sequence;
+    public bool Number => Key.Number;
+    public string Raw => Key.Raw;
     public KeyEventType EventType => Key.EventType;
+    public string Source => Key.Source;
+    public string? Code => Key.Code;
+    public bool CapsLock => Key.CapsLock;
+    public bool NumLock => Key.NumLock;
+    public int? BaseCode => Key.BaseCode;
+    public bool Repeated => Key.Repeated;
 }
 
 /// <summary>

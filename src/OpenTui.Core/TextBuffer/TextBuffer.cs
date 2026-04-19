@@ -13,12 +13,14 @@ public sealed class TextBuffer : IDisposable
 {
     private nint _handle;
     private bool _disposed;
+    private readonly bool _ownsHandle;
     private readonly List<nint> _nativeAllocations = [];
     private readonly List<nint> _registeredMemAllocations = [];
 
-    private TextBuffer(nint handle)
+    private TextBuffer(nint handle, bool ownsHandle = true)
     {
         _handle = handle;
+        _ownsHandle = ownsHandle;
     }
 
     /// <summary>Creates a new text buffer with the specified width calculation method.</summary>
@@ -32,6 +34,14 @@ public sealed class TextBuffer : IDisposable
             throw new InvalidOperationException("Failed to create native text buffer.");
 
         return new TextBuffer(handle);
+    }
+
+    internal static TextBuffer WrapExisting(nint handle)
+    {
+        if (handle == nint.Zero)
+            throw new ArgumentException("Handle cannot be zero.", nameof(handle));
+
+        return new TextBuffer(handle, ownsHandle: false);
     }
 
     /// <summary>Gets the native text buffer handle. For use by other wrappers that need the raw pointer.</summary>
@@ -427,11 +437,11 @@ public sealed class TextBuffer : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            if (_handle != nint.Zero)
+            if (_ownsHandle && _handle != nint.Zero)
             {
                 OpenTuiNative.TextBufferDestroy(_handle);
-                _handle = nint.Zero;
             }
+            _handle = nint.Zero;
             // Free native memory allocations AFTER Zig deinit (which no longer tries to free them)
             foreach (nint alloc in _nativeAllocations)
                 NativeMemory.Free((void*)alloc);

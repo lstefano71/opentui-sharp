@@ -6,6 +6,8 @@ namespace OpenTui.Core;
 /// </summary>
 public sealed class CliRendererConfig
 {
+    internal const int DefaultFooterHeight = 12;
+
     /// <summary>Skip terminal setup. Useful in tests.</summary>
     public bool Testing { get; init; }
 
@@ -39,6 +41,12 @@ public sealed class CliRendererConfig
     /// <summary>Screen mode: alternate-screen, main-screen, split-footer.</summary>
     public ScreenMode ScreenMode { get; init; } = ScreenMode.AlternateScreen;
 
+    /// <summary>Footer height used by <see cref="ScreenMode.SplitFooter"/>.</summary>
+    public int FooterHeight { get; init; } = DefaultFooterHeight;
+
+    /// <summary>How stdout should behave while rendering.</summary>
+    public ExternalOutputMode ExternalOutputMode { get; init; } = ExternalOutputMode.Passthrough;
+
     /// <summary>Fill the render buffer with this background color.</summary>
     public Rgba? BackgroundColor { get; init; }
 
@@ -70,6 +78,13 @@ public enum ScreenMode
     AlternateScreen,
     MainScreen,
     SplitFooter,
+}
+
+/// <summary>Controls whether stdout is passed through or captured above a split footer.</summary>
+public enum ExternalOutputMode
+{
+    Passthrough,
+    CaptureStdout,
 }
 
 /// <summary>
