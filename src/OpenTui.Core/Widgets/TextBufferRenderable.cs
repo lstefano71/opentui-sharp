@@ -35,7 +35,6 @@ public class TextBufferRenderable : Renderable
         _selectionBg = options.SelectionBg;
         _selectionFg = options.SelectionFg;
         _selectable = options.Selectable;
-        base.Selectable = options.Selectable;
         _wrapMode = options.WrapMode;
         _truncate = options.Truncate;
 
@@ -128,14 +127,10 @@ public class TextBufferRenderable : Renderable
     /// <summary>
     /// Gets or sets the selectable.
     /// </summary>
-    public new bool Selectable
+    public override bool Selectable
     {
         get => _selectable;
-        set
-        {
-            _selectable = value;
-            base.Selectable = value;
-        }
+        set => _selectable = value;
     }
 
     /// <summary>

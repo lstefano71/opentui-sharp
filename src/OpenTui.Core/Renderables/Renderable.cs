@@ -124,7 +124,7 @@ public abstract class Renderable : BaseRenderable
     /// <summary>
     /// Gets or sets the selectable.
     /// </summary>
-    public bool Selectable { get; set; }
+    public virtual bool Selectable { get; set; }
     /// <summary>
     /// Stores the focusable.
     /// </summary>

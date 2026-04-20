@@ -441,8 +441,6 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         _selectionBg = options.SelectionBg;
         _selectionFg = options.SelectionFg;
         _selectionHelper = new AsciiFontSelectionHelper(() => _text, () => _font);
-
-        base.Selectable = options.Selectable;
         FlexShrink = 0;
         UpdateDimensions();
     }
@@ -561,14 +559,10 @@ public class ASCIIFontRenderable : FrameBufferRenderable
     /// <summary>
     /// Gets or sets the selectable.
     /// </summary>
-    public new bool Selectable
+    public override bool Selectable
     {
         get => _selectable;
-        set
-        {
-            _selectable = value;
-            base.Selectable = value;
-        }
+        set => _selectable = value;
     }
 
     /// <summary>

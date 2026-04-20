@@ -29,7 +29,7 @@ public class TextBufferHighlightTests
         tb.AddHighlight(0, new Highlight { Start = 0, End = 5, StyleId = 1, Priority = 0, HlRef = 0 });
 
         var highlights = tb.GetLineHighlights(0);
-        Assert.Equal(1, highlights.Length);
+        Assert.Single(highlights);
         Assert.Equal(0u, highlights[0].Start);
         Assert.Equal(5u, highlights[0].End);
         Assert.Equal(1u, highlights[0].StyleId);
@@ -62,9 +62,9 @@ public class TextBufferHighlightTests
         tb.AddHighlight(1, new Highlight { Start = 0, End = 6, StyleId = 2, Priority = 0, HlRef = 0 });
         tb.AddHighlight(2, new Highlight { Start = 0, End = 6, StyleId = 3, Priority = 0, HlRef = 0 });
 
-        Assert.Equal(1, tb.GetLineHighlights(0).Length);
-        Assert.Equal(1, tb.GetLineHighlights(1).Length);
-        Assert.Equal(1, tb.GetLineHighlights(2).Length);
+        Assert.Single(tb.GetLineHighlights(0));
+        Assert.Single(tb.GetLineHighlights(1));
+        Assert.Single(tb.GetLineHighlights(2));
     }
 
     [Fact]
@@ -83,9 +83,9 @@ public class TextBufferHighlightTests
         var line0 = tb.GetLineHighlights(0);
         var line1 = tb.GetLineHighlights(1);
 
-        Assert.Equal(1, line0.Length);
+        Assert.Single(line0);
         Assert.Equal(2u, line0[0].StyleId);
-        Assert.Equal(0, line1.Length);
+        Assert.Empty(line1);
     }
 
     [Fact]
@@ -100,7 +100,7 @@ public class TextBufferHighlightTests
 
         tb.ClearLineHighlights(0);
 
-        Assert.Equal(0, tb.GetLineHighlights(0).Length);
+        Assert.Empty(tb.GetLineHighlights(0));
     }
 
     [Fact]
@@ -116,9 +116,9 @@ public class TextBufferHighlightTests
 
         tb.ClearHighlights();
 
-        Assert.Equal(0, tb.GetLineHighlights(0).Length);
-        Assert.Equal(0, tb.GetLineHighlights(1).Length);
-        Assert.Equal(0, tb.GetLineHighlights(2).Length);
+        Assert.Empty(tb.GetLineHighlights(0));
+        Assert.Empty(tb.GetLineHighlights(1));
+        Assert.Empty(tb.GetLineHighlights(2));
     }
 
     [Fact]
@@ -128,7 +128,7 @@ public class TextBufferHighlightTests
         using var tb = TextBuffer.Create(WidthMethod.Unicode);
         tb.SetText("Line 1");
 
-        Assert.Equal(0, tb.GetLineHighlights(10).Length);
+        Assert.Empty(tb.GetLineHighlights(10));
     }
 
     [Fact]
@@ -154,7 +154,7 @@ public class TextBufferHighlightTests
 
         tb.Reset();
 
-        Assert.Equal(0, tb.GetLineHighlights(0).Length);
+        Assert.Empty(tb.GetLineHighlights(0));
     }
 
     #endregion
@@ -175,7 +175,7 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 0, End = 5, StyleId = 1, Priority = 1, HlRef = 0 });
 
         var highlights = tb.GetLineHighlights(0);
-        Assert.Equal(1, highlights.Length);
+        Assert.Single(highlights);
         Assert.Equal(0u, highlights[0].Start);
         Assert.Equal(5u, highlights[0].End);
         Assert.Equal(1u, highlights[0].StyleId);
@@ -194,8 +194,8 @@ public class TextBufferHighlightTests
         var line0 = tb.GetLineHighlights(0);
         var line1 = tb.GetLineHighlights(1);
 
-        Assert.Equal(1, line0.Length);
-        Assert.Equal(1, line1.Length);
+        Assert.Single(line0);
+        Assert.Single(line1);
 
         // Line 0: col 3 to end (col 5)
         Assert.Equal(3u, line0[0].Start);
@@ -219,9 +219,9 @@ public class TextBufferHighlightTests
         var line1 = tb.GetLineHighlights(1);
         var line2 = tb.GetLineHighlights(2);
 
-        Assert.Equal(1, line0.Length);
-        Assert.Equal(1, line1.Length);
-        Assert.Equal(1, line2.Length);
+        Assert.Single(line0);
+        Assert.Single(line1);
+        Assert.Single(line2);
 
         Assert.Equal(3u, line0[0].Start);
         Assert.Equal(0u, line1[0].Start);
@@ -238,12 +238,12 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 0, End = 4, StyleId = 1, Priority = 1, HlRef = 0 });
 
         var line0 = tb.GetLineHighlights(0);
-        Assert.Equal(1, line0.Length);
+        Assert.Single(line0);
         Assert.Equal(0u, line0[0].Start);
         Assert.Equal(4u, line0[0].End);
 
         // Line 1 should have no highlights
-        Assert.Equal(0, tb.GetLineHighlights(1).Length);
+        Assert.Empty(tb.GetLineHighlights(1));
     }
 
     [Fact]
@@ -255,7 +255,7 @@ public class TextBufferHighlightTests
 
         tb.AddHighlightByCharRange(new Highlight { Start = 5, End = 5, StyleId = 1, Priority = 1, HlRef = 0 });
 
-        Assert.Equal(0, tb.GetLineHighlights(0).Length);
+        Assert.Empty(tb.GetLineHighlights(0));
     }
 
     [Fact]
@@ -267,7 +267,7 @@ public class TextBufferHighlightTests
 
         tb.AddHighlightByCharRange(new Highlight { Start = 10, End = 5, StyleId = 1, Priority = 1, HlRef = 0 });
 
-        Assert.Equal(0, tb.GetLineHighlights(0).Length);
+        Assert.Empty(tb.GetLineHighlights(0));
     }
 
     [Fact]
@@ -280,7 +280,7 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 3, End = 100, StyleId = 1, Priority = 1, HlRef = 0 });
 
         var highlights = tb.GetLineHighlights(0);
-        Assert.Equal(1, highlights.Length);
+        Assert.Single(highlights);
         Assert.Equal(3u, highlights[0].Start);
     }
 
@@ -312,12 +312,12 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 0, End = 5, StyleId = 1, Priority = 1, HlRef = 100 });
         tb.AddHighlightByCharRange(new Highlight { Start = 6, End = 11, StyleId = 2, Priority = 1, HlRef = 100 });
 
-        Assert.Equal(1, tb.GetLineHighlights(0).Length);
-        Assert.Equal(1, tb.GetLineHighlights(1).Length);
+        Assert.Single(tb.GetLineHighlights(0));
+        Assert.Single(tb.GetLineHighlights(1));
 
         tb.RemoveHighlight(100);
-        Assert.Equal(0, tb.GetLineHighlights(0).Length);
-        Assert.Equal(0, tb.GetLineHighlights(1).Length);
+        Assert.Empty(tb.GetLineHighlights(0));
+        Assert.Empty(tb.GetLineHighlights(1));
     }
 
     [Fact]
@@ -330,7 +330,7 @@ public class TextBufferHighlightTests
         var textLen = tb.Length;
         tb.AddHighlightByCharRange(new Highlight { Start = 0, End = textLen, StyleId = 1, Priority = 1, HlRef = 0 });
 
-        Assert.Equal(1, tb.GetLineHighlights(0).Length);
+        Assert.Single(tb.GetLineHighlights(0));
     }
 
     [Fact]
@@ -342,10 +342,10 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 0, End = 5, StyleId = 1, Priority = 1, HlRef = 0 });
 
         tb.SetText("New Text");
-        Assert.Equal(1, tb.GetLineHighlights(0).Length);
+        Assert.Single(tb.GetLineHighlights(0));
 
         tb.ClearHighlights();
-        Assert.Equal(0, tb.GetLineHighlights(0).Length);
+        Assert.Empty(tb.GetLineHighlights(0));
     }
 
     [Fact]
@@ -357,7 +357,7 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 11, End = 25, StyleId = 1, Priority = 1, HlRef = 0 });
 
         var highlights = tb.GetLineHighlights(0);
-        Assert.Equal(1, highlights.Length);
+        Assert.Single(highlights);
         Assert.Equal(11u, highlights[0].Start);
         Assert.Equal(25u, highlights[0].End);
     }
@@ -371,7 +371,7 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 9, End = 12, StyleId = 1, Priority = 1, HlRef = 0 });
 
         var highlights = tb.GetLineHighlights(0);
-        Assert.Equal(1, highlights.Length);
+        Assert.Single(highlights);
         Assert.Equal(9u, highlights[0].Start);
         Assert.Equal(12u, highlights[0].End);
     }
@@ -385,7 +385,7 @@ public class TextBufferHighlightTests
         tb.AddHighlightByCharRange(new Highlight { Start = 4, End = 8, StyleId = 1, Priority = 1, HlRef = 0 });
 
         var highlights = tb.GetLineHighlights(0);
-        Assert.Equal(1, highlights.Length);
+        Assert.Single(highlights);
         Assert.Equal(4u, highlights[0].Start);
         Assert.Equal(8u, highlights[0].End);
     }

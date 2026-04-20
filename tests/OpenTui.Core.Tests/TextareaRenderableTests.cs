@@ -242,7 +242,7 @@ public sealed class TextareaRenderableTests : IDisposable
         _renderer.Root.Add(lineNumbers);
         RenderFrame();
 
-        var gutter = Assert.Single(lineNumbers.GetChildren().Where(child => !ReferenceEquals(child, textarea)));
+        var gutter = Assert.Single(lineNumbers.GetChildren(), child => !ReferenceEquals(child, textarea));
         Assert.True(gutter.Width > 0);
         Assert.Contains('1', ReadRowText(_renderer.NextRenderBuffer, (int)gutter.ScreenX, (int)gutter.ScreenY, gutter.Width));
 

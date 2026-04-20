@@ -82,21 +82,21 @@ public class WordWrapEditingTests
         view.SetWrapWidth(18);
 
         eb.SetText("hello my good ");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.SetCursor(0, 14);
 
         eb.InsertText("f");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("r");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("i");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("e");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("n");
         Assert.Equal(2, view.GetLineInfo().LineWidthCols.Length);
@@ -122,12 +122,12 @@ public class WordWrapEditingTests
         view.SetWrapWidth(20);
 
         eb.SetText("hello friend");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.SetCursor(0, 6);
         eb.InsertText("my good ");
 
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
     }
 
     [Fact]
@@ -150,7 +150,7 @@ public class WordWrapEditingTests
             eb.DeleteChar();
 
         info = view.GetLineInfo();
-        Assert.Equal(1, info.LineWidthCols.Length);
+        Assert.Single(info.LineWidthCols);
     }
 
     [Fact]
@@ -284,7 +284,7 @@ public class WordWrapEditingTests
         Assert.Equal("hello my good friend", text);
 
         var info = view.GetLineInfo();
-        Assert.Equal(1, info.LineWidthCols.Length);
+        Assert.Single(info.LineWidthCols);
     }
 
     [Fact]
@@ -323,7 +323,7 @@ public class WordWrapEditingTests
         view.SetWrapWidth(20);
 
         eb.SetText("12345678901234567890");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.SetCursor(0, 20);
         eb.InsertText(" word");
@@ -364,20 +364,20 @@ public class WordWrapEditingTests
         view.SetWrapWidth(18);
 
         eb.SetText("hello my good ");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.SetCursor(0, 14);
         eb.InsertText("f");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("r");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("i");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("e");
-        Assert.Equal(1, view.GetLineInfo().LineWidthCols.Length);
+        Assert.Single(view.GetLineInfo().LineWidthCols);
 
         eb.InsertText("n");
         Assert.Equal(2, view.GetLineInfo().LineWidthCols.Length);
