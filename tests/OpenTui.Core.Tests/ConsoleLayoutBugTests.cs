@@ -232,4 +232,95 @@ public class ConsoleLayoutBugTests : IDisposable
         Assert.True(line2.ScreenY > line1.ScreenY, $"Expected line2 below line1, got {line1.ScreenY} and {line2.ScreenY}");
         Assert.True(line3.ScreenY > line2.ScreenY, $"Expected line3 below line2, got {line2.ScreenY} and {line3.ScreenY}");
     }
+
+    [Fact]
+    public void LayoutReset_ClearsMaxWidthBeforeReturningToVerticalLayout()
+    {
+        var contentArea = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "content-area",
+            FlexGrow = 1,
+            FlexDirection = FlexDirectionValue.Row,
+            AlignItems = AlignValue.Stretch,
+        });
+
+        var sidebar = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "sidebar",
+            Height = DimensionValue.Auto,
+            Width = DimensionValue.Auto,
+        });
+
+        var mainContent = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "main-content",
+            FlexGrow = 1,
+            FlexShrink = 1,
+            Height = DimensionValue.Auto,
+            Width = DimensionValue.Auto,
+        });
+
+        contentArea.Add(sidebar);
+        contentArea.Add(mainContent);
+        _renderer.Root.Add(contentArea);
+
+        void ResetElement(BoxRenderable el)
+        {
+            el.FlexBasis = DimensionValue.Auto;
+            el.FlexGrow = 0;
+            el.FlexShrink = 0;
+            el.WidthDimension = DimensionValue.Auto;
+            el.HeightDimension = DimensionValue.Auto;
+            el.MinWidth = DimensionValue.Auto;
+            el.MaxWidth = DimensionValue.Auto;
+            el.MinHeight = DimensionValue.Auto;
+            el.MaxHeight = DimensionValue.Auto;
+        }
+
+        void SetupVertical()
+        {
+            ResetElement(sidebar);
+            ResetElement(mainContent);
+
+            contentArea.FlexDirection = FlexDirectionValue.Column;
+            contentArea.AlignItems = AlignValue.Stretch;
+            contentArea.JustifyContent = JustifyValue.FlexStart;
+
+            sidebar.FlexBasis = DimensionValue.Point(8);
+            sidebar.HeightDimension = DimensionValue.Point(8);
+            sidebar.MinHeight = DimensionValue.Point(3);
+
+            mainContent.FlexGrow = 1;
+            mainContent.FlexShrink = 1;
+            mainContent.MinHeight = DimensionValue.Point(5);
+        }
+
+        void SetupCentered()
+        {
+            ResetElement(mainContent);
+
+            contentArea.FlexDirection = FlexDirectionValue.Row;
+            contentArea.AlignItems = AlignValue.Stretch;
+            contentArea.JustifyContent = JustifyValue.Center;
+
+            mainContent.FlexBasis = DimensionValue.Point(48);
+            mainContent.WidthDimension = DimensionValue.Point(48);
+            mainContent.MinWidth = DimensionValue.Point(30);
+            mainContent.MaxWidth = DimensionValue.Point(64);
+        }
+
+        SetupVertical();
+        RenderFrame();
+        int initialVerticalWidth = mainContent.Width;
+
+        SetupCentered();
+        RenderFrame();
+        Assert.Equal(48, mainContent.Width);
+
+        SetupVertical();
+        RenderFrame();
+
+        Assert.Equal(initialVerticalWidth, mainContent.Width);
+        Assert.Equal(contentArea.Width, mainContent.Width);
+    }
 }

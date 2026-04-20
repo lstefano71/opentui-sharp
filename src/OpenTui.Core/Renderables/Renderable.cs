@@ -1638,7 +1638,8 @@ public abstract class Renderable : EventEmitter
 
     private void SetYogaSizeConstraint(Action<Node, float> setPoint, Action<Node, float> setPercent, DimensionValue dim)
     {
-        if (dim.IsPercent) setPercent(YogaNode, dim.Value);
+        if (dim.IsAuto || dim.IsUndefined) setPoint(YogaNode, float.NaN);
+        else if (dim.IsPercent) setPercent(YogaNode, dim.Value);
         else if (dim.IsPoint) setPoint(YogaNode, dim.Value);
     }
 

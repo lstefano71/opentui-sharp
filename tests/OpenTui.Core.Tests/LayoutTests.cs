@@ -154,6 +154,40 @@ public class LayoutTests
     }
 
     [Fact]
+    public void AutoMaxWidth_ClearsExistingConstraint()
+    {
+        var root = YogaNodeExtensions.CreateLayoutNode();
+        root.ApplyLayoutOptions(new LayoutOptions
+        {
+            Width = 100,
+            Height = 50,
+            FlexDirection = FlexDirectionValue.Column,
+            AlignItems = AlignValue.Stretch,
+        });
+
+        var child = YogaNodeExtensions.CreateLayoutNode();
+        child.ApplyLayoutOptions(new LayoutOptions
+        {
+            Height = 10,
+            MaxWidth = 60,
+        });
+
+        YGNodeAPI.YGNodeInsertChild(root, child, 0);
+        YGNodeAPI.YGNodeCalculateLayout(root, float.NaN, float.NaN, YGDirection.LTR);
+        Assert.Equal(60f, child.GetComputedLayout().Width);
+
+        child.ApplyLayoutOptions(new LayoutOptions
+        {
+            MaxWidth = DimensionValue.Auto,
+        });
+
+        YGNodeAPI.YGNodeCalculateLayout(root, float.NaN, float.NaN, YGDirection.LTR);
+        Assert.Equal(100f, child.GetComputedLayout().Width);
+
+        YGNodeAPI.YGNodeFree(root);
+    }
+
+    [Fact]
     public void Margin_AppliesCorrectly()
     {
         var root = YogaNodeExtensions.CreateLayoutNode();

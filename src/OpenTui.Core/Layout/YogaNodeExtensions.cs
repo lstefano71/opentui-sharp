@@ -100,7 +100,8 @@ public static class YogaNodeExtensions
         Action<Node, float> setPercent,
         DimensionValue dim)
     {
-        if (dim.IsPercent) setPercent(node, dim.Value);
+        if (dim.IsAuto || dim.IsUndefined) setPoint(node, float.NaN);
+        else if (dim.IsPercent) setPercent(node, dim.Value);
         else if (dim.IsPoint) setPoint(node, dim.Value);
     }
 
