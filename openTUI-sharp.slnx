@@ -20,6 +20,7 @@
     <Project Path="samples/MouseInteraction/MouseInteraction.csproj" />
     <Project Path="samples/NestedZIndex/NestedZIndex.csproj" />
     <Project Path="samples/OpacityExample/OpacityExample.csproj" />
+    <Project Path="samples/OpenTuiDemo/OpenTuiDemo.csproj" />
     <Project Path="samples/RelativePositioning/RelativePositioning.csproj" />
     <Project Path="samples/ScrollExample/ScrollExample.csproj" />
     <Project Path="samples/SelectDemo/SelectDemo.csproj" />

@@ -123,6 +123,20 @@ public sealed class CliRendererTests : IDisposable
     }
 
     [Fact]
+    public void SetDebugOverlay_StoresEnabledStateAndCorner()
+    {
+        _renderer.SetDebugOverlay(true, DebugOverlayCorner.BottomRight);
+
+        Assert.True(_renderer.DebugOverlayEnabled);
+        Assert.Equal(DebugOverlayCorner.BottomRight, _renderer.DebugOverlayCorner);
+
+        _renderer.SetDebugOverlay(false, DebugOverlayCorner.BottomRight);
+
+        Assert.False(_renderer.DebugOverlayEnabled);
+        Assert.Equal(DebugOverlayCorner.BottomRight, _renderer.DebugOverlayCorner);
+    }
+
+    [Fact]
     public void Create_HasNonNullBuffers()
     {
         Assert.NotNull(_renderer.NextRenderBuffer);

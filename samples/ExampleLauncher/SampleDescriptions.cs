@@ -28,6 +28,7 @@ internal static class SampleDescriptions
         ["MouseInteraction"] = "Interactive mouse trails and clickable cells demonstration",
         ["NestedZIndex"] = "Z-index behavior with nested render objects",
         ["OpacityExample"] = "Box opacity and transparency effects with animated transitions",
+        ["OpenTuiDemo"] = "Multi-tab demo with various features",
         ["RelativePositioning"] = "Child positions relative to their parent containers",
         ["ScrollExample"] = "Scrollable container with customization",
         ["SelectDemo"] = "Interactive select demo with customizable options",
@@ -50,6 +51,14 @@ internal static class SampleDescriptions
         ["WidgetShowcase"] = "All-in-one widget demo with multiple TUI widgets",
     };
 
+    private static readonly Dictionary<string, string> DisplayNames = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["OpenTuiDemo"] = "OpenTUI Demo",
+    };
+
     public static string Get(string directoryName) =>
         Descriptions.TryGetValue(directoryName, out var desc) ? desc : "";
+
+    public static string GetDisplayName(string directoryName) =>
+        DisplayNames.TryGetValue(directoryName, out var name) ? name : "";
 }

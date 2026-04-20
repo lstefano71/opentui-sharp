@@ -35,7 +35,9 @@ internal static class SampleDiscovery
             if (exePath is null)
                 continue;
 
-            var displayName = FormatDisplayName(dirName);
+            var displayName = SampleDescriptions.GetDisplayName(dirName);
+            if (displayName.Length == 0)
+                displayName = FormatDisplayName(dirName);
             var description = SampleDescriptions.Get(dirName);
             results.Add(new SampleInfo(dirName, displayName, description, exePath));
         }

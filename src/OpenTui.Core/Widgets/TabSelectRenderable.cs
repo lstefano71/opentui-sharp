@@ -200,6 +200,12 @@ public class TabSelectRenderable : Renderable
         HeightDimension = DimensionValue.Point(h);
     }
 
+    protected override void OnResize(int width, int height)
+    {
+        UpdateScrollOffset();
+        base.OnResize(width, height);
+    }
+
     #endregion
 
     #region Keyboard

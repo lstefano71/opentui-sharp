@@ -95,8 +95,8 @@ public sealed class NativeRenderer : IDisposable
         OpenTuiNative.SetRenderOffset(Handle, offset);
 
     /// <summary>Updates the renderer performance statistics.</summary>
-    public void UpdateStats(double frameTime, uint nodeCount, double layoutTime) =>
-        OpenTuiNative.UpdateStats(Handle, frameTime, nodeCount, layoutTime);
+    public void UpdateStats(double frameTime, uint fps, double frameCallbackTime) =>
+        OpenTuiNative.UpdateStats(Handle, frameTime, fps, frameCallbackTime);
 
     /// <summary>Updates the renderer memory usage statistics.</summary>
     public void UpdateMemoryStats(uint heapUsed, uint heapTotal, uint external) =>

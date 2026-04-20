@@ -105,11 +105,11 @@ internal static partial class OpenTuiNative
 
     /// <summary>Updates the renderer performance statistics.</summary>
     /// <param name="renderer">Handle to the renderer instance.</param>
-    /// <param name="frameTime">Time taken for the last frame in seconds.</param>
-    /// <param name="nodeCount">Number of layout nodes processed.</param>
-    /// <param name="layoutTime">Time taken for layout computation in seconds.</param>
+    /// <param name="frameTime">Time taken for the last frame in milliseconds.</param>
+    /// <param name="fps">Current measured frames per second.</param>
+    /// <param name="frameCallbackTime">Time spent running frame callbacks in milliseconds.</param>
     [LibraryImport(LibName, EntryPoint = "updateStats")]
-    internal static partial void UpdateStats(nint renderer, double frameTime, uint nodeCount, double layoutTime);
+    internal static partial void UpdateStats(nint renderer, double frameTime, uint fps, double frameCallbackTime);
 
     /// <summary>Updates the renderer memory usage statistics.</summary>
     /// <param name="renderer">Handle to the renderer instance.</param>

@@ -129,6 +129,13 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private readonly List<DebugInputRecord> _debugInputs = [];
     private readonly object _debugInputsLock = new();
     private bool _debugModeEnabled;
+    private bool _debugOverlayEnabled;
+    private DebugOverlayCorner _debugOverlayCorner = DebugOverlayCorner.TopLeft;
+    private Timer? _memorySnapshotTimer;
+    private int _memorySnapshotIntervalMs;
+    private bool _automaticMemorySnapshot;
+    private readonly object _memorySnapshotLock = new();
+    private (ulong HeapUsed, ulong HeapTotal, ulong External)? _pendingMemorySnapshot;
     private TerminalColors? _cachedPalette;
     private Task<TerminalColors>? _paletteDetectionTask;
 
@@ -275,6 +282,10 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     internal bool? TerminalFocusState => _terminalFocusState;
 
     internal ThemeMode? TerminalThemeMode => _themeMode;
+
+    internal bool DebugOverlayEnabled => _debugOverlayEnabled;
+
+    internal DebugOverlayCorner DebugOverlayCorner => _debugOverlayCorner;
 
     internal bool ShouldRestoreModesOnNextFocus => _shouldRestoreModesOnNextFocus;
 
@@ -482,6 +493,12 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         // Start resize polling timer
         StartResizeWatcher();
 
+        if (_debugOverlayEnabled)
+        {
+            ApplyDebugOverlayState();
+            EnsureDebugMemorySnapshots();
+        }
+
         WriteRaw("\x1b[?2031h\x1b[?2031$p");
     }
 
@@ -515,6 +532,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _inputCts?.Cancel();
         _resizeTimer?.Dispose();
         _resizeTimer = null;
+        _memorySnapshotTimer?.Dispose();
+        _memorySnapshotTimer = null;
 
         if (_useMouse)
             _nativeRenderer.DisableMouse();
@@ -1159,6 +1178,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             // The input thread only pushes raw bytes; we drain parsed events here
             // so all Yoga tree mutations happen on a single thread.
             DrainStdinParser();
+            FlushPendingMemorySnapshot();
 
             _frameId++;
 
@@ -1175,12 +1195,16 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                 _lastFpsTimeMs = nowMs;
             }
 
+            var frameCallbacksStartMs = _clock.Elapsed.TotalMilliseconds;
+
             // Frame callbacks
             foreach (var cb in _frameCallbacks)
             {
                 try { cb(deltaTime).GetAwaiter().GetResult(); }
                 catch { /* swallow */ }
             }
+
+            var frameCallbackTimeMs = _clock.Elapsed.TotalMilliseconds - frameCallbacksStartMs;
 
             if (_splitHeight > 0 && _externalOutputMode == ExternalOutputMode.CaptureStdout)
             {
@@ -1212,6 +1236,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                         // Recheck hover if hit grid changed
                         if (_useMouse && _nativeRenderer.GetHitGridDirty())
                             RecheckHoverState();
+
+                        UpdateDebugStats(nowMs, frameCallbackTimeMs);
 
                         // Schedule next frame if running or immediate requested
                         if (_isRunning || _immediateRerenderRequested)
@@ -1262,6 +1288,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                     // Recheck hover if hit grid changed
                     if (_useMouse && _nativeRenderer.GetHitGridDirty())
                         RecheckHoverState();
+
+                    UpdateDebugStats(nowMs, frameCallbackTimeMs);
 
                     // Schedule next frame if running or immediate requested
                     if (_isRunning || _immediateRerenderRequested)
@@ -1353,6 +1381,23 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     public bool RemoveFrameCallback(Func<float, Task> callback) =>
         _frameCallbacks.Remove(callback);
+
+    public void SetDebugOverlay(bool enabled, DebugOverlayCorner corner = DebugOverlayCorner.TopLeft)
+    {
+        _debugOverlayEnabled = enabled;
+        _debugOverlayCorner = corner;
+
+        if (_terminalIsSetup)
+            ApplyDebugOverlayState();
+
+        if (enabled)
+            EnsureDebugMemorySnapshots();
+        else if (_automaticMemorySnapshot)
+            DisableAutomaticDebugMemorySnapshots();
+
+        Emit(RendererEventNames.DebugOverlayToggle, enabled);
+        RequestRender();
+    }
 
     public void AddPostProcessFn(Action<OptimizedBuffer, float> callback) =>
         _postProcessFns.Add(callback);
@@ -1659,6 +1704,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
             if (_useMouse)
                 _nativeRenderer.EnableMouse();
+
+            if (_debugOverlayEnabled)
+                ApplyDebugOverlayState();
         }
 
         if (emitResize)
@@ -1677,6 +1725,96 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         CurrentRenderBuffer.Clear(_backgroundColor);
         NextRenderBuffer.Clear(_backgroundColor);
         _forceFullRenderPending = true;
+    }
+
+    private void UpdateDebugStats(double frameStartMs, double frameCallbackTimeMs)
+    {
+        double overallFrameTimeMs = _clock.Elapsed.TotalMilliseconds - frameStartMs;
+        _nativeRenderer.UpdateStats(overallFrameTimeMs, (uint)Math.Max(_currentFps, 0), frameCallbackTimeMs);
+    }
+
+    private void FlushPendingMemorySnapshot()
+    {
+        (ulong HeapUsed, ulong HeapTotal, ulong External)? snapshot;
+        lock (_memorySnapshotLock)
+        {
+            snapshot = _pendingMemorySnapshot;
+            _pendingMemorySnapshot = null;
+        }
+
+        if (snapshot is not { } values)
+            return;
+
+        _nativeRenderer.UpdateMemoryStats(
+            (uint)Math.Min(values.HeapUsed, uint.MaxValue),
+            (uint)Math.Min(values.HeapTotal, uint.MaxValue),
+            (uint)Math.Min(values.External, uint.MaxValue));
+
+        Emit<(ulong HeapUsed, ulong HeapTotal, ulong External)>(
+            RendererEventNames.MemorySnapshot,
+            (values.HeapUsed, values.HeapTotal, values.External));
+    }
+
+    private void ApplyDebugOverlayState() =>
+        _nativeRenderer.SetDebugOverlay(_debugOverlayEnabled, _debugOverlayCorner);
+
+    private void EnsureDebugMemorySnapshots()
+    {
+        if (_memorySnapshotIntervalMs <= 0)
+        {
+            _memorySnapshotIntervalMs = 3000;
+            _automaticMemorySnapshot = true;
+        }
+
+        StartMemorySnapshotTimer();
+        TakeMemorySnapshot();
+    }
+
+    private void DisableAutomaticDebugMemorySnapshots()
+    {
+        _memorySnapshotTimer?.Dispose();
+        _memorySnapshotTimer = null;
+        _memorySnapshotIntervalMs = 0;
+        _automaticMemorySnapshot = false;
+    }
+
+    private void StartMemorySnapshotTimer()
+    {
+        _memorySnapshotTimer?.Dispose();
+
+        if (_memorySnapshotIntervalMs <= 0 || _config.Testing)
+            return;
+
+        _memorySnapshotTimer = new Timer(
+            _ => TakeMemorySnapshot(),
+            null,
+            _memorySnapshotIntervalMs,
+            _memorySnapshotIntervalMs);
+    }
+
+    private void TakeMemorySnapshot()
+    {
+        var gcInfo = GC.GetGCMemoryInfo();
+        ulong heapUsed = (ulong)Math.Max(0, GC.GetTotalMemory(false));
+        ulong heapTotal = (ulong)Math.Max(0, gcInfo.HeapSizeBytes);
+
+        ulong external = 0;
+        try
+        {
+            using var process = Process.GetCurrentProcess();
+            ulong privateBytes = (ulong)Math.Max(0, process.PrivateMemorySize64);
+            external = privateBytes > heapTotal ? privateBytes - heapTotal : 0;
+        }
+        catch
+        {
+            external = 0;
+        }
+
+        lock (_memorySnapshotLock)
+            _pendingMemorySnapshot = (heapUsed, heapTotal, external);
+
+        if (!_config.Testing)
+            RequestRender();
     }
 
     public void ClearPaletteCache() => _cachedPalette = null;
