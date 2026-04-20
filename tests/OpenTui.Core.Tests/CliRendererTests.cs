@@ -1275,5 +1275,41 @@ public sealed class CliRendererTests : IDisposable
         Assert.True(_renderer.IsDestroyed);
     }
 
+    [Fact]
+    public async Task RequestRender_WorksAfterStartThenPause_WithAsyncScheduler()
+    {
+        using var renderer = CreateAsyncSchedulerRenderer();
+
+        renderer.Start();
+        renderer.Pause();
+
+        // After Start+Pause the renderer is explicitly paused, but
+        // RequestRender() should still schedule an idle one-shot frame.
+        renderer.RequestRender();
+
+        await WaitForConditionAsync(() => renderer.FrameId > 0);
+        Assert.True(renderer.FrameId >= 1, $"Expected at least 1 frame, got {renderer.FrameId}");
+    }
+
+    [Fact]
+    public async Task RequestRender_MultipleCallsAfterStartPause_WithAsyncScheduler()
+    {
+        using var renderer = CreateAsyncSchedulerRenderer();
+
+        renderer.Start();
+        renderer.Pause();
+
+        // Simulate the pattern: event triggers RequestRender, frame renders,
+        // then another event triggers RequestRender again.
+        renderer.RequestRender();
+        await WaitForConditionAsync(() => renderer.FrameId > 0);
+
+        var firstFrameId = renderer.FrameId;
+        renderer.RequestRender();
+        await WaitForConditionAsync(() => renderer.FrameId > firstFrameId);
+
+        Assert.True(renderer.FrameId >= 2, $"Expected at least 2 frames, got {renderer.FrameId}");
+    }
+
     #endregion
 }
