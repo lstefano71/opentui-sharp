@@ -11,32 +11,36 @@ if (samples.Count == 0)
 }
 
 int lastSelectedIndex = 0;
+using var renderer = CliRenderer.Create(new CliRendererConfig
+{
+    ExitOnCtrlC = false,
+    TargetFps = 30,
+});
+
+renderer.SetBackgroundColor(Rgba.Transparent);
+renderer.Start();
 
 while (true)
 {
-    using var renderer = CliRenderer.Create(new CliRendererConfig
-    {
-        ExitOnCtrlC = false,
-        TargetFps = 30,
-    });
-
-    renderer.SetBackgroundColor(Rgba.Transparent);
-
     var selector = new ExampleSelector(renderer, samples, lastSelectedIndex);
     var selected = await selector.WaitForSelectionAsync();
-
-    renderer.Destroy();
 
     if (selected is null)
         break; // User pressed Ctrl+C — exit
 
     lastSelectedIndex = samples.IndexOf(selected);
 
-    // Small delay to let the terminal restore
-    await Task.Delay(50);
+    // Suspend the renderer (tears down terminal I/O) while the sub-process runs
+    renderer.Suspend();
 
     ExampleSelector.RunSample(selected);
 
-    // Small delay before re-showing the menu
-    await Task.Delay(100);
+    // Resume the renderer (restores terminal I/O and forces full repaint)
+    renderer.Resume();
+
+    // Reset for next menu cycle
+    selector.Cleanup();
+    renderer.SetBackgroundColor(Rgba.Transparent);
 }
+
+renderer.Stop();

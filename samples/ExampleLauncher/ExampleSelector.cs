@@ -20,6 +20,7 @@ internal sealed class ExampleSelector
     private TextareaRenderable _filterInput = null!;
     private BoxRenderable _selectBox = null!;
     private SelectRenderable _selectElement = null!;
+    private TimeToFirstDrawRenderable _timeToFirstDraw = null!;
     private TextRenderable _instructions = null!;
 
     // Theme colors (dark mode — matches TS MENU_THEMES.dark)
@@ -53,6 +54,16 @@ internal sealed class ExampleSelector
     /// Waits until the user selects a sample or quits (returns null).
     /// </summary>
     public Task<SampleInfo?> WaitForSelectionAsync() => _selectedTcs.Task;
+
+    /// <summary>
+    /// Removes all menu elements from the renderer tree so the next
+    /// ExampleSelector can build a fresh layout on the same renderer.
+    /// </summary>
+    public void Cleanup()
+    {
+        _menuContainer.Destroy();
+        _timeToFirstDraw.Reset();
+    }
 
     private void CreateLayout()
     {
@@ -167,6 +178,14 @@ internal sealed class ExampleSelector
                 if (args.Option is { } opt) OnItemSelected(opt);
             });
 
+        // Time-to-first-draw diagnostic (matches TS launcher)
+        _timeToFirstDraw = new TimeToFirstDrawRenderable(_renderer, new TimeToFirstDrawOptions
+        {
+            Id = "time-to-first-draw",
+            Fg = InstructionsColor,
+        });
+        _menuContainer.Add(_timeToFirstDraw);
+
         // Instructions bar
         _instructions = new TextRenderable(_renderer, new TextOptions
         {
@@ -187,6 +206,19 @@ internal sealed class ExampleSelector
             if (key is { Name: "c", Ctrl: true })
             {
                 _selectedTcs.TrySetResult(null);
+                return;
+            }
+
+            // Ctrl+Z: suspend renderer (auto-resume after 5 seconds, matching TS launcher)
+            if (key is { Name: "z", Ctrl: true })
+            {
+                _renderer.Suspend();
+                Console.WriteLine("Renderer suspended. Resuming in 5 seconds...");
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(5000);
+                    _renderer.Resume();
+                });
                 return;
             }
 

@@ -1119,6 +1119,18 @@ public abstract class Renderable : EventEmitter
     }
 
     /// <summary>
+    /// Instantiates a VNode and adds the resulting renderable as a child.
+    /// </summary>
+    /// <param name="vnode">The virtual node to instantiate.</param>
+    /// <param name="index">Optional insertion index.</param>
+    /// <returns>The index at which the child was inserted.</returns>
+    public int Add(VNode vnode, int? index = null)
+    {
+        var renderable = VNodeRuntime.Instantiate(_ctx, vnode);
+        return Add(renderable, index);
+    }
+
+    /// <summary>
     /// Performs insert before.
     /// </summary>
     /// <param name="obj">The obj.</param>
