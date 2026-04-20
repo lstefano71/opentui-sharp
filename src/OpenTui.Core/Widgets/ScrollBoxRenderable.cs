@@ -96,6 +96,7 @@ public class ScrollBoxRenderable : BoxRenderable
         : base(ctx, options ?? new ScrollBoxOptions())
     {
         options ??= new ScrollBoxOptions();
+        Focusable = true;
         _scrollX = options.ScrollX;
         _scrollY = options.ScrollY;
         _stickyScroll = options.StickyScroll;

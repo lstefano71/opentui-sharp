@@ -447,4 +447,44 @@ public sealed class ScrollBoxRenderableTests : IDisposable
     }
 
     #endregion
+
+    #region Focus
+
+    [Fact]
+    public void ScrollBox_IsFocusableByDefault()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "focusable-test",
+            ScrollY = true,
+        });
+        _renderer.Root.Add(scrollBox);
+
+        Assert.True(scrollBox.Focusable, "ScrollBoxRenderable should be focusable by default");
+    }
+
+    [Fact]
+    public void ScrollBox_Focus_ReceivesKeyEvents()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "focus-key-test",
+            ScrollY = true,
+            FlexGrow = 1,
+        });
+
+        var content = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "tall-content",
+            Height = DimensionValue.Point(100),
+        });
+        scrollBox.Add(content);
+        _renderer.Root.Add(scrollBox);
+        RenderFrame();
+
+        scrollBox.Focus();
+        Assert.True(scrollBox.Focused, "ScrollBox should be focused after Focus() call");
+    }
+
+    #endregion
 }
