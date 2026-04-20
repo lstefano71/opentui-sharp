@@ -39,11 +39,11 @@ public class LineNumberOptions : RenderableOptions
     /// <summary>
     /// Gets or sets the min width.
     /// </summary>
-    public int MinWidth { get; init; } = 3;
+    public new int MinWidth { get; init; } = 3;
     /// <summary>
     /// Gets or sets the padding right.
     /// </summary>
-    public int PaddingRight { get; init; } = 1;
+    public new int PaddingRight { get; init; } = 1;
     /// <summary>
     /// Gets or sets the line number offset.
     /// </summary>

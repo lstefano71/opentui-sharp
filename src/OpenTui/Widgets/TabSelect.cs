@@ -24,6 +24,9 @@ public class TabSelect<T> : Widget
     /// <summary>Raised when the user selects a tab.</summary>
     public event Action<SelectOption<T>>? OnSelect;
 
+    /// <summary>Raises the <see cref="OnSelect"/> event.</summary>
+    protected void RaiseSelect(SelectOption<T> option) => OnSelect?.Invoke(option);
+
     /// <inheritdoc />
     protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {

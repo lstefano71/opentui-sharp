@@ -6,7 +6,7 @@ namespace OpenTui.Core;
 /// Container renderable with optional border, background fill, and title.
 /// Matches TypeScript BoxRenderable from Box.ts.
 ///
-/// The actual pixel drawing is delegated entirely to <see cref="OptimizedBuffer.DrawBox"/>.
+/// The actual pixel drawing is delegated entirely to <see cref="OptimizedBuffer.DrawBox(int, int, uint, uint, BoxDrawOptions?)"/>.
 /// This class decides *what* to draw: which colors, which sides, whether to fill.
 /// </summary>
 public class BoxRenderable : Renderable

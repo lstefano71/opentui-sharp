@@ -138,7 +138,7 @@ public class TabSelectRenderable : Renderable
 
         _backgroundColor = options.BackgroundColor ?? Rgba.Transparent;
         _textColor = options.TextColor ?? Rgba.FromInts(255, 255, 255);
-        _focusedBackgroundColor = options.FocusedBackgroundColor ?? _backgroundColor;
+        _focusedBackgroundColor = options.FocusedBackgroundColor ?? options.BackgroundColor ?? Rgba.FromHex("#1a1a1a");
         _focusedTextColor = options.FocusedTextColor ?? _textColor;
         _selectedBackgroundColor = options.SelectedBackgroundColor ?? Rgba.FromHex("#334455");
         _selectedTextColor = options.SelectedTextColor ?? Rgba.FromHex("#FFFF00");
@@ -162,7 +162,7 @@ public class TabSelectRenderable : Renderable
         {
             _options = value;
             _selectedIndex = Math.Clamp(_selectedIndex, 0, Math.Max(0, value.Length - 1));
-            _scrollOffset = 0;
+            UpdateScrollOffset();
             RequestRender();
         }
     }
@@ -182,7 +182,7 @@ public class TabSelectRenderable : Renderable
     public int TabWidth
     {
         get => _tabWidth;
-        set { _tabWidth = value; RequestRender(); }
+        set { _tabWidth = value; UpdateScrollOffset(); RequestRender(); }
     }
 
     /// <summary>
@@ -221,6 +221,55 @@ public class TabSelectRenderable : Renderable
         set => _wrapSelection = value;
     }
 
+    /// <summary>Gets or sets the background color.</summary>
+    public Rgba BackgroundColor
+    {
+        get => _backgroundColor;
+        set { _backgroundColor = value; RequestRender(); }
+    }
+
+    /// <summary>Gets or sets the text color.</summary>
+    public Rgba TextColor
+    {
+        get => _textColor;
+        set { _textColor = value; RequestRender(); }
+    }
+
+    /// <summary>Gets or sets the focused background color.</summary>
+    public Rgba FocusedBackgroundColor
+    {
+        get => _focusedBackgroundColor;
+        set { _focusedBackgroundColor = value; RequestRender(); }
+    }
+
+    /// <summary>Gets or sets the focused text color.</summary>
+    public Rgba FocusedTextColor
+    {
+        get => _focusedTextColor;
+        set { _focusedTextColor = value; RequestRender(); }
+    }
+
+    /// <summary>Gets or sets the selected background color.</summary>
+    public Rgba SelectedBackgroundColor
+    {
+        get => _selectedBackgroundColor;
+        set { _selectedBackgroundColor = value; RequestRender(); }
+    }
+
+    /// <summary>Gets or sets the selected text color.</summary>
+    public Rgba SelectedTextColor
+    {
+        get => _selectedTextColor;
+        set { _selectedTextColor = value; RequestRender(); }
+    }
+
+    /// <summary>Gets or sets the selected description color.</summary>
+    public Rgba SelectedDescriptionColor
+    {
+        get => _selectedDescriptionColor;
+        set { _selectedDescriptionColor = value; RequestRender(); }
+    }
+
     #endregion
 
     #region Selection
@@ -245,7 +294,9 @@ public class TabSelectRenderable : Renderable
     public void SetSelectedIndex(int index)
     {
         if (_options.Length == 0) return;
-        _selectedIndex = Math.Clamp(index, 0, _options.Length - 1);
+        int clamped = Math.Clamp(index, 0, _options.Length - 1);
+        if (clamped == _selectedIndex) return;
+        _selectedIndex = clamped;
         UpdateScrollOffset();
         Emit<(int Index, TabSelectOption? Option)>(Events.SelectionChanged,
             (_selectedIndex, GetSelectedOption()));
@@ -259,8 +310,8 @@ public class TabSelectRenderable : Renderable
     {
         if (_options.Length == 0) return;
         var next = _selectedIndex - 1;
-        if (_wrapSelection && next < 0)
-            next = _options.Length - 1;
+        if (next < 0)
+            next = _wrapSelection ? _options.Length - 1 : 0;
         SetSelectedIndex(next);
     }
 
@@ -271,8 +322,8 @@ public class TabSelectRenderable : Renderable
     {
         if (_options.Length == 0) return;
         var next = _selectedIndex + 1;
-        if (_wrapSelection && next >= _options.Length)
-            next = 0;
+        if (next >= _options.Length)
+            next = _wrapSelection ? 0 : _options.Length - 1;
         SetSelectedIndex(next);
     }
 
@@ -281,11 +332,13 @@ public class TabSelectRenderable : Renderable
     /// </summary>
     public void SelectCurrent()
     {
+        var selected = GetSelectedOption();
+        if (selected is null) return;
         Emit<(int Index, TabSelectOption? Option)>(Events.ItemSelected,
-            (_selectedIndex, GetSelectedOption()));
+            (_selectedIndex, selected));
     }
 
-    private int MaxVisibleTabs => _widthValue > 0 && _tabWidth > 0 ? _widthValue / _tabWidth : 0;
+    private int MaxVisibleTabs => _widthValue > 0 && _tabWidth > 0 ? Math.Max(1, _widthValue / _tabWidth) : 1;
 
     private void UpdateScrollOffset()
     {
@@ -383,7 +436,8 @@ public class TabSelectRenderable : Renderable
             if (isSelected && _showUnderline && _heightValue >= 2)
             {
                 string underline = new('▬', actualTabWidth);
-                buffer.DrawText(underline, (uint)tabX, (uint)(startY + 1), _selectedTextColor);
+                var underlineBg = isSelected ? _selectedBackgroundColor : bgColor;
+                buffer.DrawText(underline, (uint)tabX, (uint)(startY + 1), nameColor, underlineBg);
             }
         }
 

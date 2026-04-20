@@ -422,7 +422,7 @@ public sealed class TextBuffer : IDisposable
     /// <summary>Sets the syntax style used for rendering.</summary>
     /// <param name="syntaxStyleHandle">
     /// Handle to the syntax style, or <see cref="nint.Zero"/> to clear.
-    /// Obtain from <see cref="SyntaxStyleHandle.DangerousGetHandle"/>.
+    /// Obtain from <see cref="System.Runtime.InteropServices.SafeHandle.DangerousGetHandle"/>.
     /// </param>
     public void SetSyntaxStyle(nint syntaxStyleHandle) =>
         OpenTuiNative.TextBufferSetSyntaxStyle(Handle, syntaxStyleHandle);

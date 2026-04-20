@@ -289,7 +289,7 @@ public class ScrollBoxRenderable : BoxRenderable
     #region Child Management (delegates to content)
 
     /// <inheritdoc />
-    public override int Add(Renderable child, int? index = null)
+    public override int Add(Renderable? child, int? index = null)
     {
         return _content.Add(child, index);
     }

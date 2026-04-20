@@ -24,6 +24,9 @@ public class TextArea : Widget
     /// <summary>Raised when the text value changes.</summary>
     public event Action<string>? OnChange;
 
+    /// <summary>Raises the <see cref="OnChange"/> event.</summary>
+    protected void RaiseChange(string text) => OnChange?.Invoke(text);
+
     /// <inheritdoc />
     protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {

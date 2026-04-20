@@ -35,7 +35,7 @@ public sealed class BaseRenderableTests : IDisposable
     public void TextNodeRenderable_Is_Not_Renderable()
     {
         var node = new TextNodeRenderable();
-        Assert.False(node is Renderable);
+        Assert.False(typeof(Renderable).IsAssignableFrom(node.GetType()));
     }
 
     [Fact]

@@ -463,7 +463,7 @@ public sealed class CliRendererTests : IDisposable
 
         var colors = await paletteTask;
 
-        Assert.Equal(["#112233", "#445566"], colors.Palette);
+        Assert.Equal(new string?[] { "#112233", "#445566" }, colors.Palette);
         Assert.Equal("#abcdef", colors.DefaultForeground);
         Assert.Equal("#123456", colors.DefaultBackground);
         Assert.Equal("#654321", colors.CursorColor);

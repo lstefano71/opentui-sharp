@@ -30,6 +30,9 @@ public class Table : Widget
     /// <summary>Raised when a row is selected by the user.</summary>
     public event Action<int>? OnRowSelected;
 
+    /// <summary>Raises the <see cref="OnRowSelected"/> event.</summary>
+    protected void RaiseRowSelected(int rowIndex) => OnRowSelected?.Invoke(rowIndex);
+
     /// <inheritdoc />
     protected internal override void Draw(NativeBuffer buffer, int offsetX, int offsetY)
     {

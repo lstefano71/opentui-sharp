@@ -25,7 +25,7 @@ internal static partial class OpenTuiNative
             return nint.Zero;
 
         // Try the standard runtime-specific path first
-        var assemblyDir = Path.GetDirectoryName(assembly.Location) ?? ".";
+        var assemblyDir = AppContext.BaseDirectory;
         var rid = RuntimeInformation.RuntimeIdentifier;
         var candidate = Path.Combine(assemblyDir, "runtimes", rid, "native", $"{LibName}.dll");
 

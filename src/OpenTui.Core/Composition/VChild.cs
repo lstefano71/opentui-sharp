@@ -8,7 +8,9 @@ public abstract class VChild
 {
     private VChild() { }
 
+    /// <summary>Converts a <see cref="VNode"/> to a <see cref="VChild"/>.</summary>
     public static implicit operator VChild(VNode node) => new OfVNode(node);
+    /// <summary>Converts a <see cref="Renderable"/> to a <see cref="VChild"/>.</summary>
     public static implicit operator VChild(Renderable renderable) => new OfRenderable(renderable);
 
     internal sealed class OfVNode(VNode node) : VChild { public VNode Node => node; }

@@ -128,7 +128,7 @@ public class TextBufferRenderable : Renderable
     /// <summary>
     /// Gets or sets the selectable.
     /// </summary>
-    public bool Selectable
+    public new bool Selectable
     {
         get => _selectable;
         set

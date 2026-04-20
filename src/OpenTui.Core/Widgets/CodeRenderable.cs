@@ -162,7 +162,7 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
     /// <summary>
     /// Gets the line count.
     /// </summary>
-    public int LineCount
+    public new int LineCount
     {
         get
         {

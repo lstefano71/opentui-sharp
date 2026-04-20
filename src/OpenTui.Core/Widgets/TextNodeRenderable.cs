@@ -43,7 +43,7 @@ public class TextNodeRenderable : BaseRenderable
     /// <summary>
     /// Gets or sets the parent.
     /// </summary>
-    public new TextNodeRenderable? Parent { get; internal set; }
+    public TextNodeRenderable? Parent { get; internal set; }
 
     /// <summary>
     /// Initializes a new instance of the TextNodeRenderable class.

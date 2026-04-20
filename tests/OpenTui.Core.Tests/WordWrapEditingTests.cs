@@ -30,7 +30,7 @@ public class WordWrapEditingTests
         eb.SetText("hello my good");
 
         var info = view.GetLineInfo();
-        Assert.Equal(1, info.LineWidthCols.Length);
+        Assert.Single(info.LineWidthCols);
 
         eb.SetCursor(0, 13);
         eb.InsertText(" friend");
@@ -61,7 +61,7 @@ public class WordWrapEditingTests
             eb.DeleteCharBackward();
 
         info = view.GetLineInfo();
-        Assert.Equal(1, info.LineWidthCols.Length);
+        Assert.Single(info.LineWidthCols);
 
         eb.InsertText(" friend");
 
