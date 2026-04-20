@@ -27,6 +27,7 @@ Use this layer when you want to:
 | [Renderable tree and layout](./concepts/renderable-tree-and-layout.md) | Tree composition, Yoga layout options, z-index, visibility, buffering |
 | [Text, styling, and selection](./concepts/text-styling-and-selection.md) | `StyledText`, text renderables, selection behavior, text buffers |
 | [Input and events](./concepts/input-and-events.md) | Keyboard, mouse, paste, focus, and event propagation |
+| [Plugins and slots](./concepts/plugins-and-slots.md) | Plugin slot system for dynamic, composable UI extension points |
 | [How-to guides](./how-to/build-a-split-footer-console.md) | Task-oriented recipes for console overlays, forms, editing, and selection |
 | [Reference](./reference/renderer.md) | Subsystem reference pages covering the full public API surface |
 
@@ -42,6 +43,7 @@ The reference set is organized by subsystem instead of by raw source file:
 - [Editor and buffers](./reference/editor-and-buffers.md)
 - [Animation](./reference/animation.md)
 - [Native and terminal interop](./reference/native-and-terminal-interop.md)
+- [Plugins](./reference/plugins.md)
 - [Shared types and enums](./reference/shared-types-and-enums.md)
 
 ## Recommended reading order

@@ -13,6 +13,7 @@ internal static class SampleDescriptions
         ["CliDemo"] = "Inline CLI widgets: tables, panels, figlet text, rules, progress bars",
         ["CodeDemo"] = "Code viewer with line numbers, diff highlights, and diagnostics",
         ["ConsoleDemo"] = "Interactive console logging with clickable buttons for log levels",
+        ["CorePluginSlots"] = "Core plugin slot system — dynamic plugin registration, slot modes, lifecycle hooks, and error handling",
         ["DiffDemo"] = "Unified and split diff views with syntax highlighting and themes",
         ["EditorDemo"] = "Interactive text editor with full editing capabilities",
         ["ExtmarksDemo"] = "Virtual extmarks — text ranges the cursor jumps over, with deletion handling",
