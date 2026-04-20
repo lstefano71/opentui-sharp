@@ -7,11 +7,7 @@ using var renderer = CliRenderer.Create(new CliRendererConfig
     BackgroundColor = Rgba.FromInts(0, 17, 34, 255),
 });
 
-// Matches TS: start() then pause() — the demo is frame-callback-driven
-renderer.Start();
-renderer.Pause();
-
-var exitTcs = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+var exitTcs= new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 renderer.On(RendererEventNames.Destroy, () => exitTcs.TrySetResult());
 
 string[] graphemeLines =

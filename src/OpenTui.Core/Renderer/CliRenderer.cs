@@ -63,6 +63,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private RendererControlState _controlState = RendererControlState.Idle;
     private RendererControlState _previousControlState = RendererControlState.Idle;
     private volatile bool _inputSuspended;
+    private Stream? _stdinStream;
+    private int _inputGeneration;
     private int _renderRequestSuspensionCount;
     private bool _deferredRenderRequested;
     private Timer? _renderTimer;
@@ -577,7 +579,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         if (!_terminalIsSetup) return;
         _terminalIsSetup = false;
 
-        _inputCts?.Cancel();
+        StopInputLoop();
         _resizeTimer?.Dispose();
         _resizeTimer = null;
         _memorySnapshotTimer?.Dispose();
@@ -612,6 +614,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     {
         _inputSuspended = true;
 
+        // Stop the input thread so sub-processes get exclusive stdin access.
+        StopInputLoop();
+
         if (_useMouse)
             _nativeRenderer.DisableMouse();
 
@@ -643,6 +648,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
 
         _inputSuspended = false;
+
+        // Restart the input thread (new CTS, stdin stream, thread)
+        StartInputLoop();
     }
 
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
@@ -714,9 +722,33 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _inputThread.Start();
     }
 
+    /// <summary>
+    /// Stops the input loop, closing the stdin stream to unblock pending reads.
+    /// After this call, the input thread is guaranteed to have exited (or timed out).
+    /// Used by both Suspend and TeardownTerminal.
+    /// </summary>
+    private void StopInputLoop()
+    {
+        _inputCts?.Cancel();
+
+        // Bump generation so the exiting thread's finally block won't null out a
+        // future thread's _stdinStream reference.
+        ++_inputGeneration;
+
+        // Close the stdin stream to unblock a pending Read() call.
+        try { _stdinStream?.Close(); } catch { /* stream may already be closed */ }
+
+        _inputThread?.Join(TimeSpan.FromMilliseconds(500));
+        _inputThread = null;
+        _inputCts?.Dispose();
+        _inputCts = null;
+    }
+
     private void ReadInputLoop(CancellationToken ct)
     {
+        var myGeneration = _inputGeneration;
         var stdin = System.Console.OpenStandardInput();
+        _stdinStream = stdin;
         var buffer = new byte[4096];
 
         try
@@ -754,6 +786,13 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         catch
         {
             // Input loop terminated
+        }
+        finally
+        {
+            // Only clear if we're still the current generation — prevents a late
+            // exit from wiping out a newer thread's stream reference.
+            if (_inputGeneration == myGeneration)
+                _stdinStream = null;
         }
     }
 
@@ -1464,12 +1503,28 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _currentFps = 0;
         _renderTimer?.Dispose();
         _renderTimer = null;
-        _renderTimer = new Timer(_ => Loop(), null, 1, Timeout.Infinite);
+
+        // Use version check so InternalPause() can invalidate this callback
+        // even if it was already queued to the thread pool before Dispose().
+        var loopVersion = ++_renderScheduleVersion;
+        _renderTimer = new Timer(
+            _ =>
+            {
+                if (loopVersion != _renderScheduleVersion)
+                    return;
+
+                Loop();
+            },
+            null,
+            1,
+            Timeout.Infinite);
     }
 
     private void InternalPause()
     {
         _isRunning = false;
+        // Invalidate any pending InternalStart() timer callback.
+        ++_renderScheduleVersion;
         _renderTimer?.Dispose();
         _renderTimer = null;
     }

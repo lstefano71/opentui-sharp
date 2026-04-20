@@ -22,6 +22,7 @@ internal sealed class ExampleSelector
     private SelectRenderable _selectElement = null!;
     private TimeToFirstDrawRenderable _timeToFirstDraw = null!;
     private TextRenderable _instructions = null!;
+    private IDisposable? _keySubscription;
 
     // Theme colors (dark mode — matches TS MENU_THEMES.dark)
     private static readonly Rgba TitleColor = Rgba.FromInts(240, 248, 255, 255);
@@ -61,6 +62,8 @@ internal sealed class ExampleSelector
     /// </summary>
     public void Cleanup()
     {
+        _keySubscription?.Dispose();
+        _keySubscription = null;
         _menuContainer.Destroy();
         _timeToFirstDraw.Reset();
     }
@@ -201,7 +204,7 @@ internal sealed class ExampleSelector
 
     private void SetupKeyboard()
     {
-        _renderer.KeyInput.On<KeyEvent>(KeyHandlerEvents.Keypress, key =>
+        _keySubscription = _renderer.KeyInput.On<KeyEvent>(KeyHandlerEvents.Keypress, key =>
         {
             if (key is { Name: "c", Ctrl: true })
             {
