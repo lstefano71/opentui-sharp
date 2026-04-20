@@ -278,6 +278,18 @@ public class SelectRenderable : BoxRenderable
     /// <inheritdoc />
     protected override void OnMouseEvent(UiMouseEvent evt)
     {
+        if (evt.Type == MouseEventType.Scroll)
+        {
+            if (_options.Length == 0) return;
+            var direction = evt.Scroll?.Direction;
+            if (direction == "up")
+                MoveUp(1);
+            else if (direction == "down")
+                MoveDown(1);
+            evt.StopPropagation();
+            return;
+        }
+
         if (evt.Type != MouseEventType.Down || evt.Button != (int)MouseButton.Left)
             return;
         if (_options.Length == 0) return;

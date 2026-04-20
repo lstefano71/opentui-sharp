@@ -189,4 +189,100 @@ public sealed class SelectRenderableTests : IDisposable
         Assert.Equal(1, emitted.Value.Index);
         Assert.Equal("Beta", emitted.Value.Option?.Name);
     }
+
+    [Fact]
+    public void MouseScroll_Down_MovesSelectionDown()
+    {
+        var select = new SelectRenderable(_renderer, new SelectOptions
+        {
+            Id = "scroll-down",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(5),
+            Border = true,
+            ShowDescription = false,
+            Options =
+            [
+                new() { Name = "Alpha" },
+                new() { Name = "Beta" },
+                new() { Name = "Gamma" },
+            ],
+        });
+
+        _renderer.Root.Add(select);
+        RenderFrame();
+
+        Assert.Equal(0, select.SelectedIndex);
+
+        select.ProcessMouseEvent(new UiMouseEvent
+        {
+            Type = MouseEventType.Scroll,
+            Scroll = new ScrollInfo("down", 1),
+            X = (int)select.ScreenX + 2,
+            Y = (int)select.ScreenY + 2,
+        });
+
+        Assert.Equal(1, select.SelectedIndex);
+    }
+
+    [Fact]
+    public void MouseScroll_Up_MovesSelectionUp()
+    {
+        var select = new SelectRenderable(_renderer, new SelectOptions
+        {
+            Id = "scroll-up",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(5),
+            Border = true,
+            ShowDescription = false,
+            Options =
+            [
+                new() { Name = "Alpha" },
+                new() { Name = "Beta" },
+                new() { Name = "Gamma" },
+            ],
+        });
+
+        _renderer.Root.Add(select);
+        select.SetSelectedIndex(2);
+        RenderFrame();
+
+        Assert.Equal(2, select.SelectedIndex);
+
+        select.ProcessMouseEvent(new UiMouseEvent
+        {
+            Type = MouseEventType.Scroll,
+            Scroll = new ScrollInfo("up", 1),
+            X = (int)select.ScreenX + 2,
+            Y = (int)select.ScreenY + 2,
+        });
+
+        Assert.Equal(1, select.SelectedIndex);
+    }
+
+    [Fact]
+    public void MouseScroll_StopsPropagation()
+    {
+        var select = new SelectRenderable(_renderer, new SelectOptions
+        {
+            Id = "scroll-propagation",
+            Width = DimensionValue.Point(20),
+            Height = DimensionValue.Point(5),
+            Border = true,
+            Options = [new() { Name = "Alpha" }, new() { Name = "Beta" }],
+        });
+
+        _renderer.Root.Add(select);
+        RenderFrame();
+
+        var evt = new UiMouseEvent
+        {
+            Type = MouseEventType.Scroll,
+            Scroll = new ScrollInfo("down", 1),
+            X = (int)select.ScreenX + 2,
+            Y = (int)select.ScreenY + 2,
+        };
+
+        select.ProcessMouseEvent(evt);
+        Assert.True(evt.IsPropagationStopped);
+    }
 }
