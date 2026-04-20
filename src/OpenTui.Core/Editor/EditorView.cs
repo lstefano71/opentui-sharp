@@ -195,7 +195,7 @@ public sealed class EditorView : IDisposable
     #region Selection
 
     /// <summary>Sets the selection range by character offsets with optional selection colors.</summary>
-    public void SetSelection(uint start, uint end, Rgba? selFg = null, Rgba? selBg = null) =>
+    public void SetSelection(uint start, uint end, Rgba? selBg = null, Rgba? selFg = null) =>
         RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
             OpenTuiNative.EditorViewSetSelection(Handle, start, end, bgPtr, fgPtr));
 

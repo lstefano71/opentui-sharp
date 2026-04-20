@@ -932,8 +932,8 @@ public class TextTableRenderable : Renderable
                         coords.AnchorY,
                         coords.FocusX,
                         coords.FocusY,
-                        _selectionFg,
-                        _selectionBg);
+                        _selectionBg,
+                        _selectionFg);
                 }
                 else
                 {
@@ -942,8 +942,8 @@ public class TextTableRenderable : Renderable
                         coords.AnchorY,
                         coords.FocusX,
                         coords.FocusY,
-                        _selectionFg,
-                        _selectionBg);
+                        _selectionBg,
+                        _selectionFg);
                 }
             }
         }

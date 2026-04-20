@@ -94,3 +94,5 @@ When a bug gets fixed, a non regression test should be added to the test suite.
 for quick one-off experiments, remember file based apps in .NET 10: https://learn.microsoft.com/en-us/dotnet/core/sdk/file-based-apps
 
 The examples directory contains a bunch of small demo apps which exercise different parts of the library. Most of the have equivalents in the reference implementation.
+
+Remember that we are targeting AOT and high performance, so prefer value types and structs when possible in the core library, and avoid unnecessary heap allocations. Span<T> and stackalloc are your friends for temporary buffers.

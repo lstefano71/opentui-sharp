@@ -80,9 +80,9 @@ public sealed class TextBufferView : IDisposable
     #region Selection
 
     /// <summary>Sets the text selection by character offsets with selection colors.</summary>
-    public void SetSelection(uint startOffset, uint endOffset, Rgba? selFg = null, Rgba? selBg = null) =>
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            OpenTuiNative.TextBufferViewSetSelection(Handle, startOffset, endOffset, fgPtr, bgPtr));
+    public void SetSelection(uint startOffset, uint endOffset, Rgba? selBg = null, Rgba? selFg = null) =>
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            OpenTuiNative.TextBufferViewSetSelection(Handle, startOffset, endOffset, bgPtr, fgPtr));
 
     /// <summary>Resets (clears) the current selection.</summary>
     public void ResetSelection() =>
@@ -112,11 +112,11 @@ public sealed class TextBufferView : IDisposable
     public bool HasSelection() => GetSelectionRange() is not null;
 
     /// <summary>Sets a local (visual coordinate) selection with selection colors.</summary>
-    public bool SetLocalSelection(int startX, int startY, int endX, int endY, Rgba? selFg = null, Rgba? selBg = null)
+    public bool SetLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
     {
         bool result = false;
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            result = OpenTuiNative.TextBufferViewSetLocalSelection(Handle, startX, startY, endX, endY, fgPtr, bgPtr));
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            result = OpenTuiNative.TextBufferViewSetLocalSelection(Handle, startX, startY, endX, endY, bgPtr, fgPtr));
         return result;
     }
 
@@ -125,18 +125,18 @@ public sealed class TextBufferView : IDisposable
         OpenTuiNative.TextBufferViewResetLocalSelection(Handle);
 
     /// <summary>Updates the local (visual coordinate) selection extent.</summary>
-    public bool UpdateLocalSelection(int startX, int startY, int endX, int endY, Rgba? selFg = null, Rgba? selBg = null)
+    public bool UpdateLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
     {
         bool result = false;
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            result = OpenTuiNative.TextBufferViewUpdateLocalSelection(Handle, startX, startY, endX, endY, fgPtr, bgPtr));
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            result = OpenTuiNative.TextBufferViewUpdateLocalSelection(Handle, startX, startY, endX, endY, bgPtr, fgPtr));
         return result;
     }
 
     /// <summary>Updates the end offset of the current selection.</summary>
-    public void UpdateSelection(uint newEnd, Rgba? selFg = null, Rgba? selBg = null) =>
-        RgbaMarshalling.WithColorPtrs(selFg, selBg, (fgPtr, bgPtr) =>
-            OpenTuiNative.TextBufferViewUpdateSelection(Handle, newEnd, fgPtr, bgPtr));
+    public void UpdateSelection(uint newEnd, Rgba? selBg = null, Rgba? selFg = null) =>
+        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
+            OpenTuiNative.TextBufferViewUpdateSelection(Handle, newEnd, bgPtr, fgPtr));
 
     #endregion
 

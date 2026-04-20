@@ -1155,8 +1155,8 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         EditorView.SetSelection(
             Math.Min(anchorOffset, currentOffset),
             Math.Max(anchorOffset, currentOffset),
-            _selectionFg ?? _ebTextColor,
-            _selectionBg);
+            _selectionBg,
+            _selectionFg ?? _ebTextColor);
     }
 
     private static int CountLogicalLines(string text)

@@ -79,7 +79,6 @@ AddText(box1, "text4", 21, content: "世界, 你好世界, 中文, 한글", fg: 
 var nestedBox = new BoxRenderable(renderer, new BoxOptions
 {
     Id = "nestedBox",
-    Position = PositionValue.Absolute,
     Left = DimensionValue.Point(2),
     Top = DimensionValue.Point(1),
     Width = DimensionValue.Point(31),

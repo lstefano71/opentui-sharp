@@ -331,8 +331,8 @@ public class TextBufferRenderable : Renderable
                 activeSelection.AnchorY,
                 activeSelection.FocusX,
                 activeSelection.FocusY,
-                _selectionFg,
-                _selectionBg);
+                _selectionBg,
+                _selectionFg);
         }
         else
         {
@@ -341,8 +341,8 @@ public class TextBufferRenderable : Renderable
                 activeSelection.AnchorY,
                 activeSelection.FocusX,
                 activeSelection.FocusY,
-                _selectionFg,
-                _selectionBg);
+                _selectionBg,
+                _selectionFg);
         }
 
         if (changed)
@@ -411,8 +411,8 @@ public class TextBufferRenderable : Renderable
             localSelection.AnchorY,
             localSelection.FocusX,
             localSelection.FocusY,
-            _selectionFg,
-            _selectionBg);
+            _selectionBg,
+            _selectionFg);
     }
 
     #endregion

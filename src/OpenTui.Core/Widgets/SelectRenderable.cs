@@ -326,6 +326,10 @@ public class SelectRenderable : BoxRenderable
         // Draw background
         base.RenderSelf(buffer, deltaTime);
 
+        // Recalculate scroll offset now that layout dimensions are available.
+        // Covers the case where SelectedIndex was set before layout was computed.
+        UpdateScrollOffset();
+
         var (startX, startY, contentWidth, contentHeight) = GetContentBounds();
         if (_options.Length == 0 || contentWidth <= 0 || contentHeight <= 0) return;
 

@@ -1006,10 +1006,10 @@ internal static partial class OpenTuiNative
     /// <param name="view">Handle to the text buffer view.</param>
     /// <param name="startOffset">Starting character offset.</param>
     /// <param name="endOffset">Ending character offset.</param>
-    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     /// <param name="selBg">Pointer to the selection background RGBA color.</param>
+    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     [LibraryImport(LibName, EntryPoint = "textBufferViewSetSelection")]
-    internal static partial void TextBufferViewSetSelection(nint view, uint startOffset, uint endOffset, nint selFg, nint selBg);
+    internal static partial void TextBufferViewSetSelection(nint view, uint startOffset, uint endOffset, nint selBg, nint selFg);
 
     /// <summary>Resets (clears) the current text selection.</summary>
     /// <param name="view">Handle to the text buffer view.</param>
@@ -1028,20 +1028,20 @@ internal static partial class OpenTuiNative
     /// <param name="startY">Starting Y coordinate.</param>
     /// <param name="endX">Ending X coordinate.</param>
     /// <param name="endY">Ending Y coordinate.</param>
-    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     /// <param name="selBg">Pointer to the selection background RGBA color.</param>
+    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     /// <returns>True if the selection was set successfully.</returns>
     [LibraryImport(LibName, EntryPoint = "textBufferViewSetLocalSelection")]
     [return: MarshalAs(UnmanagedType.U1)]
-    internal static partial bool TextBufferViewSetLocalSelection(nint view, int startX, int startY, int endX, int endY, nint selFg, nint selBg);
+    internal static partial bool TextBufferViewSetLocalSelection(nint view, int startX, int startY, int endX, int endY, nint selBg, nint selFg);
 
     /// <summary>Updates the end offset of the current selection.</summary>
     /// <param name="view">Handle to the text buffer view.</param>
     /// <param name="newEnd">New ending offset for the selection.</param>
-    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     /// <param name="selBg">Pointer to the selection background RGBA color.</param>
+    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     [LibraryImport(LibName, EntryPoint = "textBufferViewUpdateSelection")]
-    internal static partial void TextBufferViewUpdateSelection(nint view, uint newEnd, nint selFg, nint selBg);
+    internal static partial void TextBufferViewUpdateSelection(nint view, uint newEnd, nint selBg, nint selFg);
 
     /// <summary>Updates the local (visual coordinate) selection extent.</summary>
     /// <param name="view">Handle to the text buffer view.</param>
@@ -1049,12 +1049,12 @@ internal static partial class OpenTuiNative
     /// <param name="startY">Starting Y coordinate.</param>
     /// <param name="endX">Ending X coordinate.</param>
     /// <param name="endY">Ending Y coordinate.</param>
-    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     /// <param name="selBg">Pointer to the selection background RGBA color.</param>
+    /// <param name="selFg">Pointer to the selection foreground RGBA color.</param>
     /// <returns>True if the selection was updated successfully.</returns>
     [LibraryImport(LibName, EntryPoint = "textBufferViewUpdateLocalSelection")]
     [return: MarshalAs(UnmanagedType.U1)]
-    internal static partial bool TextBufferViewUpdateLocalSelection(nint view, int startX, int startY, int endX, int endY, nint selFg, nint selBg);
+    internal static partial bool TextBufferViewUpdateLocalSelection(nint view, int startX, int startY, int endX, int endY, nint selBg, nint selFg);
 
     /// <summary>Resets the local (visual coordinate) selection.</summary>
     /// <param name="view">Handle to the text buffer view.</param>
