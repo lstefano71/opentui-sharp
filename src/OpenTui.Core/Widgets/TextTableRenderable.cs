@@ -8,23 +8,77 @@ namespace OpenTui.Core;
 /// </summary>
 public class TextTableOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the content.
+    /// </summary>
     public TextChunk[][][] Content { get; init; } = [];
+    /// <summary>
+    /// Gets or sets the wrap mode.
+    /// </summary>
     public byte WrapMode { get; init; } = 2; // 0=none, 1=char, 2=word
+    /// <summary>
+    /// Gets or sets the column width mode.
+    /// </summary>
     public string ColumnWidthMode { get; init; } = "full"; // "content" | "full"
+    /// <summary>
+    /// Gets or sets the column fitter.
+    /// </summary>
     public string ColumnFitter { get; init; } = "proportional"; // "proportional" | "balanced"
+    /// <summary>
+    /// Gets or sets the cell padding.
+    /// </summary>
     public int CellPadding { get; init; }
+    /// <summary>
+    /// Gets or sets a value indicating whether show borders.
+    /// </summary>
     public bool ShowBorders { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the border.
+    /// </summary>
     public bool Border { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the outer border.
+    /// </summary>
     public bool OuterBorder { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the selectable.
+    /// </summary>
     public bool Selectable { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the selection bg.
+    /// </summary>
     public Rgba? SelectionBg { get; init; }
+    /// <summary>
+    /// Gets or sets the selection fg.
+    /// </summary>
     public Rgba? SelectionFg { get; init; }
+    /// <summary>
+    /// Gets or sets the border style.
+    /// </summary>
     public BorderStyle BorderStyle { get; init; } = BorderStyle.Single;
+    /// <summary>
+    /// Gets or sets the border color.
+    /// </summary>
     public Rgba? BorderColor { get; init; }
+    /// <summary>
+    /// Gets or sets the border background color.
+    /// </summary>
     public Rgba? BorderBackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the fg.
+    /// </summary>
     public Rgba? Fg { get; init; }
+    /// <summary>
+    /// Gets or sets the bg.
+    /// </summary>
     public Rgba? Bg { get; init; }
+    /// <summary>
+    /// Gets or sets the attributes.
+    /// </summary>
     public TextAttributes Attributes { get; init; }
 }
 
@@ -109,6 +163,11 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Initializes a new instance of the TextTableRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public TextTableRenderable(IRenderContext ctx, TextTableOptions? options = null)
         : base(ctx, options ?? new TextTableOptions() { Buffered = true })
     {
@@ -138,6 +197,9 @@ public class TextTableRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the content.
+    /// </summary>
     public TextChunk[][][] Content
     {
         get => _content;
@@ -150,6 +212,9 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the wrap mode.
+    /// </summary>
     public byte WrapMode
     {
         get => _wrapMode;
@@ -162,6 +227,9 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the column width mode.
+    /// </summary>
     public string ColumnWidthMode
     {
         get => _columnWidthMode;
@@ -173,6 +241,9 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the column fitter.
+    /// </summary>
     public string ColumnFitter
     {
         get => _columnFitter;
@@ -184,6 +255,9 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the cell padding.
+    /// </summary>
     public int CellPadding
     {
         get => _cellPadding;
@@ -195,6 +269,9 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show borders.
+    /// </summary>
     public bool ShowBorders
     {
         get => _showBorders;
@@ -206,6 +283,9 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the border.
+    /// </summary>
     public bool Border
     {
         get => _border;
@@ -217,6 +297,9 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the outer border.
+    /// </summary>
     public bool OuterBorder
     {
         get => _outerBorder;
@@ -228,12 +311,18 @@ public class TextTableRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the table border style.
+    /// </summary>
     public BorderStyle TableBorderStyle
     {
         get => _borderStyle;
         set { _borderStyle = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the border color.
+    /// </summary>
     public Rgba BorderColor
     {
         get => _borderColor;
@@ -647,6 +736,7 @@ public class TextTableRenderable : Renderable
 
     #region Selection
 
+    /// <inheritdoc />
     public override bool ShouldStartSelection(int x, int y)
     {
         if (!Selectable || _cells is null || _rowCount == 0 || _colCount == 0 || Width <= 0 || Height <= 0)
@@ -658,6 +748,7 @@ public class TextTableRenderable : Renderable
         return GetCellAtLocalPosition(layout, localX, localY).HasValue;
     }
 
+    /// <inheritdoc />
     public override bool OnSelectionChanged(Selection? selection)
     {
         bool hadSelection = HasSelection();
@@ -690,6 +781,7 @@ public class TextTableRenderable : Renderable
         return hasSelection;
     }
 
+    /// <inheritdoc />
     public override bool HasSelection()
     {
         if (_cells is null)
@@ -707,6 +799,7 @@ public class TextTableRenderable : Renderable
         return false;
     }
 
+    /// <inheritdoc />
     public override string GetSelectedText()
     {
         if (_cells is null)
@@ -945,6 +1038,7 @@ public class TextTableRenderable : Renderable
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_cells == null || _widthValue == 0 || _heightValue == 0) return;
@@ -1030,6 +1124,7 @@ public class TextTableRenderable : Renderable
 
     #region Dispose
 
+    /// <inheritdoc />
     protected override void DestroySelf()
     {
         DisposeCells();

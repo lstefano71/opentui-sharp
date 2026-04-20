@@ -11,6 +11,11 @@ public class TextRenderable : TextBufferRenderable
 {
     private StyledText? _content;
 
+    /// <summary>
+    /// Initializes a new instance of the TextRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public TextRenderable(IRenderContext ctx, TextOptions? options = null)
         : base(ctx, options ?? new TextOptions())
     {

@@ -22,6 +22,11 @@ public class TextBufferRenderable : Renderable
     private WrapMode _wrapMode;
     private bool _truncate;
 
+    /// <summary>
+    /// Initializes a new instance of the TextBufferRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     protected TextBufferRenderable(IRenderContext ctx, TextBufferOptions options)
         : base(ctx, options)
     {
@@ -61,22 +66,40 @@ public class TextBufferRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets the text buffer.
+    /// </summary>
     public TextBuffer TextBuffer => _textBuffer;
+    /// <summary>
+    /// Gets the text buffer view.
+    /// </summary>
     public TextBufferView TextBufferView => _textBufferView;
+    /// <summary>
+    /// Gets the syntax style.
+    /// </summary>
     public SyntaxStyle SyntaxStyle => _syntaxStyle;
 
+    /// <summary>
+    /// Gets or sets the fg.
+    /// </summary>
     public Rgba Fg
     {
         get => _fg;
         set { _fg = value; _textBuffer.SetForeground(value); RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the bg.
+    /// </summary>
     public Rgba Bg
     {
         get => _bg;
         set { _bg = value; _textBuffer.SetBackground(value); RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the selection bg.
+    /// </summary>
     public Rgba? SelectionBg
     {
         get => _selectionBg;
@@ -88,6 +111,9 @@ public class TextBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the selection fg.
+    /// </summary>
     public Rgba? SelectionFg
     {
         get => _selectionFg;
@@ -99,6 +125,9 @@ public class TextBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the selectable.
+    /// </summary>
     public bool Selectable
     {
         get => _selectable;
@@ -109,6 +138,9 @@ public class TextBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the wrap mode.
+    /// </summary>
     public WrapMode WrapMode
     {
         get => _wrapMode;
@@ -123,6 +155,9 @@ public class TextBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the truncate.
+    /// </summary>
     public bool Truncate
     {
         get => _truncate;
@@ -132,7 +167,13 @@ public class TextBufferRenderable : Renderable
     /// <summary>Plain text content.</summary>
     public string PlainText => _textBuffer.GetPlainText();
 
+    /// <summary>
+    /// Gets the text length.
+    /// </summary>
     public uint TextLength => _textBuffer.Length;
+    /// <summary>
+    /// Gets the line count.
+    /// </summary>
     public uint LineCount => _textBuffer.LineCount;
 
     #endregion
@@ -142,6 +183,9 @@ public class TextBufferRenderable : Renderable
     private int _scrollX;
     private int _scrollY;
 
+    /// <summary>
+    /// Gets or sets the scroll x.
+    /// </summary>
     public int ScrollX
     {
         get => _scrollX;
@@ -153,6 +197,9 @@ public class TextBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the scroll y.
+    /// </summary>
     public int ScrollY
     {
         get => _scrollY;
@@ -164,6 +211,9 @@ public class TextBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets the max scroll x.
+    /// </summary>
     public int MaxScrollX
     {
         get
@@ -173,6 +223,9 @@ public class TextBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets the max scroll y.
+    /// </summary>
     public int MaxScrollY
     {
         get
@@ -247,11 +300,13 @@ public class TextBufferRenderable : Renderable
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         buffer.DrawTextBufferView(_textBufferView.Handle, (int)_screenX, (int)_screenY);
     }
 
+    /// <inheritdoc />
     public override bool ShouldStartSelection(int x, int y)
     {
         if (!_selectable)
@@ -262,6 +317,7 @@ public class TextBufferRenderable : Renderable
         return localX >= 0 && localX < Width && localY >= 0 && localY < Height;
     }
 
+    /// <inheritdoc />
     public override bool OnSelectionChanged(Selection? selection)
     {
         var localSelection = SelectionHelpers.ConvertGlobalToLocalSelection(selection, X, Y);
@@ -300,14 +356,17 @@ public class TextBufferRenderable : Renderable
         return HasSelection();
     }
 
+    /// <inheritdoc />
     public override string GetSelectedText() => _textBufferView.GetSelectedText();
 
+    /// <inheritdoc />
     public override bool HasSelection() => _textBufferView.HasSelection();
 
     #endregion
 
     #region Resize
 
+    /// <inheritdoc />
     protected override void OnResize(int width, int height)
     {
         // Set viewport dimensions first — virtual line count depends on width for wrapping.
@@ -334,6 +393,7 @@ public class TextBufferRenderable : Renderable
 
     #region Lifecycle
 
+    /// <inheritdoc />
     protected override void DestroySelf()
     {
         _textBufferView.Dispose();

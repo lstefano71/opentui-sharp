@@ -5,7 +5,13 @@ namespace OpenTui.Core;
 /// <summary>Slider orientation.</summary>
 public enum SliderOrientation
 {
+    /// <summary>
+    /// Represents the Horizontal option.
+    /// </summary>
     Horizontal,
+    /// <summary>
+    /// Represents the Vertical option.
+    /// </summary>
     Vertical
 }
 
@@ -15,13 +21,37 @@ public enum SliderOrientation
 /// </summary>
 public class SliderOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the orientation.
+    /// </summary>
     public required SliderOrientation Orientation { get; init; }
+    /// <summary>
+    /// Gets or sets the value.
+    /// </summary>
     public float Value { get; init; }
+    /// <summary>
+    /// Gets or sets the min.
+    /// </summary>
     public float Min { get; init; }
+    /// <summary>
+    /// Gets or sets the max.
+    /// </summary>
     public float Max { get; init; } = 100;
+    /// <summary>
+    /// Gets or sets the view port size.
+    /// </summary>
     public float? ViewPortSize { get; init; }
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the foreground color.
+    /// </summary>
     public Rgba? ForegroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the on change.
+    /// </summary>
     public Action<float>? OnChange { get; init; }
 }
 
@@ -31,8 +61,14 @@ public class SliderOptions : RenderableOptions
 /// </summary>
 public class SliderRenderable : Renderable
 {
+    /// <summary>
+    /// Represents an Events.
+    /// </summary>
     public static class Events
     {
+        /// <summary>
+        /// Stores the change.
+        /// </summary>
         public const string Change = "change";
     }
 
@@ -47,6 +83,11 @@ public class SliderRenderable : Renderable
     private bool _isDragging;
     private int _dragOffsetVirtual;
 
+    /// <summary>
+    /// Initializes a new instance of the SliderRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public SliderRenderable(IRenderContext ctx, SliderOptions options)
         : base(ctx, options)
     {
@@ -66,6 +107,9 @@ public class SliderRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the value.
+    /// </summary>
     public float Value
     {
         get => _value;
@@ -80,36 +124,54 @@ public class SliderRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the min.
+    /// </summary>
     public float Min
     {
         get => _min;
         set { _min = value; if (_value < _min) Value = _min; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the max.
+    /// </summary>
     public float Max
     {
         get => _max;
         set { _max = value; if (_value > _max) Value = _max; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the view port size.
+    /// </summary>
     public float ViewPortSize
     {
         get => _viewPortSize;
         set { _viewPortSize = Math.Max(0.01f, Math.Min(value, _max - _min)); RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba BackgroundColor
     {
         get => _backgroundColor;
         set { _backgroundColor = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the foreground color.
+    /// </summary>
     public Rgba ForegroundColor
     {
         get => _foregroundColor;
         set { _foregroundColor = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets the orientation.
+    /// </summary>
     public SliderOrientation Orientation => _orientation;
 
     #endregion
@@ -205,6 +267,7 @@ public class SliderRenderable : Renderable
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_widthValue == 0 || _heightValue == 0) return;
@@ -307,6 +370,7 @@ public class SliderRenderable : Renderable
 
     #region Mouse Handling
 
+    /// <inheritdoc />
     protected override void OnMouseEvent(UiMouseEvent evt)
     {
         switch (evt.Type)
@@ -354,6 +418,7 @@ public class SliderRenderable : Renderable
 
     #region Keyboard
 
+    /// <inheritdoc />
     protected override void HandleKeyPress(KeyEvent key)
     {
         float step = GetKeyboardStep();

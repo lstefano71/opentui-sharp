@@ -3,53 +3,143 @@ using System.Text;
 
 namespace OpenTui.Core;
 
+/// <summary>Specifies which edge of the terminal the overlay console attaches to.</summary>
 public enum ConsolePosition
 {
+    /// <summary>
+    /// Represents the Top option.
+    /// </summary>
     Top,
+    /// <summary>
+    /// Represents the Bottom option.
+    /// </summary>
     Bottom,
+    /// <summary>
+    /// Represents the Left option.
+    /// </summary>
     Left,
+    /// <summary>
+    /// Represents the Right option.
+    /// </summary>
     Right,
 }
 
+/// <summary>Built-in actions that can be triggered by console key bindings.</summary>
 public enum ConsoleAction
 {
+    /// <summary>
+    /// Represents the Scroll Up option.
+    /// </summary>
     ScrollUp,
+    /// <summary>
+    /// Represents the Scroll Down option.
+    /// </summary>
     ScrollDown,
+    /// <summary>
+    /// Represents the Scroll To Top option.
+    /// </summary>
     ScrollToTop,
+    /// <summary>
+    /// Represents the Scroll To Bottom option.
+    /// </summary>
     ScrollToBottom,
+    /// <summary>
+    /// Represents the Position Previous option.
+    /// </summary>
     PositionPrevious,
+    /// <summary>
+    /// Represents the Position Next option.
+    /// </summary>
     PositionNext,
+    /// <summary>
+    /// Represents the Size Increase option.
+    /// </summary>
     SizeIncrease,
+    /// <summary>
+    /// Represents the Size Decrease option.
+    /// </summary>
     SizeDecrease,
+    /// <summary>
+    /// Represents the Copy Selection option.
+    /// </summary>
     CopySelection,
 }
 
+/// <summary>Severity levels for entries written to <see cref="TerminalConsole"/>.</summary>
 public enum ConsoleLogLevel
 {
+    /// <summary>
+    /// Represents the Log option.
+    /// </summary>
     Log,
+    /// <summary>
+    /// Represents the Info option.
+    /// </summary>
     Info,
+    /// <summary>
+    /// Represents the Warn option.
+    /// </summary>
     Warn,
+    /// <summary>
+    /// Represents the Error option.
+    /// </summary>
     Error,
+    /// <summary>
+    /// Represents the Debug option.
+    /// </summary>
     Debug,
 }
 
+/// <summary>Defines a keyboard shortcut that triggers a <see cref="ConsoleAction"/>.</summary>
 public sealed class ConsoleKeyBinding
 {
+    /// <summary>
+    /// Gets or sets the name.
+    /// </summary>
     public required string Name { get; init; }
+    /// <summary>
+    /// Gets or sets the ctrl.
+    /// </summary>
     public bool Ctrl { get; init; }
+    /// <summary>
+    /// Gets or sets the shift.
+    /// </summary>
     public bool Shift { get; init; }
+    /// <summary>
+    /// Gets or sets the alt.
+    /// </summary>
     public bool Alt { get; init; }
+    /// <summary>
+    /// Gets or sets the meta.
+    /// </summary>
     public bool Meta { get; init; }
+    /// <summary>
+    /// Gets or sets the action.
+    /// </summary>
     public required ConsoleAction Action { get; init; }
 }
 
+/// <summary>Represents a single log entry stored by <see cref="TerminalConsole"/>.</summary>
 public sealed class ConsoleLogEntry
 {
+    /// <summary>
+    /// Gets or sets the timestamp.
+    /// </summary>
     public required DateTime Timestamp { get; init; }
+    /// <summary>
+    /// Gets or sets the level.
+    /// </summary>
     public required ConsoleLogLevel Level { get; init; }
+    /// <summary>
+    /// Gets or sets the text.
+    /// </summary>
     public required string Text { get; init; }
 }
 
+/// <summary>
+/// Built-in overlay console for logging, captured stdout, scrolling, and text selection while a
+/// <see cref="CliRenderer"/> owns the terminal.
+/// </summary>
 public sealed class TerminalConsole : IDisposable
 {
     private const int MinSizePercent = 10;
@@ -123,6 +213,10 @@ public sealed class TerminalConsole : IDisposable
     private readonly Rgba _copyButtonColor = Rgba.FromHex("#00A0FF");
     private readonly Rgba _disabledColor = Rgba.FromInts(100, 100, 100);
 
+    /// <summary>
+    /// Initializes a new instance of the TerminalConsole class.
+    /// </summary>
+    /// <param name="renderer">The renderer instance.</param>
     public TerminalConsole(CliRenderer renderer)
     {
         _renderer = renderer;
@@ -130,6 +224,7 @@ public sealed class TerminalConsole : IDisposable
         _renderer.AddPostProcessFn(RenderOverlay);
     }
 
+    /// <summary>Gets the currently buffered log entries.</summary>
     public IReadOnlyList<ConsoleLogEntry> Entries
     {
         get
@@ -139,6 +234,7 @@ public sealed class TerminalConsole : IDisposable
         }
     }
 
+    /// <summary>Gets or sets the keyboard bindings that control the console overlay.</summary>
     public IReadOnlyList<ConsoleKeyBinding> KeyBindings
     {
         get => _keyBindings;
@@ -149,18 +245,39 @@ public sealed class TerminalConsole : IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the on copy selection.
+    /// </summary>
     public Action<string>? OnCopySelection { get; set; }
 
+    /// <summary>
+    /// Gets the visible.
+    /// </summary>
     public bool Visible => _visible;
 
+    /// <summary>
+    /// Gets the focused.
+    /// </summary>
     public bool Focused => _focused;
 
+    /// <summary>
+    /// Gets the position.
+    /// </summary>
     public ConsolePosition Position => _position;
 
+    /// <summary>
+    /// Gets the size percent.
+    /// </summary>
     public int SizePercent => _sizePercent;
 
+    /// <summary>
+    /// Gets the bounds.
+    /// </summary>
     public (int X, int Y, int Width, int Height) Bounds => (_consoleX, _consoleY, _consoleWidth, _consoleHeight);
 
+    /// <summary>
+    /// Performs show.
+    /// </summary>
     public void Show()
     {
         EnsureActivated();
@@ -171,6 +288,9 @@ public sealed class TerminalConsole : IDisposable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs hide.
+    /// </summary>
     public void Hide()
     {
         if (!_visible)
@@ -182,6 +302,9 @@ public sealed class TerminalConsole : IDisposable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs toggle.
+    /// </summary>
     public void Toggle()
     {
         if (_visible)
@@ -196,6 +319,9 @@ public sealed class TerminalConsole : IDisposable
         Show();
     }
 
+    /// <summary>
+    /// Gives this instance input focus.
+    /// </summary>
     public void Focus()
     {
         EnsureActivated();
@@ -205,6 +331,9 @@ public sealed class TerminalConsole : IDisposable
         RequestRender();
     }
 
+    /// <summary>
+    /// Removes input focus from this instance.
+    /// </summary>
     public void Blur()
     {
         if (!_focused)
@@ -215,6 +344,9 @@ public sealed class TerminalConsole : IDisposable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs clear.
+    /// </summary>
     public void Clear()
     {
         lock (_sync)
@@ -229,14 +361,34 @@ public sealed class TerminalConsole : IDisposable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs log.
+    /// </summary>
+    /// <param name="args">The arguments.</param>
     public void Log(params object?[] args) => AddEntry(ConsoleLogLevel.Log, FormatArguments(args));
 
+    /// <summary>
+    /// Performs info.
+    /// </summary>
+    /// <param name="args">The arguments.</param>
     public void Info(params object?[] args) => AddEntry(ConsoleLogLevel.Info, FormatArguments(args));
 
+    /// <summary>
+    /// Performs warn.
+    /// </summary>
+    /// <param name="args">The arguments.</param>
     public void Warn(params object?[] args) => AddEntry(ConsoleLogLevel.Warn, FormatArguments(args));
 
+    /// <summary>
+    /// Performs error.
+    /// </summary>
+    /// <param name="args">The arguments.</param>
     public void Error(params object?[] args) => AddEntry(ConsoleLogLevel.Error, FormatArguments(args));
 
+    /// <summary>
+    /// Performs debug.
+    /// </summary>
+    /// <param name="args">The arguments.</param>
     public void Debug(params object?[] args) => AddEntry(ConsoleLogLevel.Debug, FormatArguments(args));
 
     internal void Resize(int terminalWidth, int terminalHeight)
@@ -343,6 +495,9 @@ public sealed class TerminalConsole : IDisposable
         return true;
     }
 
+    /// <summary>
+    /// Releases the resources used by this instance.
+    /// </summary>
     public void Dispose()
     {
         FlushPendingText(_pendingStdout, ConsoleLogLevel.Log);

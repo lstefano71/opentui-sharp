@@ -10,6 +10,10 @@ public sealed class CliPrompt<T> where T : IParsable<T>
     private Func<T, bool>? _validator;
     private string? _validationMessage;
 
+    /// <summary>
+    /// Initializes a new instance of the CliPrompt class.
+    /// </summary>
+    /// <param name="prompt">The prompt.</param>
     public CliPrompt(string prompt) => _prompt = prompt;
 
     /// <summary>Sets the default value shown in brackets.</summary>
@@ -63,13 +67,26 @@ public sealed class CliConfirm
     private readonly string _prompt;
     private bool _defaultValue;
 
+    /// <summary>
+    /// Initializes a new instance of the CliConfirm class.
+    /// </summary>
+    /// <param name="prompt">The prompt.</param>
     public CliConfirm(string prompt) => _prompt = prompt;
 
     /// <summary>Sets the default value (true=yes, false=no).</summary>
     public CliConfirm SetDefault(bool value) { _defaultValue = value; return this; }
 
+    /// <summary>
+    /// Performs prompt.
+    /// </summary>
+    /// <returns>true if prompt; otherwise, false.</returns>
     public bool Prompt() => Prompt(AnsiConsole.Instance);
 
+    /// <summary>
+    /// Performs prompt.
+    /// </summary>
+    /// <param name="console">The console.</param>
+    /// <returns>true if prompt; otherwise, false.</returns>
     public bool Prompt(ICliConsole console)
     {
         string hint = _defaultValue ? "[Y/n]" : "[y/N]";

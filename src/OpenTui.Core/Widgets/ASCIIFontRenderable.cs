@@ -4,17 +4,44 @@ using System.Text.RegularExpressions;
 
 namespace OpenTui.Core;
 
+/// <summary>
+/// Represents configuration options for Ascii Font Render.
+/// </summary>
 public sealed class AsciiFontRenderOptions
 {
+    /// <summary>
+    /// Gets or sets the text.
+    /// </summary>
     public required string Text { get; init; }
+    /// <summary>
+    /// Gets or sets the x.
+    /// </summary>
     public int X { get; init; }
+    /// <summary>
+    /// Gets or sets the y.
+    /// </summary>
     public int Y { get; init; }
+    /// <summary>
+    /// Gets or sets the font.
+    /// </summary>
     public string Font { get; init; } = "tiny";
+    /// <summary>
+    /// Gets or sets the color.
+    /// </summary>
     public Rgba? Color { get; init; }
+    /// <summary>
+    /// Gets or sets the colors.
+    /// </summary>
     public Rgba[]? Colors { get; init; }
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
 }
 
+/// <summary>
+/// Represents an Ascii Font.
+/// </summary>
 public static partial class AsciiFont
 {
     private const string DefaultFont = "tiny";
@@ -22,10 +49,24 @@ public static partial class AsciiFont
     private static readonly Lazy<Dictionary<string, ParsedAsciiFontDefinition>> s_fonts = new(LoadFonts);
     private static readonly string[] s_embeddedFontNames = ["block", "grid", "huge", "pallet", "shade", "slick", "tiny"];
 
+    /// <summary>
+    /// Gets the font names.
+    /// </summary>
     public static IReadOnlyCollection<string> FontNames => s_fonts.Value.Keys;
 
+    /// <summary>
+    /// Performs is font supported.
+    /// </summary>
+    /// <param name="font">The font.</param>
+    /// <returns>true if is font supported; otherwise, false.</returns>
     public static bool IsFontSupported(string font) => s_fonts.Value.ContainsKey(NormalizeFont(font));
 
+    /// <summary>
+    /// Measures the text.
+    /// </summary>
+    /// <param name="text">The text value.</param>
+    /// <param name="font">The font.</param>
+    /// <returns>The result of measure text.</returns>
     public static (int Width, int Height) MeasureText(string text, string font = DefaultFont)
     {
         var fontDef = GetFont(font);
@@ -41,6 +82,12 @@ public static partial class AsciiFont
         return (currentX, fontDef.Lines);
     }
 
+    /// <summary>
+    /// Gets a character positions.
+    /// </summary>
+    /// <param name="text">The text value.</param>
+    /// <param name="font">The font.</param>
+    /// <returns>The character positions.</returns>
     public static int[] GetCharacterPositions(string text, string font = DefaultFont)
     {
         var fontDef = GetFont(font);
@@ -59,6 +106,13 @@ public static partial class AsciiFont
         return positions;
     }
 
+    /// <summary>
+    /// Performs coordinate to character index.
+    /// </summary>
+    /// <param name="x">The horizontal position.</param>
+    /// <param name="text">The text value.</param>
+    /// <param name="font">The font.</param>
+    /// <returns>The result of coordinate to character index.</returns>
     public static int CoordinateToCharacterIndex(int x, string text, string font = DefaultFont)
     {
         int[] positions = GetCharacterPositions(text, font);
@@ -84,6 +138,12 @@ public static partial class AsciiFont
         return 0;
     }
 
+    /// <summary>
+    /// Renders the to buffer.
+    /// </summary>
+    /// <param name="buffer">The target buffer.</param>
+    /// <param name="options">The configuration options.</param>
+    /// <returns>The result of render to buffer.</returns>
     public static (int Width, int Height) RenderToBuffer(OptimizedBuffer buffer, AsciiFontRenderOptions options)
     {
         ArgumentNullException.ThrowIfNull(buffer);
@@ -321,12 +381,33 @@ internal partial class AsciiFontJsonContext : JsonSerializerContext;
 /// </summary>
 public class ASCIIFontOptions : FrameBufferOptions
 {
+    /// <summary>
+    /// Gets or sets the text.
+    /// </summary>
     public string Text { get; init; } = "";
+    /// <summary>
+    /// Gets or sets the font.
+    /// </summary>
     public string Font { get; init; } = "tiny";
+    /// <summary>
+    /// Gets or sets the color.
+    /// </summary>
     public Rgba? Color { get; init; }
+    /// <summary>
+    /// Gets or sets the colors.
+    /// </summary>
     public Rgba[]? Colors { get; init; }
+    /// <summary>
+    /// Gets or sets the selectable.
+    /// </summary>
     public bool Selectable { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the selection bg.
+    /// </summary>
     public Rgba? SelectionBg { get; init; }
+    /// <summary>
+    /// Gets or sets the selection fg.
+    /// </summary>
     public Rgba? SelectionFg { get; init; }
 }
 
@@ -344,6 +425,11 @@ public class ASCIIFontRenderable : FrameBufferRenderable
     private LocalSelectionBounds? _lastLocalSelection;
     private readonly AsciiFontSelectionHelper _selectionHelper;
 
+    /// <summary>
+    /// Initializes a new instance of the ASCIIFontRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public ASCIIFontRenderable(IRenderContext ctx, ASCIIFontOptions? options = null)
         : base(ctx, options ?? new ASCIIFontOptions())
     {
@@ -361,6 +447,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         UpdateDimensions();
     }
 
+    /// <summary>
+    /// Gets or sets the text.
+    /// </summary>
     public string Text
     {
         get => _text;
@@ -377,6 +466,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the font.
+    /// </summary>
     public string Font
     {
         get => _font;
@@ -393,6 +485,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the color.
+    /// </summary>
     public Rgba Color
     {
         get => _colors[0];
@@ -404,6 +499,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the colors.
+    /// </summary>
     public Rgba[] Colors
     {
         get => _colors;
@@ -415,6 +513,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public new Rgba BackgroundColor
     {
         get => base.BackgroundColor;
@@ -429,6 +530,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the selection bg.
+    /// </summary>
     public Rgba? SelectionBg
     {
         get => _selectionBg;
@@ -440,6 +544,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the selection fg.
+    /// </summary>
     public Rgba? SelectionFg
     {
         get => _selectionFg;
@@ -451,6 +558,9 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the selectable.
+    /// </summary>
     public bool Selectable
     {
         get => _selectable;
@@ -461,15 +571,35 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         }
     }
 
+    /// <summary>
+    /// Measures the text.
+    /// </summary>
+    /// <param name="text">The text value.</param>
+    /// <param name="font">The font.</param>
+    /// <returns>The result of measure text.</returns>
     public static (int Width, int Height) MeasureText(string text, string font) =>
         AsciiFont.MeasureText(text, font);
 
+    /// <summary>
+    /// Gets a character positions.
+    /// </summary>
+    /// <param name="text">The text value.</param>
+    /// <param name="font">The font.</param>
+    /// <returns>The character positions.</returns>
     public static int[] GetCharacterPositions(string text, string font) =>
         AsciiFont.GetCharacterPositions(text, font);
 
+    /// <summary>
+    /// Performs coordinate to character index.
+    /// </summary>
+    /// <param name="x">The horizontal position.</param>
+    /// <param name="text">The text value.</param>
+    /// <param name="font">The font.</param>
+    /// <returns>The result of coordinate to character index.</returns>
     public static int CoordinateToCharacterIndex(int x, string text, string font) =>
         AsciiFont.CoordinateToCharacterIndex(x, text, font);
 
+    /// <inheritdoc />
     public override bool ShouldStartSelection(int x, int y)
     {
         int localX = x - X;
@@ -477,6 +607,7 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         return _selectionHelper.ShouldStartSelection(localX, localY, Width, Height);
     }
 
+    /// <inheritdoc />
     public override bool OnSelectionChanged(Selection? selection)
     {
         LocalSelectionBounds? localSelection = SelectionHelpers.ConvertGlobalToLocalSelection(selection, X, Y);
@@ -491,6 +622,7 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         return HasSelection();
     }
 
+    /// <inheritdoc />
     public override string GetSelectedText()
     {
         var selection = _selectionHelper.GetSelection();
@@ -500,8 +632,10 @@ public class ASCIIFontRenderable : FrameBufferRenderable
         return _text[selection.Value.Start..selection.Value.End];
     }
 
+    /// <inheritdoc />
     public override bool HasSelection() => _selectionHelper.HasSelection();
 
+    /// <inheritdoc />
     protected override void OnResize(int width, int height)
     {
         base.OnResize(width, height);

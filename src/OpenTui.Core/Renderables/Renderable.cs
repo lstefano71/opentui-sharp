@@ -26,32 +26,89 @@ public abstract class Renderable : EventEmitter
     #region Fields — identity & base state
 
     private string _id;
+    /// <summary>
+    /// Gets the num.
+    /// </summary>
     public int Num { get; }
+    /// <summary>
+    /// Stores the dirty.
+    /// </summary>
     protected bool _dirty;
+    /// <summary>
+    /// Stores the visible.
+    /// </summary>
     protected bool _visible = true;
+    /// <summary>
+    /// Stores the is destroyed.
+    /// </summary>
     protected bool _isDestroyed;
 
     #endregion
 
     #region Fields — layout
 
+    /// <summary>
+    /// Stores the translate x.
+    /// </summary>
     protected float _translateX;
+    /// <summary>
+    /// Stores the translate y.
+    /// </summary>
     protected float _translateY;
+    /// <summary>
+    /// Stores the x.
+    /// </summary>
     protected float _x;
+    /// <summary>
+    /// Stores the y.
+    /// </summary>
     protected float _y;
+    /// <summary>
+    /// Stores the screen x.
+    /// </summary>
     protected float _screenX;
+    /// <summary>
+    /// Stores the screen y.
+    /// </summary>
     protected float _screenY;
+    /// <summary>
+    /// Stores the width.
+    /// </summary>
     protected DimensionValue _width;
+    /// <summary>
+    /// Stores the height.
+    /// </summary>
     protected DimensionValue _height;
+    /// <summary>
+    /// Stores the width value.
+    /// </summary>
     protected int _widthValue;
+    /// <summary>
+    /// Stores the height value.
+    /// </summary>
     protected int _heightValue;
     private int _zIndex;
     private float _flexShrink = 1f;
+    /// <summary>
+    /// Stores the position type.
+    /// </summary>
     protected PositionValue _positionType = PositionValue.Relative;
+    /// <summary>
+    /// Stores the overflow.
+    /// </summary>
     protected OverflowValue _overflow = OverflowValue.Visible;
+    /// <summary>
+    /// Stores the position.
+    /// </summary>
     protected (DimensionValue? Top, DimensionValue? Right, DimensionValue? Bottom, DimensionValue? Left) _position;
+    /// <summary>
+    /// Stores the opacity.
+    /// </summary>
     protected float _opacity = 1.0f;
 
+    /// <summary>
+    /// Stores the yoga node.
+    /// </summary>
     protected Node YogaNode;
 
     #endregion
@@ -59,7 +116,13 @@ public abstract class Renderable : EventEmitter
     #region Fields — children
 
     private readonly Dictionary<string, Renderable> _renderableMapById = [];
+    /// <summary>
+    /// Stores the children in layout order.
+    /// </summary>
     protected readonly List<Renderable> _childrenInLayoutOrder = [];
+    /// <summary>
+    /// Stores the children in z index order.
+    /// </summary>
     protected readonly List<Renderable> _childrenInZIndexOrder = [];
     private bool _needsZIndexSort;
     private Renderable? _parent;
@@ -72,13 +135,34 @@ public abstract class Renderable : EventEmitter
 
     #region Fields — state
 
+    /// <summary>
+    /// Gets or sets the selectable.
+    /// </summary>
     public bool Selectable { get; set; }
+    /// <summary>
+    /// Stores the focusable.
+    /// </summary>
     protected bool _focusable;
+    /// <summary>
+    /// Stores the focused.
+    /// </summary>
     protected bool _focused;
+    /// <summary>
+    /// Stores the has focused descendant.
+    /// </summary>
     protected bool _hasFocusedDescendant;
     private bool _live;
+    /// <summary>
+    /// Stores the live count.
+    /// </summary>
     protected int _liveCount;
+    /// <summary>
+    /// Stores the buffered.
+    /// </summary>
     protected bool _buffered;
+    /// <summary>
+    /// Stores the frame buffer.
+    /// </summary>
     protected OptimizedBuffer? _frameBuffer;
     private int _lastLayoutFrame = -1;
 
@@ -86,7 +170,13 @@ public abstract class Renderable : EventEmitter
 
     #region Fields — event handlers
 
+    /// <summary>
+    /// Stores the keypress handler.
+    /// </summary>
     protected Action<KeyEvent>? _keypressHandler;
+    /// <summary>
+    /// Stores the paste handler.
+    /// </summary>
     protected Action<PasteEvent>? _pasteHandler;
     private IDisposable? _keypressSubscription;
     private IDisposable? _pasteSubscription;
@@ -96,22 +186,42 @@ public abstract class Renderable : EventEmitter
     private Action<PasteEvent>? _pasteListener;
     private Action<KeyEvent>? _keyDownListener;
 
+    /// <summary>
+    /// Gets or sets the on lifecycle pass.
+    /// </summary>
     public Action? OnLifecyclePass { get; set; }
+    /// <summary>
+    /// Gets or sets the render before hook.
+    /// </summary>
     public Action<OptimizedBuffer, float>? RenderBeforeHook { get; set; }
+    /// <summary>
+    /// Gets or sets the render after hook.
+    /// </summary>
     public Action<OptimizedBuffer, float>? RenderAfterHook { get; set; }
 
     #endregion
 
     #region Context
 
+    /// <summary>
+    /// Stores the ctx.
+    /// </summary>
     protected readonly IRenderContext _ctx;
 
+    /// <summary>
+    /// Gets the ctx.
+    /// </summary>
     public IRenderContext Ctx => _ctx;
 
     #endregion
 
     #region Constructor
 
+    /// <summary>
+    /// Initializes a new instance of the Renderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     protected Renderable(IRenderContext ctx, RenderableOptions options)
     {
         _ctx = ctx;
@@ -148,6 +258,9 @@ public abstract class Renderable : EventEmitter
 
     #region Id
 
+    /// <summary>
+    /// Gets or sets the id.
+    /// </summary>
     public string Id
     {
         get => _id;
@@ -166,14 +279,26 @@ public abstract class Renderable : EventEmitter
 
     #region Dirty
 
+    /// <summary>
+    /// Gets a value indicating whether is dirty.
+    /// </summary>
     public bool IsDirty => _dirty;
+    /// <summary>
+    /// Performs mark clean.
+    /// </summary>
     protected void MarkClean() => _dirty = false;
+    /// <summary>
+    /// Performs mark dirty.
+    /// </summary>
     protected void MarkDirty() => _dirty = true;
 
     #endregion
 
     #region Parent
 
+    /// <summary>
+    /// Gets or sets the parent.
+    /// </summary>
     public Renderable? Parent
     {
         get => _parent;
@@ -184,6 +309,9 @@ public abstract class Renderable : EventEmitter
 
     #region Visible
 
+    /// <summary>
+    /// Gets or sets the visible.
+    /// </summary>
     public bool Visible
     {
         get => _visible;
@@ -210,6 +338,9 @@ public abstract class Renderable : EventEmitter
 
     #region Opacity
 
+    /// <summary>
+    /// Gets or sets the opacity.
+    /// </summary>
     public float Opacity
     {
         get => _opacity;
@@ -228,15 +359,27 @@ public abstract class Renderable : EventEmitter
 
     #region Focus
 
+    /// <summary>
+    /// Gets or sets the focusable.
+    /// </summary>
     public bool Focusable
     {
         get => _focusable;
         set => _focusable = value;
     }
 
+    /// <summary>
+    /// Gets the focused.
+    /// </summary>
     public bool Focused => _focused;
+    /// <summary>
+    /// Gets a value indicating whether has focused descendant.
+    /// </summary>
     public bool HasFocusedDescendant => _hasFocusedDescendant;
 
+    /// <summary>
+    /// Gives this instance input focus.
+    /// </summary>
     public virtual void Focus()
     {
         if (_isDestroyed || _focused || !_focusable) return;
@@ -270,6 +413,9 @@ public abstract class Renderable : EventEmitter
         Emit(RenderableEventNames.Focused);
     }
 
+    /// <summary>
+    /// Removes input focus from this instance.
+    /// </summary>
     public virtual void Blur()
     {
         if (!_focused || !_focusable) return;
@@ -290,6 +436,10 @@ public abstract class Renderable : EventEmitter
         Emit(RenderableEventNames.Blurred);
     }
 
+    /// <summary>
+    /// Performs propagate focus change.
+    /// </summary>
+    /// <param name="hasFocus">The has focus.</param>
     protected void PropagateFocusChange(bool hasFocus)
     {
         var parent = _parent;
@@ -315,6 +465,9 @@ public abstract class Renderable : EventEmitter
 
     #region Live
 
+    /// <summary>
+    /// Gets or sets the live.
+    /// </summary>
     public bool Live
     {
         get => _live;
@@ -326,8 +479,15 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Gets the live count.
+    /// </summary>
     public int LiveCount => _liveCount;
 
+    /// <summary>
+    /// Performs propagate live count.
+    /// </summary>
+    /// <param name="delta">The delta.</param>
     protected virtual void PropagateLiveCount(int delta)
     {
         _liveCount += delta;
@@ -338,15 +498,37 @@ public abstract class Renderable : EventEmitter
 
     #region Selection hooks (virtual)
 
+    /// <summary>
+    /// Performs has selection.
+    /// </summary>
+    /// <returns>true if has selection; otherwise, false.</returns>
     public virtual bool HasSelection() => false;
+    /// <summary>
+    /// Handles the selection changed.
+    /// </summary>
+    /// <param name="selection">The selection.</param>
+    /// <returns>true if on selection changed; otherwise, false.</returns>
     public virtual bool OnSelectionChanged(Selection? selection) => false;
+    /// <summary>
+    /// Gets a selected text.
+    /// </summary>
+    /// <returns>The selected text.</returns>
     public virtual string GetSelectedText() => "";
+    /// <summary>
+    /// Performs should start selection.
+    /// </summary>
+    /// <param name="x">The horizontal position.</param>
+    /// <param name="y">The vertical position.</param>
+    /// <returns>true if should start selection; otherwise, false.</returns>
     public virtual bool ShouldStartSelection(int x, int y) => false;
 
     #endregion
 
     #region Position / Layout Properties
 
+    /// <summary>
+    /// Gets or sets the translate x.
+    /// </summary>
     public float TranslateX
     {
         get => _translateX;
@@ -361,6 +543,9 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Gets or sets the translate y.
+    /// </summary>
     public float TranslateY
     {
         get => _translateY;
@@ -375,6 +560,9 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Gets the screen x.
+    /// </summary>
     public float ScreenX
     {
         get
@@ -384,6 +572,9 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Gets the screen y.
+    /// </summary>
     public float ScreenY
     {
         get
@@ -393,6 +584,9 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Gets or sets the x.
+    /// </summary>
     public int X
     {
         get => _parent is not null
@@ -401,6 +595,9 @@ public abstract class Renderable : EventEmitter
         set => Left = DimensionValue.Point(value);
     }
 
+    /// <summary>
+    /// Gets or sets the y.
+    /// </summary>
     public int Y
     {
         get => _parent is not null
@@ -419,6 +616,9 @@ public abstract class Renderable : EventEmitter
 
     #region Dimension Setters
 
+    /// <summary>
+    /// Gets or sets the width dimension.
+    /// </summary>
     public DimensionValue WidthDimension
     {
         get => _width;
@@ -441,6 +641,9 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Gets or sets the height dimension.
+    /// </summary>
     public DimensionValue HeightDimension
     {
         get => _height;
@@ -467,6 +670,9 @@ public abstract class Renderable : EventEmitter
 
     #region Z-Index
 
+    /// <summary>
+    /// Gets or sets the z index.
+    /// </summary>
     public int ZIndex
     {
         get => _zIndex;
@@ -500,30 +706,45 @@ public abstract class Renderable : EventEmitter
 
     #region Position (top/right/bottom/left)
 
+    /// <summary>
+    /// Gets or sets the top.
+    /// </summary>
     public DimensionValue? Top
     {
         get => _position.Top;
         set { _position.Top = value; UpdateYogaPosition(top: value); }
     }
 
+    /// <summary>
+    /// Gets or sets the right.
+    /// </summary>
     public DimensionValue? Right
     {
         get => _position.Right;
         set { _position.Right = value; UpdateYogaPosition(right: value); }
     }
 
+    /// <summary>
+    /// Gets or sets the bottom.
+    /// </summary>
     public DimensionValue? Bottom
     {
         get => _position.Bottom;
         set { _position.Bottom = value; UpdateYogaPosition(bottom: value); }
     }
 
+    /// <summary>
+    /// Gets or sets the left.
+    /// </summary>
     public DimensionValue? Left
     {
         get => _position.Left;
         set { _position.Left = value; UpdateYogaPosition(left: value); }
     }
 
+    /// <summary>
+    /// Gets or sets the position type.
+    /// </summary>
     public PositionValue PositionType
     {
         set
@@ -535,6 +756,9 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Gets or sets the overflow.
+    /// </summary>
     public OverflowValue Overflow
     {
         get => _overflow;
@@ -551,23 +775,47 @@ public abstract class Renderable : EventEmitter
 
     #region Flex Setters
 
+    /// <summary>
+    /// Gets or sets the flex grow.
+    /// </summary>
     public float FlexGrow { set { YGNodeStyleAPI.YGNodeStyleSetFlexGrow(YogaNode, value); RequestRender(); } }
 
+    /// <summary>
+    /// Gets or sets the flex shrink.
+    /// </summary>
     public float FlexShrink
     {
         set { _flexShrink = value; YGNodeStyleAPI.YGNodeStyleSetFlexShrink(YogaNode, value); RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the flex direction.
+    /// </summary>
     public FlexDirectionValue FlexDirection
     {
         set { YGNodeStyleAPI.YGNodeStyleSetFlexDirection(YogaNode, value.ToYoga()); RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the flex wrap.
+    /// </summary>
     public WrapValue FlexWrap { set { YGNodeStyleAPI.YGNodeStyleSetFlexWrap(YogaNode, value.ToYoga()); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the align items.
+    /// </summary>
     public AlignValue AlignItems { set { YGNodeStyleAPI.YGNodeStyleSetAlignItems(YogaNode, value.ToYogaAlign()); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the justify content.
+    /// </summary>
     public JustifyValue JustifyContent { set { YGNodeStyleAPI.YGNodeStyleSetJustifyContent(YogaNode, value.ToYoga()); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the align self.
+    /// </summary>
     public AlignValue AlignSelf { set { YGNodeStyleAPI.YGNodeStyleSetAlignSelf(YogaNode, value.ToYogaAlign()); RequestRender(); } }
 
+    /// <summary>
+    /// Gets or sets the flex basis.
+    /// </summary>
     public DimensionValue FlexBasis
     {
         set
@@ -585,37 +833,98 @@ public abstract class Renderable : EventEmitter
 
     #region Size constraint setters
 
+    /// <summary>
+    /// Gets or sets the min width.
+    /// </summary>
     public DimensionValue MinWidth { set { SetYogaSizeConstraint(YGNodeStyleAPI.YGNodeStyleSetMinWidth, YGNodeStyleAPI.YGNodeStyleSetMinWidthPercent, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the min height.
+    /// </summary>
     public DimensionValue MinHeight { set { SetYogaSizeConstraint(YGNodeStyleAPI.YGNodeStyleSetMinHeight, YGNodeStyleAPI.YGNodeStyleSetMinHeightPercent, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the max width.
+    /// </summary>
     public DimensionValue MaxWidth { set { SetYogaSizeConstraint(YGNodeStyleAPI.YGNodeStyleSetMaxWidth, YGNodeStyleAPI.YGNodeStyleSetMaxWidthPercent, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the max height.
+    /// </summary>
     public DimensionValue MaxHeight { set { SetYogaSizeConstraint(YGNodeStyleAPI.YGNodeStyleSetMaxHeight, YGNodeStyleAPI.YGNodeStyleSetMaxHeightPercent, value); RequestRender(); } }
 
     #endregion
 
     #region Margin/Padding setters
 
+    /// <summary>
+    /// Gets or sets the margin.
+    /// </summary>
     public DimensionValue Margin { set { SetYogaMargin(YGEdge.All, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the margin x.
+    /// </summary>
     public DimensionValue MarginX { set { SetYogaMargin(YGEdge.Horizontal, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the margin y.
+    /// </summary>
     public DimensionValue MarginY { set { SetYogaMargin(YGEdge.Vertical, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the margin top.
+    /// </summary>
     public DimensionValue MarginTop { set { SetYogaMargin(YGEdge.Top, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the margin right.
+    /// </summary>
     public DimensionValue MarginRight { set { SetYogaMargin(YGEdge.Right, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the margin bottom.
+    /// </summary>
     public DimensionValue MarginBottom { set { SetYogaMargin(YGEdge.Bottom, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the margin left.
+    /// </summary>
     public DimensionValue MarginLeft { set { SetYogaMargin(YGEdge.Left, value); RequestRender(); } }
 
+    /// <summary>
+    /// Gets or sets the padding.
+    /// </summary>
     public DimensionValue Padding { set { SetYogaPadding(YGEdge.All, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the padding x.
+    /// </summary>
     public DimensionValue PaddingX { set { SetYogaPadding(YGEdge.Horizontal, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the padding y.
+    /// </summary>
     public DimensionValue PaddingY { set { SetYogaPadding(YGEdge.Vertical, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the padding top.
+    /// </summary>
     public DimensionValue PaddingTop { set { SetYogaPadding(YGEdge.Top, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the padding right.
+    /// </summary>
     public DimensionValue PaddingRight { set { SetYogaPadding(YGEdge.Right, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the padding bottom.
+    /// </summary>
     public DimensionValue PaddingBottom { set { SetYogaPadding(YGEdge.Bottom, value); RequestRender(); } }
+    /// <summary>
+    /// Gets or sets the padding left.
+    /// </summary>
     public DimensionValue PaddingLeft { set { SetYogaPadding(YGEdge.Left, value); RequestRender(); } }
 
     #endregion
 
     #region Layout Node
 
+    /// <summary>
+    /// Gets a layout node.
+    /// </summary>
+    /// <returns>The layout node.</returns>
     public Node GetLayoutNode() => YogaNode;
 
+    /// <summary>
+    /// Gets the primary axis.
+    /// </summary>
     public string PrimaryAxis
     {
         get
@@ -629,6 +938,9 @@ public abstract class Renderable : EventEmitter
 
     #region Update from layout
 
+    /// <summary>
+    /// Updates the from layout.
+    /// </summary>
     public void UpdateFromLayout()
     {
         var frameId = _ctx.FrameId;
@@ -689,6 +1001,11 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Handles the layout resize.
+    /// </summary>
+    /// <param name="width">The width value.</param>
+    /// <param name="height">The height value.</param>
     protected virtual void OnLayoutResize(int width, int height)
     {
         if (_visible)
@@ -699,6 +1016,11 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Handles the frame buffer resize.
+    /// </summary>
+    /// <param name="width">The width value.</param>
+    /// <param name="height">The height value.</param>
     protected void HandleFrameBufferResize(int width, int height)
     {
         if (!_buffered) return;
@@ -710,6 +1032,9 @@ public abstract class Renderable : EventEmitter
             CreateFrameBuffer();
     }
 
+    /// <summary>
+    /// Creates a frame buffer.
+    /// </summary>
     protected void CreateFrameBuffer()
     {
         var w = _widthValue;
@@ -726,6 +1051,11 @@ public abstract class Renderable : EventEmitter
         }
     }
 
+    /// <summary>
+    /// Handles the resize.
+    /// </summary>
+    /// <param name="width">The width value.</param>
+    /// <param name="height">The height value.</param>
     protected virtual void OnResize(int width, int height)
     {
         _sizeChangeListener?.Invoke();
@@ -742,6 +1072,12 @@ public abstract class Renderable : EventEmitter
         obj._parent = this;
     }
 
+    /// <summary>
+    /// Performs add.
+    /// </summary>
+    /// <param name="obj">The obj.</param>
+    /// <param name="index">The zero-based index.</param>
+    /// <returns>The result of add.</returns>
     public virtual int Add(Renderable? obj, int? index = null)
     {
         if (obj is null || obj._isDestroyed) return -1;
@@ -782,6 +1118,12 @@ public abstract class Renderable : EventEmitter
         return insertedIndex;
     }
 
+    /// <summary>
+    /// Performs insert before.
+    /// </summary>
+    /// <param name="obj">The obj.</param>
+    /// <param name="anchor">The anchor.</param>
+    /// <returns>The result of insert before.</returns>
     public virtual int InsertBefore(Renderable? obj, Renderable? anchor)
     {
         if (anchor is null) return Add(obj);
@@ -822,9 +1164,18 @@ public abstract class Renderable : EventEmitter
         return insertedIndex;
     }
 
+    /// <summary>
+    /// Gets a renderable.
+    /// </summary>
+    /// <param name="id">The identifier.</param>
+    /// <returns>The renderable.</returns>
     public Renderable? GetRenderable(string id) =>
         _renderableMapById.TryGetValue(id, out var r) ? r : null;
 
+    /// <summary>
+    /// Performs remove.
+    /// </summary>
+    /// <param name="id">The identifier.</param>
     public virtual void Remove(string id)
     {
         if (string.IsNullOrEmpty(id)) return;
@@ -847,12 +1198,28 @@ public abstract class Renderable : EventEmitter
         _childrenPrimarySortDirty = true;
     }
 
+    /// <summary>
+    /// Handles the remove.
+    /// </summary>
     protected virtual void OnRemove() { }
 
+    /// <summary>
+    /// Gets a children.
+    /// </summary>
+    /// <returns>The children.</returns>
     public List<Renderable> GetChildren() => [.. _childrenInLayoutOrder];
 
+    /// <summary>
+    /// Gets a children count.
+    /// </summary>
+    /// <returns>The children count.</returns>
     public int GetChildrenCount() => _childrenInLayoutOrder.Count;
 
+    /// <summary>
+    /// Performs find descendant by id.
+    /// </summary>
+    /// <param name="id">The identifier.</param>
+    /// <returns>The descendant by id.</returns>
     public Renderable? FindDescendantById(string id)
     {
         foreach (var child in _childrenInLayoutOrder)
@@ -864,6 +1231,10 @@ public abstract class Renderable : EventEmitter
         return null;
     }
 
+    /// <summary>
+    /// Gets a children sorted by primary axis.
+    /// </summary>
+    /// <returns>The children sorted by primary axis.</returns>
     public List<Renderable> GetChildrenSortedByPrimaryAxis()
     {
         if (!_childrenPrimarySortDirty && _childrenSortedByPrimaryAxis.Count == _childrenInLayoutOrder.Count)
@@ -889,12 +1260,20 @@ public abstract class Renderable : EventEmitter
 
     #region Render
 
+    /// <summary>
+    /// Performs request render.
+    /// </summary>
     public void RequestRender()
     {
         MarkDirty();
         _ctx.RequestRender();
     }
 
+    /// <summary>
+    /// Performs render.
+    /// </summary>
+    /// <param name="buffer">The target buffer.</param>
+    /// <param name="deltaTime">The delta time.</param>
     public virtual void Render(OptimizedBuffer buffer, float deltaTime)
     {
         var renderBuffer = _buffered && _frameBuffer is not null ? _frameBuffer : buffer;
@@ -925,6 +1304,11 @@ public abstract class Renderable : EventEmitter
 
     #region Update Layout (tree walk)
 
+    /// <summary>
+    /// Updates the layout.
+    /// </summary>
+    /// <param name="deltaTime">The delta time.</param>
+    /// <param name="renderList">The render list.</param>
     public virtual void UpdateLayout(float deltaTime, List<RenderCommand> renderList)
     {
         if (!_visible) return;
@@ -990,10 +1374,22 @@ public abstract class Renderable : EventEmitter
             renderList.Add(RenderCommand.CreatePopOpacity());
     }
 
+    /// <summary>
+    /// Performs has visible child filter.
+    /// </summary>
+    /// <returns>true if has visible child filter; otherwise, false.</returns>
     protected virtual bool HasVisibleChildFilter() => false;
+    /// <summary>
+    /// Gets a visible children.
+    /// </summary>
+    /// <returns>The visible children.</returns>
     protected virtual int[] GetVisibleChildren() =>
         [.. _childrenInZIndexOrder.Select(c => c.Num)];
 
+    /// <summary>
+    /// Gets a scissor rect.
+    /// </summary>
+    /// <returns>The scissor rect.</returns>
     protected virtual (int x, int y, int w, int h) GetScissorRect() =>
         (_buffered ? 0 : (int)_screenX, _buffered ? 0 : (int)_screenY, _widthValue, _heightValue);
 
@@ -1001,8 +1397,14 @@ public abstract class Renderable : EventEmitter
 
     #region Destroy
 
+    /// <summary>
+    /// Gets a value indicating whether is destroyed.
+    /// </summary>
     public bool IsDestroyed => _isDestroyed;
 
+    /// <summary>
+    /// Performs destroy.
+    /// </summary>
     public virtual void Destroy()
     {
         if (_isDestroyed) return;
@@ -1032,6 +1434,9 @@ public abstract class Renderable : EventEmitter
         try { YGNodeAPI.YGNodeFree(YogaNode); } catch { /* may already be freed */ }
     }
 
+    /// <summary>
+    /// Performs destroy recursively.
+    /// </summary>
     public virtual void DestroyRecursively()
     {
         var children = _childrenInLayoutOrder.ToArray();
@@ -1047,6 +1452,10 @@ public abstract class Renderable : EventEmitter
 
     #region Mouse Events
 
+    /// <summary>
+    /// Performs process mouse event.
+    /// </summary>
+    /// <param name="evt">The event data.</param>
     public void ProcessMouseEvent(UiMouseEvent evt)
     {
         _mouseListener?.Invoke(evt);
@@ -1058,25 +1467,68 @@ public abstract class Renderable : EventEmitter
             _parent.ProcessMouseEvent(evt);
     }
 
+    /// <summary>
+    /// Handles the mouse event.
+    /// </summary>
+    /// <param name="evt">The event data.</param>
     protected virtual void OnMouseEvent(UiMouseEvent evt) { }
 
     #endregion
 
     #region Event Property Setters
 
+    /// <summary>
+    /// Gets or sets the on mouse.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouse { set => _mouseListener = value; }
+    /// <summary>
+    /// Gets or sets the on mouse down.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseDown { set => SetMouseHandler("down", value); }
+    /// <summary>
+    /// Gets or sets the on mouse up.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseUp { set => SetMouseHandler("up", value); }
+    /// <summary>
+    /// Gets or sets the on mouse move.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseMove { set => SetMouseHandler("move", value); }
+    /// <summary>
+    /// Gets or sets the on mouse drag.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseDrag { set => SetMouseHandler("drag", value); }
+    /// <summary>
+    /// Gets or sets the on mouse drag end.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseDragEnd { set => SetMouseHandler("drag-end", value); }
+    /// <summary>
+    /// Gets or sets the on mouse drop.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseDrop { set => SetMouseHandler("drop", value); }
+    /// <summary>
+    /// Gets or sets the on mouse over.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseOver { set => SetMouseHandler("over", value); }
+    /// <summary>
+    /// Gets or sets the on mouse out.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseOut { set => SetMouseHandler("out", value); }
+    /// <summary>
+    /// Gets or sets the on mouse scroll.
+    /// </summary>
     public Action<UiMouseEvent>? OnMouseScroll { set => SetMouseHandler("scroll", value); }
 
+    /// <summary>
+    /// Gets or sets the on paste handler.
+    /// </summary>
     public Action<PasteEvent>? OnPasteHandler { get => _pasteListener; set => _pasteListener = value; }
+    /// <summary>
+    /// Gets or sets the on key down.
+    /// </summary>
     public Action<KeyEvent>? OnKeyDown { get => _keyDownListener; set => _keyDownListener = value; }
+    /// <summary>
+    /// Gets or sets the on size change.
+    /// </summary>
     public Action? OnSizeChange { get => _sizeChangeListener; set => _sizeChangeListener = value; }
 
     private void SetMouseHandler(string type, Action<UiMouseEvent>? handler)

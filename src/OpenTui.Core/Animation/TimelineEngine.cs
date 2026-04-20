@@ -6,6 +6,9 @@ namespace OpenTui.Core;
 /// </summary>
 public sealed class TimelineEngine
 {
+    /// <summary>
+    /// Stores the instance.
+    /// </summary>
     public static readonly TimelineEngine Instance = new();
 
     private readonly List<Timeline> _timelines = [];

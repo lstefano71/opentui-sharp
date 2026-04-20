@@ -8,22 +8,73 @@ namespace OpenTui.Core;
 /// </summary>
 public class EditBufferOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the text color.
+    /// </summary>
     public Rgba? TextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selection bg.
+    /// </summary>
     public Rgba? SelectionBg { get; init; }
+    /// <summary>
+    /// Gets or sets the selection fg.
+    /// </summary>
     public Rgba? SelectionFg { get; init; }
+    /// <summary>
+    /// Gets or sets the selectable.
+    /// </summary>
     public bool Selectable { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the attributes.
+    /// </summary>
     public TextAttributes Attributes { get; init; }
+    /// <summary>
+    /// Gets or sets the wrap mode.
+    /// </summary>
     public byte WrapMode { get; init; } = 2; // 0=none, 1=char, 2=word
+    /// <summary>
+    /// Gets or sets the scroll margin.
+    /// </summary>
     public float ScrollMargin { get; init; } = 0.2f;
+    /// <summary>
+    /// Gets or sets the scroll speed.
+    /// </summary>
     public float ScrollSpeed { get; init; } = 16;
+    /// <summary>
+    /// Gets or sets a value indicating whether show cursor.
+    /// </summary>
     public bool ShowCursor { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the cursor color.
+    /// </summary>
     public Rgba? CursorColor { get; init; }
+    /// <summary>
+    /// Gets or sets the cursor style.
+    /// </summary>
     public CursorStyle CursorStyle { get; init; } = CursorStyle.BlinkingBlock;
+    /// <summary>
+    /// Gets or sets the tab indicator.
+    /// </summary>
     public string? TabIndicator { get; init; }
+    /// <summary>
+    /// Gets or sets the tab indicator color.
+    /// </summary>
     public Rgba? TabIndicatorColor { get; init; }
+    /// <summary>
+    /// Gets or sets the syntax style.
+    /// </summary>
     public SyntaxStyle? SyntaxStyle { get; init; }
+    /// <summary>
+    /// Gets or sets the on cursor change.
+    /// </summary>
     public Action<(int Line, int VisualColumn)>? OnCursorChange { get; init; }
+    /// <summary>
+    /// Gets or sets the on content change.
+    /// </summary>
     public Action? OnContentChange { get; init; }
 }
 
@@ -34,18 +85,57 @@ public class EditBufferOptions : RenderableOptions
 /// </summary>
 public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 {
+    /// <summary>
+    /// Stores the eb text color.
+    /// </summary>
     protected Rgba _ebTextColor;
+    /// <summary>
+    /// Stores the eb background color.
+    /// </summary>
     protected Rgba _ebBackgroundColor;
+    /// <summary>
+    /// Stores the default attributes.
+    /// </summary>
     protected TextAttributes _defaultAttributes;
+    /// <summary>
+    /// Stores the selection bg.
+    /// </summary>
     protected Rgba? _selectionBg;
+    /// <summary>
+    /// Stores the selection fg.
+    /// </summary>
     protected Rgba? _selectionFg;
+    /// <summary>
+    /// Stores the wrap mode.
+    /// </summary>
     protected byte _wrapMode;
+    /// <summary>
+    /// Stores the scroll margin.
+    /// </summary>
     protected float _scrollMargin;
+    /// <summary>
+    /// Stores the scroll speed.
+    /// </summary>
     protected float _scrollSpeed;
+    /// <summary>
+    /// Stores the show cursor.
+    /// </summary>
     protected bool _showCursor;
+    /// <summary>
+    /// Stores the cursor color.
+    /// </summary>
     protected Rgba _cursorColor;
+    /// <summary>
+    /// Stores the cursor style.
+    /// </summary>
     protected CursorStyle _cursorStyle;
+    /// <summary>
+    /// Stores the tab indicator.
+    /// </summary>
     protected string? _tabIndicator;
+    /// <summary>
+    /// Stores the tab indicator color.
+    /// </summary>
     protected Rgba? _tabIndicatorColor;
 
     private LineInfo? _cachedLineInfo;
@@ -55,10 +145,24 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
     private Action? _contentChangeListener;
     private readonly TextBuffer _textBuffer;
 
+    /// <summary>
+    /// Gets the edit buffer.
+    /// </summary>
     public EditBuffer EditBuffer { get; }
+    /// <summary>
+    /// Gets the editor view.
+    /// </summary>
     public EditorView EditorView { get; }
+    /// <summary>
+    /// Gets the extmarks.
+    /// </summary>
     public ExtmarksController Extmarks { get; }
 
+    /// <summary>
+    /// Initializes a new instance of the EditBufferRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     protected EditBufferRenderable(IRenderContext ctx, EditBufferOptions options)
         : base(ctx, options)
     {
@@ -106,6 +210,9 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the text color.
+    /// </summary>
     public virtual Rgba TextColor
     {
         get => _ebTextColor;
@@ -117,6 +224,9 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         }
     }
 
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public virtual Rgba BackgroundColor
     {
         get => _ebBackgroundColor;
@@ -128,15 +238,39 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         }
     }
 
+    /// <summary>
+    /// Gets the plain text.
+    /// </summary>
     public string PlainText => EditBuffer.GetText();
+    /// <summary>
+    /// Gets the line count.
+    /// </summary>
     public int LineCount => CountLogicalLines(PlainText);
+    /// <summary>
+    /// Gets the virtual line count.
+    /// </summary>
     public int VirtualLineCount => (int)EditorView.GetVirtualLineCount();
+    /// <summary>
+    /// Gets the scroll y.
+    /// </summary>
     public int ScrollY => EditorView.GetViewport().Y;
 
+    /// <summary>
+    /// Gets the logical cursor.
+    /// </summary>
     public LogicalCursor LogicalCursor => EditBuffer.GetCursorPosition();
+    /// <summary>
+    /// Gets the visual cursor.
+    /// </summary>
     public VisualCursor VisualCursor => EditorView.GetVisualCursor();
+    /// <summary>
+    /// Gets the cursor offset.
+    /// </summary>
     public uint CursorOffset => LogicalCursor.Offset;
 
+    /// <summary>
+    /// Gets or sets the wrap mode.
+    /// </summary>
     public byte WrapMode
     {
         get => _wrapMode;
@@ -151,12 +285,18 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         }
     }
 
+    /// <summary>
+    /// Gets or sets the scroll speed.
+    /// </summary>
     public float ScrollSpeed
     {
         get => _scrollSpeed;
         set => _scrollSpeed = Math.Max(0, value);
     }
 
+    /// <summary>
+    /// Gets or sets the tab indicator.
+    /// </summary>
     public string? TabIndicator
     {
         get => _tabIndicator;
@@ -170,6 +310,9 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         }
     }
 
+    /// <summary>
+    /// Gets or sets the tab indicator color.
+    /// </summary>
     public Rgba? TabIndicatorColor
     {
         get => _tabIndicatorColor;
@@ -186,6 +329,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Text Operations
 
+    /// <summary>
+    /// Sets the text.
+    /// </summary>
+    /// <param name="text">The text value.</param>
     public void SetText(string text)
     {
         var previousState = CaptureState();
@@ -197,8 +344,16 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         NotifyContentAndCursorChanges(previousState);
     }
 
+    /// <summary>
+    /// Gets a text.
+    /// </summary>
+    /// <returns>The text.</returns>
     public string GetText() => EditBuffer.GetText();
 
+    /// <summary>
+    /// Performs insert text.
+    /// </summary>
+    /// <param name="text">The text value.</param>
     public virtual void InsertText(string text)
     {
         var previousState = CaptureState();
@@ -212,6 +367,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         NotifyContentAndCursorChanges(previousState);
     }
 
+    /// <summary>
+    /// Performs delete char backward.
+    /// </summary>
+    /// <returns>true if delete char backward; otherwise, false.</returns>
     public virtual bool DeleteCharBackward()
     {
         var previousState = CaptureState();
@@ -245,6 +404,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs delete char.
+    /// </summary>
+    /// <returns>true if delete char; otherwise, false.</returns>
     public virtual bool DeleteChar()
     {
         var previousState = CaptureState();
@@ -278,6 +441,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs new line.
+    /// </summary>
+    /// <returns>true if new line; otherwise, false.</returns>
     public virtual bool NewLine()
     {
         var previousState = CaptureState();
@@ -292,6 +459,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs undo.
+    /// </summary>
+    /// <returns>true if undo; otherwise, false.</returns>
     public virtual bool Undo()
     {
         var previousState = CaptureState();
@@ -304,6 +475,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs redo.
+    /// </summary>
+    /// <returns>true if redo; otherwise, false.</returns>
     public virtual bool Redo()
     {
         var previousState = CaptureState();
@@ -320,6 +495,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Cursor Movement
 
+    /// <summary>
+    /// Performs move cursor left.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if move cursor left; otherwise, false.</returns>
     public bool MoveCursorLeft(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -348,6 +528,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs move cursor right.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if move cursor right; otherwise, false.</returns>
     public bool MoveCursorRight(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -380,6 +565,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs move cursor up.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if move cursor up; otherwise, false.</returns>
     public bool MoveCursorUp(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -394,6 +584,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs move cursor down.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if move cursor down; otherwise, false.</returns>
     public bool MoveCursorDown(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -408,6 +603,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs goto line home.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if goto line home; otherwise, false.</returns>
     public bool GotoLineHome(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -433,6 +633,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs goto line end.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if goto line end; otherwise, false.</returns>
     public bool GotoLineEnd(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -453,6 +658,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs goto visual line home.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if goto visual line home; otherwise, false.</returns>
     public bool GotoVisualLineHome(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -468,6 +678,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs goto visual line end.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if goto visual line end; otherwise, false.</returns>
     public bool GotoVisualLineEnd(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -483,6 +698,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs goto buffer home.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if goto buffer home; otherwise, false.</returns>
     public bool GotoBufferHome(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -497,6 +717,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs goto buffer end.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if goto buffer end; otherwise, false.</returns>
     public bool GotoBufferEnd(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -511,6 +736,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs move word forward.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if move word forward; otherwise, false.</returns>
     public bool MoveWordForward(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -526,6 +756,11 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs move word backward.
+    /// </summary>
+    /// <param name="select">The select.</param>
+    /// <returns>true if move word backward; otherwise, false.</returns>
     public bool MoveWordBackward(bool select = false)
     {
         var previousCursor = EditBuffer.GetCursorPosition();
@@ -541,6 +776,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs delete word forward.
+    /// </summary>
+    /// <returns>true if delete word forward; otherwise, false.</returns>
     public virtual bool DeleteWordForward()
     {
         var previousState = CaptureState();
@@ -563,6 +802,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs delete word backward.
+    /// </summary>
+    /// <returns>true if delete word backward; otherwise, false.</returns>
     public virtual bool DeleteWordBackward()
     {
         var previousState = CaptureState();
@@ -585,6 +828,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs delete line.
+    /// </summary>
+    /// <returns>true if delete line; otherwise, false.</returns>
     public virtual bool DeleteLine()
     {
         var previousState = CaptureState();
@@ -614,6 +861,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs delete to line end.
+    /// </summary>
+    /// <returns>true if delete to line end; otherwise, false.</returns>
     public virtual bool DeleteToLineEnd()
     {
         var previousState = CaptureState();
@@ -635,6 +886,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs delete to line start.
+    /// </summary>
+    /// <returns>true if delete to line start; otherwise, false.</returns>
     public virtual bool DeleteToLineStart()
     {
         var previousState = CaptureState();
@@ -660,6 +915,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Performs select all.
+    /// </summary>
+    /// <returns>true if select all; otherwise, false.</returns>
     public virtual bool SelectAll()
     {
         UpdateSelectionForMovement(false, beforeMovement: true);
@@ -697,6 +956,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_widthValue == 0 || _heightValue == 0) return;
@@ -726,10 +986,16 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Selection / Line Info
 
+    /// <inheritdoc />
     public override bool HasSelection() => EditorView.HasSelection();
 
+    /// <inheritdoc />
     public override string GetSelectedText() => EditorView.GetSelectedText();
 
+    /// <summary>
+    /// Gets a cached line info.
+    /// </summary>
+    /// <returns>The cached line info.</returns>
     public LineInfo? GetCachedLineInfo()
     {
         if (_lineInfoDirty)
@@ -741,6 +1007,9 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return _cachedLineInfo;
     }
 
+    /// <summary>
+    /// Performs invalidate line info.
+    /// </summary>
     protected void InvalidateLineInfo()
     {
         _lineInfoDirty = true;
@@ -751,11 +1020,13 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Mouse / Paste / Resize
 
+    /// <inheritdoc />
     protected override void HandlePaste(PasteEvent evt)
     {
         InsertText(evt.Text);
     }
 
+    /// <inheritdoc />
     protected override void OnMouseEvent(UiMouseEvent evt)
     {
         if (evt.Type == MouseEventType.Scroll && evt.Scroll is { } scroll)
@@ -794,6 +1065,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         base.OnMouseEvent(evt);
     }
 
+    /// <inheritdoc />
     protected override void OnResize(int width, int height)
     {
         base.OnResize(width, height);
@@ -805,6 +1077,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Dispose
 
+    /// <inheritdoc />
     protected override void DestroySelf()
     {
         Extmarks.Destroy();
@@ -818,6 +1091,12 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
 
     #region Helpers
 
+    /// <summary>
+    /// Performs delete selection if present.
+    /// </summary>
+    /// <param name="previousState">The previous state.</param>
+    /// <param name="notify">The notify.</param>
+    /// <returns>true if delete selection if present; otherwise, false.</returns>
     protected bool DeleteSelectionIfPresent((string Text, LogicalCursor Cursor)? previousState = null, bool notify = true)
     {
         var selection = EditorView.GetSelectionRange();
@@ -836,6 +1115,9 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         return true;
     }
 
+    /// <summary>
+    /// Clears the selection.
+    /// </summary>
     protected void ClearSelection()
     {
         _selectionAnchorOffset = null;

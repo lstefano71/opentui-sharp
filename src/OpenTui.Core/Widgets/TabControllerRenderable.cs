@@ -5,18 +5,57 @@ namespace OpenTui.Core;
 /// </summary>
 public sealed class TabControllerOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the tab bar height.
+    /// </summary>
     public int TabBarHeight { get; init; } = 4;
+    /// <summary>
+    /// Gets or sets the tab width.
+    /// </summary>
     public int TabWidth { get; init; } = 20;
+    /// <summary>
+    /// Gets or sets the tab bar background color.
+    /// </summary>
     public Rgba? TabBarBackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the help text color.
+    /// </summary>
     public Rgba? HelpTextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the text color.
+    /// </summary>
     public Rgba? TextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selected background color.
+    /// </summary>
     public Rgba? SelectedBackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selected text color.
+    /// </summary>
     public Rgba? SelectedTextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selected description color.
+    /// </summary>
     public Rgba? SelectedDescriptionColor { get; init; }
+    /// <summary>
+    /// Gets or sets a value indicating whether show description.
+    /// </summary>
     public bool ShowDescription { get; init; } = true;
+    /// <summary>
+    /// Gets or sets a value indicating whether show underline.
+    /// </summary>
     public bool ShowUnderline { get; init; } = true;
+    /// <summary>
+    /// Gets or sets a value indicating whether show scroll arrows.
+    /// </summary>
     public bool ShowScrollArrows { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the wrap selection.
+    /// </summary>
     public bool WrapSelection { get; init; }
 }
 
@@ -25,11 +64,29 @@ public sealed class TabControllerOptions : RenderableOptions
 /// </summary>
 public sealed class TabControllerTab
 {
+    /// <summary>
+    /// Gets or sets the title.
+    /// </summary>
     public required string Title { get; init; }
+    /// <summary>
+    /// Gets or sets the description.
+    /// </summary>
     public string? Description { get; init; }
+    /// <summary>
+    /// Gets or sets the initialize.
+    /// </summary>
     public required Action<BoxRenderable> Initialize { get; init; }
+    /// <summary>
+    /// Gets or sets the update.
+    /// </summary>
     public Action<float, BoxRenderable>? Update { get; init; }
+    /// <summary>
+    /// Gets or sets a value indicating whether show.
+    /// </summary>
     public Action? Show { get; init; }
+    /// <summary>
+    /// Gets or sets the hide.
+    /// </summary>
     public Action? Hide { get; init; }
 }
 
@@ -47,8 +104,14 @@ internal sealed class TabControllerState
 /// </summary>
 public sealed class TabControllerRenderable : Renderable
 {
+    /// <summary>
+    /// Represents an Events.
+    /// </summary>
     public static class Events
     {
+        /// <summary>
+        /// Stores the tab changed.
+        /// </summary>
         public const string TabChanged = "tabChanged";
     }
 
@@ -59,6 +122,11 @@ public sealed class TabControllerRenderable : Renderable
     private Rgba _backgroundColor;
     private int _currentTabIndex = -1;
 
+    /// <summary>
+    /// Initializes a new instance of the TabControllerRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public TabControllerRenderable(IRenderContext ctx, TabControllerOptions? options = null)
         : base(ctx, options ?? new TabControllerOptions())
     {
@@ -95,6 +163,9 @@ public sealed class TabControllerRenderable : Renderable
         Add(_tabSelect);
     }
 
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba BackgroundColor
     {
         get => _backgroundColor;
@@ -105,27 +176,54 @@ public sealed class TabControllerRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets the tab strip.
+    /// </summary>
     public TabSelectRenderable TabStrip => _tabSelect;
 
+    /// <summary>
+    /// Gets the tab count.
+    /// </summary>
     public int TabCount => _tabs.Count;
 
+    /// <summary>
+    /// Gets a current tab index.
+    /// </summary>
+    /// <returns>The current tab index.</returns>
     public int GetCurrentTabIndex() => _currentTabIndex;
 
+    /// <summary>
+    /// Gets a current help text.
+    /// </summary>
+    /// <returns>The current help text.</returns>
     public string GetCurrentHelpText() =>
         _tabs.Count == 0
             ? string.Empty
             : BuildHelpText(Math.Clamp(_currentTabIndex, 0, _tabs.Count - 1));
 
+    /// <summary>
+    /// Gets a current tab.
+    /// </summary>
+    /// <returns>The current tab.</returns>
     public TabControllerTab? GetCurrentTab() =>
         _currentTabIndex >= 0 && _currentTabIndex < _tabs.Count
             ? _tabs[_currentTabIndex].Definition
             : null;
 
+    /// <summary>
+    /// Gets a current tab group.
+    /// </summary>
+    /// <returns>The current tab group.</returns>
     public BoxRenderable? GetCurrentTabGroup() =>
         _currentTabIndex >= 0 && _currentTabIndex < _tabs.Count
             ? _tabs[_currentTabIndex].Group
             : null;
 
+    /// <summary>
+    /// Adds a tab.
+    /// </summary>
+    /// <param name="tab">The tab.</param>
+    /// <returns>The result of add tab.</returns>
     public int AddTab(TabControllerTab tab)
     {
         ArgumentNullException.ThrowIfNull(tab);
@@ -167,8 +265,15 @@ public sealed class TabControllerRenderable : Renderable
         return _tabs.Count - 1;
     }
 
+    /// <summary>
+    /// Performs switch to tab.
+    /// </summary>
+    /// <param name="index">The zero-based index.</param>
     public void SwitchToTab(int index) => SwitchToTab(index, syncTabStrip: true);
 
+    /// <summary>
+    /// Performs next tab.
+    /// </summary>
     public void NextTab()
     {
         if (_tabs.Count == 0)
@@ -177,6 +282,9 @@ public sealed class TabControllerRenderable : Renderable
         SwitchToTab((_currentTabIndex + 1 + _tabs.Count) % _tabs.Count);
     }
 
+    /// <summary>
+    /// Performs previous tab.
+    /// </summary>
     public void PreviousTab()
     {
         if (_tabs.Count == 0)
@@ -185,10 +293,13 @@ public sealed class TabControllerRenderable : Renderable
         SwitchToTab((_currentTabIndex - 1 + _tabs.Count) % _tabs.Count);
     }
 
+    /// <inheritdoc />
     public override void Focus() => _tabSelect.Focus();
 
+    /// <inheritdoc />
     public override void Blur() => _tabSelect.Blur();
 
+    /// <inheritdoc />
     protected override void OnUpdate(float deltaTime)
     {
         base.OnUpdate(deltaTime);
@@ -200,6 +311,7 @@ public sealed class TabControllerRenderable : Renderable
         current.Definition.Update?.Invoke(deltaTime, current.Group);
     }
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_widthValue <= 0 || _heightValue <= 0)

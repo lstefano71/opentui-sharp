@@ -75,15 +75,30 @@ public sealed class CliRendererConfig
 /// <summary>Controls how the renderer uses terminal space.</summary>
 public enum ScreenMode
 {
+    /// <summary>
+    /// Represents the Alternate Screen option.
+    /// </summary>
     AlternateScreen,
+    /// <summary>
+    /// Represents the Main Screen option.
+    /// </summary>
     MainScreen,
+    /// <summary>
+    /// Represents the Split Footer option.
+    /// </summary>
     SplitFooter,
 }
 
 /// <summary>Controls whether stdout is passed through or captured above a split footer.</summary>
 public enum ExternalOutputMode
 {
+    /// <summary>
+    /// Represents the Passthrough option.
+    /// </summary>
     Passthrough,
+    /// <summary>
+    /// Represents the Capture Stdout option.
+    /// </summary>
     CaptureStdout,
 }
 

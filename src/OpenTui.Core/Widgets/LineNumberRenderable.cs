@@ -24,16 +24,49 @@ public readonly record struct LineColorConfig(Rgba? GutterBg, Rgba? ContentBg, R
 /// </summary>
 public class LineNumberOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the target.
+    /// </summary>
     public Renderable? Target { get; init; }
+    /// <summary>
+    /// Gets or sets the fg.
+    /// </summary>
     public Rgba? Fg { get; init; }
+    /// <summary>
+    /// Gets or sets the bg.
+    /// </summary>
     public Rgba? Bg { get; init; }
+    /// <summary>
+    /// Gets or sets the min width.
+    /// </summary>
     public int MinWidth { get; init; } = 3;
+    /// <summary>
+    /// Gets or sets the padding right.
+    /// </summary>
     public int PaddingRight { get; init; } = 1;
+    /// <summary>
+    /// Gets or sets the line number offset.
+    /// </summary>
     public int LineNumberOffset { get; init; }
+    /// <summary>
+    /// Gets or sets a value indicating whether show line numbers.
+    /// </summary>
     public bool ShowLineNumbers { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the line colors.
+    /// </summary>
     public Dictionary<int, LineColorConfig>? LineColors { get; init; }
+    /// <summary>
+    /// Gets or sets the line signs.
+    /// </summary>
     public Dictionary<int, LineSign>? LineSigns { get; init; }
+    /// <summary>
+    /// Gets or sets the hide line numbers.
+    /// </summary>
     public HashSet<int>? HideLineNumbers { get; init; }
+    /// <summary>
+    /// Gets or sets the line numbers.
+    /// </summary>
     public Dictionary<int, int>? LineNumbers { get; init; }
 }
 
@@ -57,6 +90,11 @@ public class LineNumberRenderable : Renderable
     private HashSet<int> _hideLineNumbers;
     private Dictionary<int, int>? _customLineNumbers;
 
+    /// <summary>
+    /// Initializes a new instance of the LineNumberRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public LineNumberRenderable(IRenderContext ctx, LineNumberOptions? options = null)
         : base(ctx, options ?? new LineNumberOptions() { FlexDirection = FlexDirectionValue.Row })
     {
@@ -83,18 +121,27 @@ public class LineNumberRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the fg.
+    /// </summary>
     public Rgba Fg
     {
         get => _fg;
         set { _fg = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the bg.
+    /// </summary>
     public Rgba Bg
     {
         get => _bg;
         set { _bg = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show line numbers.
+    /// </summary>
     public bool ShowLineNumbers
     {
         get => _showLineNumbers;
@@ -108,6 +155,9 @@ public class LineNumberRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the line number offset.
+    /// </summary>
     public int LineNumberOffset
     {
         get => _lineNumberOffset;
@@ -118,61 +168,106 @@ public class LineNumberRenderable : Renderable
 
     #region Line Colors & Signs
 
+    /// <summary>
+    /// Sets the line color.
+    /// </summary>
+    /// <param name="line">The line.</param>
+    /// <param name="config">The config.</param>
     public void SetLineColor(int line, LineColorConfig config)
     {
         _lineColors[line] = config;
         RequestRender();
     }
 
+    /// <summary>
+    /// Clears the line color.
+    /// </summary>
+    /// <param name="line">The line.</param>
     public void ClearLineColor(int line)
     {
         _lineColors.Remove(line);
         RequestRender();
     }
 
+    /// <summary>
+    /// Clears the all line colors.
+    /// </summary>
     public void ClearAllLineColors()
     {
         _lineColors.Clear();
         RequestRender();
     }
 
+    /// <summary>
+    /// Sets the line colors.
+    /// </summary>
+    /// <param name="colors">The colors.</param>
     public void SetLineColors(Dictionary<int, LineColorConfig> colors)
     {
         _lineColors = colors;
         RequestRender();
     }
 
+    /// <summary>
+    /// Sets the line sign.
+    /// </summary>
+    /// <param name="line">The line.</param>
+    /// <param name="sign">The sign.</param>
     public void SetLineSign(int line, LineSign sign)
     {
         _lineSigns[line] = sign;
         DirtyGutterLayout();
     }
 
+    /// <summary>
+    /// Clears the line sign.
+    /// </summary>
+    /// <param name="line">The line.</param>
     public void ClearLineSign(int line)
     {
         _lineSigns.Remove(line);
         DirtyGutterLayout();
     }
 
+    /// <summary>
+    /// Sets the line signs.
+    /// </summary>
+    /// <param name="signs">The signs.</param>
     public void SetLineSigns(Dictionary<int, LineSign> signs)
     {
         _lineSigns = signs;
         DirtyGutterLayout();
     }
 
+    /// <summary>
+    /// Sets the hide line numbers.
+    /// </summary>
+    /// <param name="lines">The lines.</param>
     public void SetHideLineNumbers(HashSet<int> lines)
     {
         _hideLineNumbers = lines;
         RequestRender();
     }
 
+    /// <summary>
+    /// Sets the line numbers.
+    /// </summary>
+    /// <param name="numbers">The numbers.</param>
     public void SetLineNumbers(Dictionary<int, int>? numbers)
     {
         _customLineNumbers = numbers;
         RequestRender();
     }
 
+    /// <summary>
+    /// Gets a line colors.
+    /// </summary>
+    /// <returns>The line colors.</returns>
     public Dictionary<int, LineColorConfig> GetLineColors() => _lineColors;
+    /// <summary>
+    /// Gets a line signs.
+    /// </summary>
+    /// <returns>The line signs.</returns>
     public Dictionary<int, LineSign> GetLineSigns() => _lineSigns;
 
     private void DirtyGutterLayout()
@@ -185,6 +280,10 @@ public class LineNumberRenderable : Renderable
 
     #region Target Management
 
+    /// <summary>
+    /// Sets the target.
+    /// </summary>
+    /// <param name="target">The target.</param>
     public void SetTarget(Renderable target)
     {
         if (_target == target) return;
@@ -198,11 +297,15 @@ public class LineNumberRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Clears the target.
+    /// </summary>
     public void ClearTarget()
     {
         _target = null;
     }
 
+    /// <inheritdoc />
     public override int Add(Renderable? obj, int? index = null)
     {
         // Auto-detect LineInfoProvider targets
@@ -215,6 +318,7 @@ public class LineNumberRenderable : Renderable
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         // Draw full-width content backgrounds for lines with custom colors

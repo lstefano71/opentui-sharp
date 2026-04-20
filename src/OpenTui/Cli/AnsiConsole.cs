@@ -8,31 +8,82 @@ public sealed class AnsiConsole : ICliConsole
     /// <summary>Shared default instance.</summary>
     public static readonly AnsiConsole Instance = new();
 
+    /// <summary>
+    /// Gets the width.
+    /// </summary>
     public int Width => Console.WindowWidth;
+    /// <summary>
+    /// Gets the height.
+    /// </summary>
     public int Height => Console.WindowHeight;
+    /// <summary>
+    /// Gets the supports ansi.
+    /// </summary>
     public bool SupportsAnsi => !Console.IsOutputRedirected;
+    /// <summary>
+    /// Gets a value indicating whether is interactive.
+    /// </summary>
     public bool IsInteractive => !Console.IsInputRedirected && !Console.IsOutputRedirected;
 
+    /// <summary>
+    /// Performs write.
+    /// </summary>
+    /// <param name="text">The text value.</param>
     public void Write(string text) => Console.Write(text);
+    /// <summary>
+    /// Writes a line.
+    /// </summary>
+    /// <param name="text">The text value.</param>
     public void WriteLine(string text = "") => Console.WriteLine(text);
 
+    /// <summary>
+    /// Performs write.
+    /// </summary>
+    /// <param name="text">The text value.</param>
     public void Write(StyledText text)
     {
         foreach (var chunk in text.Chunks)
             WriteChunk(chunk);
     }
 
+    /// <summary>
+    /// Writes a line.
+    /// </summary>
+    /// <param name="text">The text value.</param>
     public void WriteLine(StyledText text)
     {
         Write(text);
         Console.WriteLine();
     }
 
+    /// <summary>
+    /// Reads a line.
+    /// </summary>
+    /// <returns>The line.</returns>
     public string? ReadLine() => Console.ReadLine();
+    /// <summary>
+    /// Reads a key.
+    /// </summary>
+    /// <param name="intercept">The intercept.</param>
+    /// <returns>The key.</returns>
     public ConsoleKeyInfo ReadKey(bool intercept = false) => Console.ReadKey(intercept);
+    /// <summary>
+    /// Sets the cursor position.
+    /// </summary>
+    /// <param name="left">The left.</param>
+    /// <param name="top">The top.</param>
     public void SetCursorPosition(int left, int top) => Console.SetCursorPosition(left, top);
+    /// <summary>
+    /// Performs hide cursor.
+    /// </summary>
     public void HideCursor() => Console.Write("\x1b[?25l");
+    /// <summary>
+    /// Performs show cursor.
+    /// </summary>
     public void ShowCursor() => Console.Write("\x1b[?25h");
+    /// <summary>
+    /// Gets or sets the cursor visible.
+    /// </summary>
     public bool CursorVisible
     {
         get => true; // Can't reliably read this

@@ -7,13 +7,34 @@ public sealed class CliPanel
     private BorderStyle _border = BorderStyle.Rounded;
     private string? _title;
 
+    /// <summary>
+    /// Initializes a new instance of the CliPanel class.
+    /// </summary>
+    /// <param name="content">The content value.</param>
     public CliPanel(string content) => _content = content;
 
+    /// <summary>
+    /// Sets the border.
+    /// </summary>
+    /// <param name="style">The style.</param>
+    /// <returns>The result of set border.</returns>
     public CliPanel SetBorder(BorderStyle style) { _border = style; return this; }
+    /// <summary>
+    /// Sets the title.
+    /// </summary>
+    /// <param name="title">The title.</param>
+    /// <returns>The result of set title.</returns>
     public CliPanel SetTitle(string title) { _title = title; return this; }
 
+    /// <summary>
+    /// Performs write.
+    /// </summary>
     public void Write() => Write(AnsiConsole.Instance);
 
+    /// <summary>
+    /// Performs write.
+    /// </summary>
+    /// <param name="console">The console.</param>
     public void Write(ICliConsole console)
     {
         var chars = BorderCharacters.ForStyle(_border);

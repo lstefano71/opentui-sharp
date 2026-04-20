@@ -11,6 +11,10 @@ public class RootRenderable : Renderable
 {
     private readonly List<RenderCommand> _renderList = [];
 
+    /// <summary>
+    /// Initializes a new instance of the RootRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
     public RootRenderable(IRenderContext ctx)
         : base(ctx, new RenderableOptions
         {
@@ -85,6 +89,7 @@ public class RootRenderable : Renderable
         }
     }
 
+    /// <inheritdoc />
     protected override void PropagateLiveCount(int delta)
     {
         var oldCount = _liveCount;
@@ -96,12 +101,20 @@ public class RootRenderable : Renderable
             _ctx.DropLive();
     }
 
+    /// <summary>
+    /// Performs calculate layout.
+    /// </summary>
     public void CalculateLayout()
     {
         YGNodeAPI.YGNodeCalculateLayout(YogaNode, _widthValue, _heightValue, YGDirection.LTR);
         Emit(LayoutEvents.LayoutChanged);
     }
 
+    /// <summary>
+    /// Performs resize.
+    /// </summary>
+    /// <param name="width">The width value.</param>
+    /// <param name="height">The height value.</param>
     public void Resize(int width, int height)
     {
         WidthDimension = DimensionValue.Point(width);

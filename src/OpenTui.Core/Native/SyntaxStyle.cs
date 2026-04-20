@@ -3,6 +3,9 @@ using OpenTui.Native;
 
 namespace OpenTui.Core;
 
+/// <summary>
+/// Represents a Syntax Style Entry.
+/// </summary>
 public readonly record struct SyntaxStyleEntry(Rgba? Fg, Rgba? Bg, TextAttributes Attributes);
 
 /// <summary>
@@ -60,9 +63,20 @@ public sealed class SyntaxStyle : IDisposable
     /// <summary>Gets the total number of registered styles.</summary>
     public nuint StyleCount => OpenTuiNative.SyntaxStyleGetStyleCount(Handle);
 
+    /// <summary>
+    /// Attempts to get style.
+    /// </summary>
+    /// <param name="name">The name.</param>
+    /// <param name="style">The style.</param>
+    /// <returns>true if try get style; otherwise, false.</returns>
     public bool TryGetStyle(string name, out SyntaxStyleEntry style) =>
         _stylesByName.TryGetValue(name, out style);
 
+    /// <summary>
+    /// Gets a style.
+    /// </summary>
+    /// <param name="name">The name.</param>
+    /// <returns>The style.</returns>
     public SyntaxStyleEntry? GetStyle(string name) =>
         _stylesByName.TryGetValue(name, out var style) ? style : null;
 

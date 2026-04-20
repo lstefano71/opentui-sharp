@@ -11,14 +11,41 @@ namespace OpenTui.Core;
 /// </summary>
 public class MarkdownOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the content.
+    /// </summary>
     public string Content { get; init; } = "";
+    /// <summary>
+    /// Gets or sets the syntax style.
+    /// </summary>
     public SyntaxStyle? SyntaxStyle { get; init; }
+    /// <summary>
+    /// Gets or sets the fg.
+    /// </summary>
     public Rgba? Fg { get; init; }
+    /// <summary>
+    /// Gets or sets the bg.
+    /// </summary>
     public Rgba? Bg { get; init; }
+    /// <summary>
+    /// Gets or sets the conceal.
+    /// </summary>
     public bool Conceal { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the conceal code.
+    /// </summary>
     public bool ConcealCode { get; init; }
+    /// <summary>
+    /// Gets or sets the streaming.
+    /// </summary>
     public bool Streaming { get; init; }
+    /// <summary>
+    /// Gets or sets the table options.
+    /// </summary>
     public MarkdownTableOptions? TableOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the render node.
+    /// </summary>
     public Func<MarkdownToken, Renderable?>? RenderNode { get; init; }
 }
 
@@ -27,14 +54,41 @@ public class MarkdownOptions : RenderableOptions
 /// </summary>
 public class MarkdownTableOptions
 {
+    /// <summary>
+    /// Gets or sets the column width mode.
+    /// </summary>
     public string ColumnWidthMode { get; init; } = "full";
+    /// <summary>
+    /// Gets or sets the column fitter.
+    /// </summary>
     public string ColumnFitter { get; init; } = "proportional";
+    /// <summary>
+    /// Gets or sets the wrap mode.
+    /// </summary>
     public byte WrapMode { get; init; } = 2;
+    /// <summary>
+    /// Gets or sets the cell padding.
+    /// </summary>
     public int CellPadding { get; init; }
+    /// <summary>
+    /// Gets or sets the border.
+    /// </summary>
     public bool Border { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the outer border.
+    /// </summary>
     public bool OuterBorder { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the border style.
+    /// </summary>
     public BorderStyle BorderStyle { get; init; } = BorderStyle.Single;
+    /// <summary>
+    /// Gets or sets the border color.
+    /// </summary>
     public Rgba? BorderColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selectable.
+    /// </summary>
     public bool Selectable { get; init; } = true;
 }
 
@@ -43,14 +97,41 @@ public class MarkdownTableOptions
 /// </summary>
 public sealed class MarkdownToken
 {
+    /// <summary>
+    /// Gets or sets the type.
+    /// </summary>
     public string Type { get; init; } = "";
+    /// <summary>
+    /// Gets or sets the raw.
+    /// </summary>
     public string Raw { get; init; } = "";
+    /// <summary>
+    /// Gets or sets the text.
+    /// </summary>
     public string Text { get; init; } = "";
+    /// <summary>
+    /// Gets or sets the depth.
+    /// </summary>
     public int Depth { get; init; }
+    /// <summary>
+    /// Gets or sets the lang.
+    /// </summary>
     public string? Lang { get; init; }
+    /// <summary>
+    /// Gets or sets the table.
+    /// </summary>
     public MarkdownTableData? Table { get; init; }
+    /// <summary>
+    /// Gets or sets the items.
+    /// </summary>
     public List<MarkdownToken>? Items { get; init; }
+    /// <summary>
+    /// Gets or sets the ordered.
+    /// </summary>
     public bool Ordered { get; init; }
+    /// <summary>
+    /// Gets or sets the start.
+    /// </summary>
     public int Start { get; init; } = 1;
 }
 
@@ -59,8 +140,17 @@ public sealed class MarkdownToken
 /// </summary>
 public sealed class MarkdownTableData
 {
+    /// <summary>
+    /// Gets or sets the header.
+    /// </summary>
     public string[][] Header { get; init; } = [];
+    /// <summary>
+    /// Gets or sets the align.
+    /// </summary>
     public string[] Align { get; init; } = [];
+    /// <summary>
+    /// Gets or sets the rows.
+    /// </summary>
     public string[][][] Rows { get; init; } = [];
 }
 
@@ -89,6 +179,11 @@ public class MarkdownRenderable : Renderable
         public required Renderable Renderable { get; init; }
     }
 
+    /// <summary>
+    /// Initializes a new instance of the MarkdownRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public MarkdownRenderable(IRenderContext ctx, MarkdownOptions? options = null)
         : base(ctx, options ?? new MarkdownOptions() { FlexDirection = FlexDirectionValue.Column })
     {
@@ -111,6 +206,9 @@ public class MarkdownRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the content.
+    /// </summary>
     public string Content
     {
         get => _content;
@@ -123,6 +221,9 @@ public class MarkdownRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the syntax style.
+    /// </summary>
     public SyntaxStyle? SyntaxStyle
     {
         get => _syntaxStyle;
@@ -135,12 +236,18 @@ public class MarkdownRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the md syntax style.
+    /// </summary>
     public SyntaxStyle? MdSyntaxStyle
     {
         get => SyntaxStyle;
         set => SyntaxStyle = value;
     }
 
+    /// <summary>
+    /// Gets or sets the fg.
+    /// </summary>
     public Rgba Fg
     {
         get => _fg;
@@ -153,6 +260,9 @@ public class MarkdownRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the bg.
+    /// </summary>
     public Rgba Bg
     {
         get => _bg;
@@ -165,6 +275,9 @@ public class MarkdownRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the conceal.
+    /// </summary>
     public bool Conceal
     {
         get => _conceal;
@@ -177,6 +290,9 @@ public class MarkdownRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the conceal code.
+    /// </summary>
     public bool ConcealCode
     {
         get => _concealCode;
@@ -189,12 +305,18 @@ public class MarkdownRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the streaming.
+    /// </summary>
     public bool Streaming
     {
         get => _streaming;
         set => _streaming = value;
     }
 
+    /// <summary>
+    /// Gets or sets the table options.
+    /// </summary>
     public MarkdownTableOptions? TableOptions
     {
         get => _tableOptions;
@@ -210,12 +332,18 @@ public class MarkdownRenderable : Renderable
 
     #region Public API
 
+    /// <summary>
+    /// Clears the cache.
+    /// </summary>
     public void ClearCache()
     {
         ParseAndBuild();
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs refresh styles.
+    /// </summary>
     public void RefreshStyles()
     {
         ParseAndBuild();
@@ -843,6 +971,7 @@ public class MarkdownRenderable : Renderable
 
     #region Dispose
 
+    /// <inheritdoc />
     protected override void DestroySelf()
     {
         ClearBlocks();

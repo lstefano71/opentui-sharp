@@ -30,59 +30,146 @@ public readonly record struct ComputedLayout(float Left, float Top, float Width,
 /// <summary>String-based flex direction values matching CSS/TypeScript API.</summary>
 public enum FlexDirectionValue : byte
 {
+    /// <summary>
+    /// Represents the Column option.
+    /// </summary>
     Column,
+    /// <summary>
+    /// Represents the Column Reverse option.
+    /// </summary>
     ColumnReverse,
+    /// <summary>
+    /// Represents the Row option.
+    /// </summary>
     Row,
+    /// <summary>
+    /// Represents the Row Reverse option.
+    /// </summary>
     RowReverse,
 }
 
 /// <summary>String-based flex wrap values.</summary>
 public enum WrapValue : byte
 {
+    /// <summary>
+    /// Represents the No Wrap option.
+    /// </summary>
     NoWrap,
+    /// <summary>
+    /// Represents the Wrap option.
+    /// </summary>
     Wrap,
+    /// <summary>
+    /// Represents the Wrap Reverse option.
+    /// </summary>
     WrapReverse,
 }
 
 /// <summary>String-based alignment values for alignItems/alignSelf.</summary>
 public enum AlignValue : byte
 {
+    /// <summary>
+    /// Represents the Auto option.
+    /// </summary>
     Auto,
+    /// <summary>
+    /// Represents the Flex Start option.
+    /// </summary>
     FlexStart,
+    /// <summary>
+    /// Represents the Center option.
+    /// </summary>
     Center,
+    /// <summary>
+    /// Represents the Flex End option.
+    /// </summary>
     FlexEnd,
+    /// <summary>
+    /// Represents the Stretch option.
+    /// </summary>
     Stretch,
+    /// <summary>
+    /// Represents the Baseline option.
+    /// </summary>
     Baseline,
+    /// <summary>
+    /// Represents the Space Between option.
+    /// </summary>
     SpaceBetween,
+    /// <summary>
+    /// Represents the Space Around option.
+    /// </summary>
     SpaceAround,
+    /// <summary>
+    /// Represents the Space Evenly option.
+    /// </summary>
     SpaceEvenly,
 }
 
 /// <summary>String-based justify content values.</summary>
 public enum JustifyValue : byte
 {
+    /// <summary>
+    /// Represents the Flex Start option.
+    /// </summary>
     FlexStart,
+    /// <summary>
+    /// Represents the Center option.
+    /// </summary>
     Center,
+    /// <summary>
+    /// Represents the Flex End option.
+    /// </summary>
     FlexEnd,
+    /// <summary>
+    /// Represents the Space Between option.
+    /// </summary>
     SpaceBetween,
+    /// <summary>
+    /// Represents the Space Around option.
+    /// </summary>
     SpaceAround,
+    /// <summary>
+    /// Represents the Space Evenly option.
+    /// </summary>
     SpaceEvenly,
+    /// <summary>
+    /// Represents the Stretch option.
+    /// </summary>
     Stretch,
 }
 
 /// <summary>Position type values.</summary>
 public enum PositionValue : byte
 {
+    /// <summary>
+    /// Represents the Static option.
+    /// </summary>
     Static,
+    /// <summary>
+    /// Represents the Relative option.
+    /// </summary>
     Relative,
+    /// <summary>
+    /// Represents the Absolute option.
+    /// </summary>
     Absolute,
 }
 
 /// <summary>Overflow values.</summary>
 public enum OverflowValue : byte
 {
+    /// <summary>
+    /// Represents the Visible option.
+    /// </summary>
     Visible,
+    /// <summary>
+    /// Represents the Hidden option.
+    /// </summary>
     Hidden,
+    /// <summary>
+    /// Represents the Scroll option.
+    /// </summary>
     Scroll,
 }
 
@@ -92,6 +179,11 @@ public enum OverflowValue : byte
 /// </summary>
 public static class YogaEnumMapper
 {
+    /// <summary>
+    /// Performs to yoga.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
+    /// <returns>The result of to yoga.</returns>
     public static YGFlexDirection ToYoga(this FlexDirectionValue value) => value switch
     {
         FlexDirectionValue.Column => YGFlexDirection.Column,
@@ -101,6 +193,11 @@ public static class YogaEnumMapper
         _ => YGFlexDirection.Column,
     };
 
+    /// <summary>
+    /// Performs to yoga.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
+    /// <returns>The result of to yoga.</returns>
     public static YGWrap ToYoga(this WrapValue value) => value switch
     {
         WrapValue.NoWrap => YGWrap.NoWrap,
@@ -109,6 +206,11 @@ public static class YogaEnumMapper
         _ => YGWrap.NoWrap,
     };
 
+    /// <summary>
+    /// Performs to yoga align.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
+    /// <returns>The result of to yoga align.</returns>
     public static YGAlign ToYogaAlign(this AlignValue value) => value switch
     {
         AlignValue.Auto => YGAlign.Auto,
@@ -123,6 +225,11 @@ public static class YogaEnumMapper
         _ => YGAlign.Auto,
     };
 
+    /// <summary>
+    /// Performs to yoga.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
+    /// <returns>The result of to yoga.</returns>
     public static YGJustify ToYoga(this JustifyValue value) => value switch
     {
         JustifyValue.FlexStart => YGJustify.FlexStart,
@@ -135,6 +242,11 @@ public static class YogaEnumMapper
         _ => YGJustify.FlexStart,
     };
 
+    /// <summary>
+    /// Performs to yoga.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
+    /// <returns>The result of to yoga.</returns>
     public static YGPositionType ToYoga(this PositionValue value) => value switch
     {
         PositionValue.Static => YGPositionType.Static,
@@ -143,6 +255,11 @@ public static class YogaEnumMapper
         _ => YGPositionType.Relative,
     };
 
+    /// <summary>
+    /// Performs to yoga.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
+    /// <returns>The result of to yoga.</returns>
     public static YGOverflow ToYoga(this OverflowValue value) => value switch
     {
         OverflowValue.Visible => YGOverflow.Visible,

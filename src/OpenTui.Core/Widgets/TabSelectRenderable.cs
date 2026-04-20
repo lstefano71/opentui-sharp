@@ -6,26 +6,74 @@ namespace OpenTui.Core;
 /// </summary>
 public class TabSelectOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the options.
+    /// </summary>
     public TabSelectOption[]? Options { get; init; }
+    /// <summary>
+    /// Gets or sets the tab width.
+    /// </summary>
     public int TabWidth { get; init; } = 20;
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the text color.
+    /// </summary>
     public Rgba? TextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the focused background color.
+    /// </summary>
     public Rgba? FocusedBackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the focused text color.
+    /// </summary>
     public Rgba? FocusedTextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selected background color.
+    /// </summary>
     public Rgba? SelectedBackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selected text color.
+    /// </summary>
     public Rgba? SelectedTextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the selected description color.
+    /// </summary>
     public Rgba? SelectedDescriptionColor { get; init; }
+    /// <summary>
+    /// Gets or sets a value indicating whether show scroll arrows.
+    /// </summary>
     public bool ShowScrollArrows { get; init; } = true;
+    /// <summary>
+    /// Gets or sets a value indicating whether show description.
+    /// </summary>
     public bool ShowDescription { get; init; } = true;
+    /// <summary>
+    /// Gets or sets a value indicating whether show underline.
+    /// </summary>
     public bool ShowUnderline { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the wrap selection.
+    /// </summary>
     public bool WrapSelection { get; init; }
 }
 
 /// <summary>A single option in a TabSelect.</summary>
 public sealed class TabSelectOption
 {
+    /// <summary>
+    /// Gets or sets the name.
+    /// </summary>
     public required string Name { get; init; }
+    /// <summary>
+    /// Gets or sets the description.
+    /// </summary>
     public string? Description { get; init; }
+    /// <summary>
+    /// Gets or sets the value.
+    /// </summary>
     public object? Value { get; init; }
 }
 
@@ -37,9 +85,18 @@ public class TabSelectRenderable : Renderable
 {
     #region Events
 
+    /// <summary>
+    /// Represents an Events.
+    /// </summary>
     public static class Events
     {
+        /// <summary>
+        /// Stores the selection changed.
+        /// </summary>
         public const string SelectionChanged = "selectionChanged";
+        /// <summary>
+        /// Stores the item selected.
+        /// </summary>
         public const string ItemSelected = "itemSelected";
     }
 
@@ -62,6 +119,11 @@ public class TabSelectRenderable : Renderable
     private Rgba _selectedTextColor;
     private Rgba _selectedDescriptionColor;
 
+    /// <summary>
+    /// Initializes a new instance of the TabSelectRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public TabSelectRenderable(IRenderContext ctx, TabSelectOptions? options = null)
         : base(ctx, options ?? new TabSelectOptions { Buffered = true })
     {
@@ -90,6 +152,9 @@ public class TabSelectRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the options.
+    /// </summary>
     public TabSelectOption[] Options
     {
         get => _options;
@@ -102,36 +167,54 @@ public class TabSelectRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the selected index.
+    /// </summary>
     public int SelectedIndex
     {
         get => _selectedIndex;
         set => SetSelectedIndex(value);
     }
 
+    /// <summary>
+    /// Gets or sets the tab width.
+    /// </summary>
     public int TabWidth
     {
         get => _tabWidth;
         set { _tabWidth = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show scroll arrows.
+    /// </summary>
     public bool ShowScrollArrows
     {
         get => _showScrollArrows;
         set { _showScrollArrows = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show description.
+    /// </summary>
     public bool ShowDescription
     {
         get => _showDescription;
         set { _showDescription = value; UpdateDynamicHeight(); RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show underline.
+    /// </summary>
     public bool ShowUnderline
     {
         get => _showUnderline;
         set { _showUnderline = value; UpdateDynamicHeight(); RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the wrap selection.
+    /// </summary>
     public bool WrapSelection
     {
         get => _wrapSelection;
@@ -142,11 +225,23 @@ public class TabSelectRenderable : Renderable
 
     #region Selection
 
+    /// <summary>
+    /// Gets a selected option.
+    /// </summary>
+    /// <returns>The selected option.</returns>
     public TabSelectOption? GetSelectedOption() =>
         _selectedIndex >= 0 && _selectedIndex < _options.Length ? _options[_selectedIndex] : null;
 
+    /// <summary>
+    /// Gets a selected index.
+    /// </summary>
+    /// <returns>The selected index.</returns>
     public int GetSelectedIndex() => _selectedIndex;
 
+    /// <summary>
+    /// Sets the selected index.
+    /// </summary>
+    /// <param name="index">The zero-based index.</param>
     public void SetSelectedIndex(int index)
     {
         if (_options.Length == 0) return;
@@ -157,6 +252,9 @@ public class TabSelectRenderable : Renderable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs move left.
+    /// </summary>
     public void MoveLeft()
     {
         if (_options.Length == 0) return;
@@ -166,6 +264,9 @@ public class TabSelectRenderable : Renderable
         SetSelectedIndex(next);
     }
 
+    /// <summary>
+    /// Performs move right.
+    /// </summary>
     public void MoveRight()
     {
         if (_options.Length == 0) return;
@@ -175,6 +276,9 @@ public class TabSelectRenderable : Renderable
         SetSelectedIndex(next);
     }
 
+    /// <summary>
+    /// Performs select current.
+    /// </summary>
     public void SelectCurrent()
     {
         Emit<(int Index, TabSelectOption? Option)>(Events.ItemSelected,
@@ -200,6 +304,7 @@ public class TabSelectRenderable : Renderable
         HeightDimension = DimensionValue.Point(h);
     }
 
+    /// <inheritdoc />
     protected override void OnResize(int width, int height)
     {
         UpdateScrollOffset();
@@ -210,6 +315,7 @@ public class TabSelectRenderable : Renderable
 
     #region Keyboard
 
+    /// <inheritdoc />
     protected override void HandleKeyPress(KeyEvent key)
     {
         switch (key.Name)
@@ -235,6 +341,7 @@ public class TabSelectRenderable : Renderable
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_widthValue == 0 || _heightValue == 0) return;

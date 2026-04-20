@@ -3,15 +3,51 @@ using Facebook.Yoga;
 namespace OpenTui.Core;
 
 /// <summary>Arrow direction for scroll bar arrows.</summary>
-public enum ArrowDirection { Up, Down, Left, Right }
+public enum ArrowDirection
+{
+    /// <summary>
+    /// Represents the up direction.
+    /// </summary>
+    Up,
+
+    /// <summary>
+    /// Represents the down direction.
+    /// </summary>
+    Down,
+
+    /// <summary>
+    /// Represents the left direction.
+    /// </summary>
+    Left,
+
+    /// <summary>
+    /// Represents the right direction.
+    /// </summary>
+    Right,
+}
 
 /// <summary>Options for ArrowRenderable.</summary>
 public class ArrowOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the direction.
+    /// </summary>
     public required ArrowDirection Direction { get; init; }
+    /// <summary>
+    /// Gets or sets the foreground color.
+    /// </summary>
     public Rgba? ForegroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the attributes.
+    /// </summary>
     public TextAttributes Attributes { get; init; }
+    /// <summary>
+    /// Gets or sets the arrow char.
+    /// </summary>
     public string? ArrowChar { get; init; }
 }
 
@@ -30,6 +66,11 @@ public class ArrowRenderable : Renderable
     private readonly string _arrowChar;
     private readonly Rgba _foregroundColor;
 
+    /// <summary>
+    /// Initializes a new instance of the ArrowRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public ArrowRenderable(IRenderContext ctx, ArrowOptions options)
         : base(ctx, options)
     {
@@ -40,6 +81,7 @@ public class ArrowRenderable : Renderable
         HeightDimension = DimensionValue.Point(1);
     }
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         buffer.DrawText(_arrowChar, (uint)_screenX, (uint)_screenY, _foregroundColor);
@@ -47,7 +89,28 @@ public class ArrowRenderable : Renderable
 }
 
 /// <summary>Scroll unit types for scrollBy.</summary>
-public enum ScrollUnit { Absolute, Viewport, Content, Step }
+public enum ScrollUnit
+{
+    /// <summary>
+    /// Scrolls to an absolute position.
+    /// </summary>
+    Absolute,
+
+    /// <summary>
+    /// Scrolls by viewport-sized increments.
+    /// </summary>
+    Viewport,
+
+    /// <summary>
+    /// Scrolls relative to the full content size.
+    /// </summary>
+    Content,
+
+    /// <summary>
+    /// Scrolls by a single step increment.
+    /// </summary>
+    Step,
+}
 
 /// <summary>
 /// Options for ScrollBar renderable.
@@ -55,10 +118,25 @@ public enum ScrollUnit { Absolute, Viewport, Content, Step }
 /// </summary>
 public class ScrollBarOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the orientation.
+    /// </summary>
     public required SliderOrientation Orientation { get; init; }
+    /// <summary>
+    /// Gets or sets a value indicating whether show arrows.
+    /// </summary>
     public bool ShowArrows { get; init; }
+    /// <summary>
+    /// Gets or sets the arrow options.
+    /// </summary>
     public ArrowOptions? ArrowOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the track options.
+    /// </summary>
     public SliderOptions? TrackOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the on change.
+    /// </summary>
     public Action<float>? OnChange { get; init; }
 }
 
@@ -68,8 +146,14 @@ public class ScrollBarOptions : RenderableOptions
 /// </summary>
 public class ScrollBarRenderable : Renderable
 {
+    /// <summary>
+    /// Represents an Events.
+    /// </summary>
     public static class Events
     {
+        /// <summary>
+        /// Stores the change.
+        /// </summary>
         public const string Change = "change";
     }
 
@@ -86,6 +170,11 @@ public class ScrollBarRenderable : Renderable
     private readonly SliderRenderable _slider;
     private readonly ArrowRenderable _endArrow;
 
+    /// <summary>
+    /// Initializes a new instance of the ScrollBarRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public ScrollBarRenderable(IRenderContext ctx, ScrollBarOptions options)
         : base(ctx, options)
     {
@@ -144,6 +233,9 @@ public class ScrollBarRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the scroll size.
+    /// </summary>
     public float ScrollSize
     {
         get => _scrollSize;
@@ -155,6 +247,9 @@ public class ScrollBarRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the scroll position.
+    /// </summary>
     public float ScrollPosition
     {
         get => _scrollPosition;
@@ -166,6 +261,9 @@ public class ScrollBarRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the viewport size.
+    /// </summary>
     public float ViewportSize
     {
         get => _viewportSize;
@@ -178,6 +276,9 @@ public class ScrollBarRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show arrows.
+    /// </summary>
     public bool ShowArrows
     {
         get => _showArrows;
@@ -190,18 +291,29 @@ public class ScrollBarRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the scroll step.
+    /// </summary>
     public float? ScrollStep
     {
         get => _scrollStep;
         set => _scrollStep = value;
     }
 
+    /// <summary>
+    /// Gets the slider.
+    /// </summary>
     public SliderRenderable Slider => _slider;
 
     #endregion
 
     #region Scroll Operations
 
+    /// <summary>
+    /// Performs scroll by.
+    /// </summary>
+    /// <param name="delta">The delta.</param>
+    /// <param name="unit">The unit.</param>
     public void ScrollBy(float delta, ScrollUnit unit = ScrollUnit.Absolute)
     {
         float multiplier = unit switch
@@ -220,6 +332,7 @@ public class ScrollBarRenderable : Renderable
 
     #region Keyboard
 
+    /// <inheritdoc />
     protected override void HandleKeyPress(KeyEvent key)
     {
         bool handled = false;

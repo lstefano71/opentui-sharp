@@ -50,10 +50,25 @@ public sealed class CliFiglet
     private readonly string _text;
     private ICliConsole _console = AnsiConsole.Instance;
 
+    /// <summary>
+    /// Initializes a new instance of the CliFiglet class.
+    /// </summary>
+    /// <param name="text">The text value.</param>
     public CliFiglet(string text) => _text = text.ToUpperInvariant();
+    /// <summary>
+    /// Gets or sets the fg.
+    /// </summary>
     public Rgba? Fg { get; set; }
+    /// <summary>
+    /// Performs use console.
+    /// </summary>
+    /// <param name="console">The console.</param>
+    /// <returns>The result of use console.</returns>
     public CliFiglet UseConsole(ICliConsole console) { _console = console; return this; }
 
+    /// <summary>
+    /// Performs write.
+    /// </summary>
     public void Write()
     {
         const int lineCount = 5;

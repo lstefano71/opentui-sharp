@@ -7,6 +7,10 @@ public sealed class CliRule
     private Rgba? _color;
     private char _ruleChar = '─';
 
+    /// <summary>
+    /// Initializes a new instance of the CliRule class.
+    /// </summary>
+    /// <param name="title">The title.</param>
     public CliRule(string? title = null) => _title = title;
 
     /// <summary>Sets the rule color.</summary>

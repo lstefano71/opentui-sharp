@@ -3,8 +3,17 @@ namespace OpenTui.Core;
 /// <summary>Well-known event names for the key handler.</summary>
 public static class KeyHandlerEvents
 {
+    /// <summary>
+    /// Stores the keypress.
+    /// </summary>
     public const string Keypress = "keypress";
+    /// <summary>
+    /// Stores the keyrelease.
+    /// </summary>
     public const string Keyrelease = "keyrelease";
+    /// <summary>
+    /// Stores the paste.
+    /// </summary>
     public const string Paste = "paste";
 }
 

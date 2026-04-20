@@ -8,17 +8,53 @@ namespace OpenTui.Core;
 /// </summary>
 public class ScrollBoxOptions : BoxOptions
 {
+    /// <summary>
+    /// Gets or sets the root options.
+    /// </summary>
     public BoxOptions? RootOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the wrapper options.
+    /// </summary>
     public BoxOptions? WrapperOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the viewport options.
+    /// </summary>
     public BoxOptions? ViewportOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the content options.
+    /// </summary>
     public BoxOptions? ContentOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the scrollbar options.
+    /// </summary>
     public ScrollBarOptions? ScrollbarOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the vertical scrollbar options.
+    /// </summary>
     public ScrollBarOptions? VerticalScrollbarOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the horizontal scrollbar options.
+    /// </summary>
     public ScrollBarOptions? HorizontalScrollbarOptions { get; init; }
+    /// <summary>
+    /// Gets or sets the sticky scroll.
+    /// </summary>
     public bool StickyScroll { get; init; }
+    /// <summary>
+    /// Gets or sets the sticky start.
+    /// </summary>
     public string? StickyStart { get; init; } // "bottom"|"top"|"left"|"right"
+    /// <summary>
+    /// Gets or sets the scroll x.
+    /// </summary>
     public bool ScrollX { get; init; }
+    /// <summary>
+    /// Gets or sets the scroll y.
+    /// </summary>
     public bool ScrollY { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the viewport culling.
+    /// </summary>
     public bool ViewportCulling { get; init; } = true;
 }
 
@@ -51,6 +87,11 @@ public class ScrollBoxRenderable : BoxRenderable
     private float _scrollAccumulatorX;
     private float _scrollAccumulatorY;
 
+    /// <summary>
+    /// Initializes a new instance of the ScrollBoxRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public ScrollBoxRenderable(IRenderContext ctx, ScrollBoxOptions? options = null)
         : base(ctx, options ?? new ScrollBoxOptions())
     {
@@ -142,6 +183,9 @@ public class ScrollBoxRenderable : BoxRenderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the scroll top.
+    /// </summary>
     public float ScrollTop
     {
         get => _verticalScrollBar?.ScrollPosition ?? 0;
@@ -155,6 +199,9 @@ public class ScrollBoxRenderable : BoxRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the scroll left.
+    /// </summary>
     public float ScrollLeft
     {
         get => _horizontalScrollBar?.ScrollPosition ?? 0;
@@ -168,15 +215,42 @@ public class ScrollBoxRenderable : BoxRenderable
         }
     }
 
+    /// <summary>
+    /// Gets the scroll height.
+    /// </summary>
     public float ScrollHeight => _verticalScrollBar?.ScrollSize ?? 0;
+    /// <summary>
+    /// Gets the scroll width.
+    /// </summary>
     public float ScrollWidth => _horizontalScrollBar?.ScrollSize ?? 0;
+    /// <summary>
+    /// Gets the max scroll top.
+    /// </summary>
     public float MaxScrollTop => Math.Max(0, ScrollHeight - _viewport.Height);
+    /// <summary>
+    /// Gets the max scroll left.
+    /// </summary>
     public float MaxScrollLeft => Math.Max(0, ScrollWidth - _viewport.Width);
+    /// <summary>
+    /// Gets the viewport height.
+    /// </summary>
     public int ViewportHeight => _viewport.Height;
+    /// <summary>
+    /// Gets the viewport width.
+    /// </summary>
     public int ViewportWidth => _viewport.Width;
+    /// <summary>
+    /// Gets the vertical scroll bar.
+    /// </summary>
     public ScrollBarRenderable? VerticalScrollBar => _verticalScrollBar;
+    /// <summary>
+    /// Gets the horizontal scroll bar.
+    /// </summary>
     public ScrollBarRenderable? HorizontalScrollBar => _horizontalScrollBar;
 
+    /// <summary>
+    /// Gets or sets the sticky scroll.
+    /// </summary>
     public bool StickyScroll
     {
         get => _stickyScroll;
@@ -187,6 +261,9 @@ public class ScrollBoxRenderable : BoxRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the sticky start.
+    /// </summary>
     public string? StickyStart
     {
         get => _stickyStart;
@@ -197,6 +274,9 @@ public class ScrollBoxRenderable : BoxRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the viewport culling.
+    /// </summary>
     public bool ViewportCulling
     {
         get => _viewportCulling;
@@ -207,16 +287,22 @@ public class ScrollBoxRenderable : BoxRenderable
 
     #region Child Management (delegates to content)
 
+    /// <inheritdoc />
     public override int Add(Renderable child, int? index = null)
     {
         return _content.Add(child, index);
     }
 
+    /// <inheritdoc />
     public override void Remove(string id)
     {
         _content.Remove(id);
     }
 
+    /// <summary>
+    /// Gets a children.
+    /// </summary>
+    /// <returns>The children.</returns>
     public new Renderable[] GetChildren()
     {
         return _content.GetChildren().ToArray();
@@ -226,12 +312,23 @@ public class ScrollBoxRenderable : BoxRenderable
 
     #region Scroll Operations
 
+    /// <summary>
+    /// Performs scroll by.
+    /// </summary>
+    /// <param name="deltaX">The delta x.</param>
+    /// <param name="deltaY">The delta y.</param>
+    /// <param name="unit">The unit.</param>
     public void ScrollBy(float deltaX, float deltaY, ScrollUnit unit = ScrollUnit.Absolute)
     {
         _verticalScrollBar?.ScrollBy(deltaY, unit);
         _horizontalScrollBar?.ScrollBy(deltaX, unit);
     }
 
+    /// <summary>
+    /// Performs scroll to.
+    /// </summary>
+    /// <param name="x">The horizontal position.</param>
+    /// <param name="y">The vertical position.</param>
     public void ScrollTo(float? x = null, float? y = null)
     {
         if (x.HasValue) ScrollLeft = x.Value;
@@ -288,6 +385,7 @@ public class ScrollBoxRenderable : BoxRenderable
 
     #region Mouse
 
+    /// <inheritdoc />
     protected override void OnMouseEvent(UiMouseEvent evt)
     {
         if (evt.Type != MouseEventType.Scroll || evt.Scroll is not { } scroll)
@@ -345,6 +443,7 @@ public class ScrollBoxRenderable : BoxRenderable
 
     #region Keyboard
 
+    /// <inheritdoc />
     protected override void HandleKeyPress(KeyEvent key)
     {
         // Delegate to scrollbar key handlers
@@ -359,6 +458,7 @@ public class ScrollBoxRenderable : BoxRenderable
 
     #region Update
 
+    /// <inheritdoc />
     protected override void OnUpdate(float deltaTime)
     {
         base.OnUpdate(deltaTime);
@@ -562,6 +662,7 @@ public class ScrollBoxRenderable : BoxRenderable
 
     #region Dispose
 
+    /// <inheritdoc />
     protected override void DestroySelf()
     {
         base.DestroySelf();

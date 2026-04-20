@@ -190,6 +190,15 @@ openTUI-sharp/
 └── openTUI-sharp.slnx              # Solution file
 ```
 
+## OpenTui.Core documentation
+
+The developer-oriented `OpenTui.Core` guide now lives under [`docs/opentui-core`](docs/opentui-core/index.md), with:
+
+- getting-started guidance
+- an end-to-end tutorial
+- concept and how-to pages
+- subsystem reference pages covering the full public `OpenTui.Core` surface
+
 ## Native DLL
 
 The native `opentui.dll` is sourced from the [`@opentui/core-win32-x64`](https://www.npmjs.com/package/@opentui/core-win32-x64) npm package (v0.1.100). The MSBuild target in `OpenTui.Native.csproj` automatically copies it from `node_modules/` to `runtimes/win-x64/native/` at build time.

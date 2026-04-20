@@ -170,16 +170,34 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     /// <inheritdoc/>
     public int FrameId => _frameId;
 
+    /// <summary>
+    /// Gets a value indicating whether is destroyed.
+    /// </summary>
     public bool IsDestroyed => _isDestroyed;
 
+    /// <summary>
+    /// Gets a value indicating whether is running.
+    /// </summary>
     public bool IsRunning => _isRunning;
 
+    /// <summary>
+    /// Gets the live request count.
+    /// </summary>
     public int LiveRequestCount => _liveRequestCounter;
 
+    /// <summary>
+    /// Gets the current control state.
+    /// </summary>
     public string CurrentControlState => _liveRequestCounter > 0 ? "auto_started" : "idle";
 
+    /// <summary>
+    /// Gets the theme mode.
+    /// </summary>
     public ThemeMode? ThemeMode => _themeMode;
 
+    /// <summary>
+    /// Gets or sets the screen mode.
+    /// </summary>
     public ScreenMode ScreenMode
     {
         get => _screenMode;
@@ -192,6 +210,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the footer height.
+    /// </summary>
     public int FooterHeight
     {
         get => _footerHeight;
@@ -207,6 +228,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the external output mode.
+    /// </summary>
     public ExternalOutputMode ExternalOutputMode
     {
         get => _externalOutputMode;
@@ -223,6 +247,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether use mouse.
+    /// </summary>
     public bool UseMouse
     {
         get => _useMouse;
@@ -245,16 +272,34 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
+    /// <summary>
+    /// Gets the terminal width.
+    /// </summary>
     public int TerminalWidth => _terminalWidth;
 
+    /// <summary>
+    /// Gets the terminal height.
+    /// </summary>
     public int TerminalHeight => _terminalHeight;
 
+    /// <summary>
+    /// Gets a value indicating whether use kitty keyboard.
+    /// </summary>
     public bool UseKittyKeyboard => _config.UseKittyKeyboard is not null;
 
+    /// <summary>
+    /// Gets the terminal capabilities.
+    /// </summary>
     public TerminalCapabilities? TerminalCapabilities => _capabilities;
 
+    /// <summary>
+    /// Gets the console.
+    /// </summary>
     public TerminalConsole Console { get; }
 
+    /// <summary>
+    /// Gets the palette detection status.
+    /// </summary>
     public string PaletteDetectionStatus =>
         _cachedPalette is not null ? "cached" :
         _paletteDetectionTask is not null ? "detecting" :
@@ -1116,6 +1161,10 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         );
     }
 
+    /// <summary>
+    /// Performs suspend render requests.
+    /// </summary>
+    /// <returns>The result of suspend render requests.</returns>
     public IDisposable SuspendRenderRequests()
     {
         _renderRequestSuspensionCount++;
@@ -1373,15 +1422,32 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     #region Frame Callbacks
 
+    /// <summary>
+    /// Adds a frame callback.
+    /// </summary>
+    /// <param name="callback">The callback.</param>
     public void AddFrameCallback(Func<float, Task> callback) =>
         _frameCallbacks.Add(callback);
 
+    /// <summary>
+    /// Clears the frame callbacks.
+    /// </summary>
     public void ClearFrameCallbacks() =>
         _frameCallbacks.Clear();
 
+    /// <summary>
+    /// Removes a frame callback.
+    /// </summary>
+    /// <param name="callback">The callback.</param>
+    /// <returns>true if remove frame callback; otherwise, false.</returns>
     public bool RemoveFrameCallback(Func<float, Task> callback) =>
         _frameCallbacks.Remove(callback);
 
+    /// <summary>
+    /// Sets the debug overlay.
+    /// </summary>
+    /// <param name="enabled">The enabled.</param>
+    /// <param name="corner">The corner.</param>
     public void SetDebugOverlay(bool enabled, DebugOverlayCorner corner = DebugOverlayCorner.TopLeft)
     {
         _debugOverlayEnabled = enabled;
@@ -1399,12 +1465,24 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         RequestRender();
     }
 
+    /// <summary>
+    /// Adds a post process fn.
+    /// </summary>
+    /// <param name="callback">The callback.</param>
     public void AddPostProcessFn(Action<OptimizedBuffer, float> callback) =>
         _postProcessFns.Add(callback);
 
+    /// <summary>
+    /// Removes a post process fn.
+    /// </summary>
+    /// <param name="callback">The callback.</param>
+    /// <returns>true if remove post process fn; otherwise, false.</returns>
     public bool RemovePostProcessFn(Action<OptimizedBuffer, float> callback) =>
         _postProcessFns.Remove(callback);
 
+    /// <summary>
+    /// Clears the post process fns.
+    /// </summary>
     public void ClearPostProcessFns() =>
         _postProcessFns.Clear();
 
@@ -1483,8 +1561,16 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     /// <inheritdoc/>
     public object? Capabilities => _capabilities;
 
+    /// <summary>
+    /// Sets the debug mode.
+    /// </summary>
+    /// <param name="enabled">The enabled.</param>
     public void SetDebugMode(bool enabled) => _debugModeEnabled = enabled;
 
+    /// <summary>
+    /// Gets a debug inputs.
+    /// </summary>
+    /// <returns>The debug inputs.</returns>
     public IReadOnlyList<DebugInputRecord> GetDebugInputs()
     {
         lock (_debugInputsLock)
@@ -1495,30 +1581,57 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             }).ToArray();
     }
 
+    /// <summary>
+    /// Adds an input handler.
+    /// </summary>
+    /// <param name="handler">The handler.</param>
     public void AddInputHandler(Func<string, bool> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
         _sequenceHandlers.Add(handler);
     }
 
+    /// <summary>
+    /// Performs prepend input handler.
+    /// </summary>
+    /// <param name="handler">The handler.</param>
     public void PrependInputHandler(Func<string, bool> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
         _sequenceHandlers.Insert(0, handler);
     }
 
+    /// <summary>
+    /// Removes an input handler.
+    /// </summary>
+    /// <param name="handler">The handler.</param>
     public void RemoveInputHandler(Func<string, bool> handler)
     {
         ArgumentNullException.ThrowIfNull(handler);
         _sequenceHandlers.RemoveAll(candidate => ReferenceEquals(candidate, handler));
     }
 
+    /// <summary>
+    /// Performs copy to clipboard osc 52.
+    /// </summary>
+    /// <param name="text">The text value.</param>
+    /// <param name="register">The register.</param>
+    /// <returns>true if copy to clipboard osc 52; otherwise, false.</returns>
     public bool CopyToClipboardOSC52(string text, byte register = 0) =>
         _nativeRenderer.CopyToClipboard(text, register);
 
+    /// <summary>
+    /// Clears the clipboard osc 52.
+    /// </summary>
+    /// <param name="register">The register.</param>
+    /// <returns>true if clear clipboard osc 52; otherwise, false.</returns>
     public bool ClearClipboardOSC52(byte register = 0) =>
         _nativeRenderer.ClearClipboard(register);
 
+    /// <summary>
+    /// Sets the background color.
+    /// </summary>
+    /// <param name="color">The color.</param>
     public void SetBackgroundColor(Rgba color)
     {
         _backgroundColor = color;
@@ -1817,8 +1930,16 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             RequestRender();
     }
 
+    /// <summary>
+    /// Clears the palette cache.
+    /// </summary>
     public void ClearPaletteCache() => _cachedPalette = null;
 
+    /// <summary>
+    /// Gets a palette.
+    /// </summary>
+    /// <param name="options">The configuration options.</param>
+    /// <returns>The palette.</returns>
     public Task<TerminalColors> GetPalette(GetPaletteOptions? options = null)
     {
         options ??= new GetPaletteOptions();
@@ -2040,6 +2161,10 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     /// <inheritdoc/>
     public Selection? GetSelection() => _currentSelection;
 
+    /// <summary>
+    /// Gets a selection container.
+    /// </summary>
+    /// <returns>The selection container.</returns>
     public Renderable? GetSelectionContainer() => _selectionContainers.Count > 0 ? _selectionContainers[^1] : null;
 
     /// <inheritdoc/>
@@ -2234,6 +2359,11 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     #region Resize
 
+    /// <summary>
+    /// Performs resize.
+    /// </summary>
+    /// <param name="width">The width value.</param>
+    /// <param name="height">The height value.</param>
     public void Resize(int width, int height)
     {
         if (width == _terminalWidth && height == _terminalHeight)
@@ -2257,6 +2387,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
 
     #region Destroy
 
+    /// <summary>
+    /// Performs destroy.
+    /// </summary>
     public void Destroy()
     {
         lock (_renderLoopLock)
@@ -2304,6 +2437,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
+    /// <summary>
+    /// Releases the resources used by this instance.
+    /// </summary>
     public void Dispose() => Destroy();
 
     #endregion

@@ -6,14 +6,41 @@ namespace OpenTui.Core;
 [Flags]
 public enum TextAttributes : uint
 {
+    /// <summary>
+    /// Represents the None option.
+    /// </summary>
     None = 0,
+    /// <summary>
+    /// Represents the Bold option.
+    /// </summary>
     Bold = 1 << 0,          // 1
+    /// <summary>
+    /// Represents the Dim option.
+    /// </summary>
     Dim = 1 << 1,           // 2
+    /// <summary>
+    /// Represents the Italic option.
+    /// </summary>
     Italic = 1 << 2,        // 4
+    /// <summary>
+    /// Represents the Underline option.
+    /// </summary>
     Underline = 1 << 3,     // 8
+    /// <summary>
+    /// Represents the Blink option.
+    /// </summary>
     Blink = 1 << 4,         // 16
+    /// <summary>
+    /// Represents the Inverse option.
+    /// </summary>
     Inverse = 1 << 5,       // 32
+    /// <summary>
+    /// Represents the Hidden option.
+    /// </summary>
     Hidden = 1 << 6,        // 64
+    /// <summary>
+    /// Represents the Strikethrough option.
+    /// </summary>
     Strikethrough = 1 << 7, // 128
 }
 
@@ -23,7 +50,13 @@ public enum TextAttributes : uint
 /// </summary>
 public static class TextAttributeUtils
 {
+    /// <summary>
+    /// Stores the base bits.
+    /// </summary>
     public const int BaseBits = 8;
+    /// <summary>
+    /// Stores the base mask.
+    /// </summary>
     public const uint BaseMask = 0xFF;
 
     /// <summary>Extract the base TextAttributes from a packed attribute value.</summary>

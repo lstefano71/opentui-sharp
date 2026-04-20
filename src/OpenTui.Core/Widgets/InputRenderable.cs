@@ -3,32 +3,46 @@ using System.Text.RegularExpressions;
 namespace OpenTui.Core;
 
 /// <summary>
-/// Options for Input renderable.
-/// Matches TypeScript InputRenderableOptions.
+/// Options for <see cref="InputRenderable"/>, a single-line editor-backed input control.
 /// </summary>
 public class InputOptions : TextareaOptions
 {
+    /// <summary>
+    /// Gets or sets the value.
+    /// </summary>
     public string? Value { get; init; }
+    /// <summary>
+    /// Gets or sets the max length.
+    /// </summary>
     public int MaxLength { get; init; } = 1000;
 }
 
 /// <summary>
-/// Single-line text input with maxLength, newline stripping, and input/change events.
-/// Extends TextareaRenderable with height=1, wrapMode="none", return→submit.
-/// Matches TypeScript InputRenderable from Input.ts.
+/// Single-line text input with built-in editing, max-length enforcement, and submit/change events.
+/// It is backed by the same editor stack as <see cref="TextareaRenderable"/>, but forces single-line
+/// behavior and emits higher-level input-specific events.
 /// </summary>
 public partial class InputRenderable : TextareaRenderable
 {
+    /// <summary>Event-name constants emitted by <see cref="InputRenderable"/>.</summary>
     public static new class Events
     {
+        /// <summary>Raised whenever the current value changes during editing.</summary>
         public const string Input = "input";
+        /// <summary>Raised when a submitted value differs from the previous committed value.</summary>
         public const string Change = "change";
+        /// <summary>Raised when the user submits the current value.</summary>
         public const string Enter = "enter";
     }
 
     private int _maxLength;
     private string _lastCommittedValue = "";
 
+    /// <summary>
+    /// Initializes a new instance of the InputRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public InputRenderable(IRenderContext ctx, InputOptions? options = null)
         : base(ctx, BuildBaseOptions(options))
     {
@@ -138,6 +152,7 @@ public partial class InputRenderable : TextareaRenderable
 
     #region Properties
 
+    /// <summary>Gets or sets the current single-line value.</summary>
     public string Value
     {
         get => PlainText;
@@ -155,6 +170,7 @@ public partial class InputRenderable : TextareaRenderable
         }
     }
 
+    /// <summary>Gets or sets the maximum allowed character count.</summary>
     public int MaxLength
     {
         get => _maxLength;
@@ -170,8 +186,10 @@ public partial class InputRenderable : TextareaRenderable
 
     #region Overrides
 
+    /// <inheritdoc />
     public override bool NewLine() => false; // No newlines in single-line input
 
+    /// <inheritdoc />
     public override bool Submit()
     {
         string currentValue = PlainText;
@@ -186,6 +204,7 @@ public partial class InputRenderable : TextareaRenderable
         return true;
     }
 
+    /// <inheritdoc />
     public override void InsertText(string text)
     {
         string sanitized = StripNewlines(text);
@@ -201,6 +220,7 @@ public partial class InputRenderable : TextareaRenderable
         Emit<string>(Events.Input, PlainText);
     }
 
+    /// <inheritdoc />
     public override bool DeleteCharBackward()
     {
         bool result = base.DeleteCharBackward();
@@ -208,6 +228,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool DeleteChar()
     {
         bool result = base.DeleteChar();
@@ -215,6 +236,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool DeleteLine()
     {
         bool result = base.DeleteLine();
@@ -222,6 +244,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool DeleteWordForward()
     {
         bool result = base.DeleteWordForward();
@@ -229,6 +252,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool DeleteWordBackward()
     {
         bool result = base.DeleteWordBackward();
@@ -236,6 +260,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool DeleteToLineStart()
     {
         bool result = base.DeleteToLineStart();
@@ -243,6 +268,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool DeleteToLineEnd()
     {
         bool result = base.DeleteToLineEnd();
@@ -250,6 +276,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool Undo()
     {
         bool result = base.Undo();
@@ -257,6 +284,7 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override bool Redo()
     {
         bool result = base.Redo();
@@ -264,12 +292,14 @@ public partial class InputRenderable : TextareaRenderable
         return result;
     }
 
+    /// <inheritdoc />
     public override void Focus()
     {
         base.Focus();
         _lastCommittedValue = PlainText;
     }
 
+    /// <inheritdoc />
     public override void Blur()
     {
         string currentValue = PlainText;
@@ -281,6 +311,7 @@ public partial class InputRenderable : TextareaRenderable
         base.Blur();
     }
 
+    /// <inheritdoc />
     protected override void HandleKeyPress(KeyEvent key)
     {
         if (key.Name is "return" or "linefeed")

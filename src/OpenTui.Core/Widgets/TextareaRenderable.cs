@@ -5,27 +5,45 @@ using OpenTui.Core.Native;
 namespace OpenTui.Core;
 
 /// <summary>
-/// Options for Textarea renderable.
-/// Matches TypeScript TextareaOptions.
+/// Options for <see cref="TextareaRenderable"/>, the multi-line editor-backed text input control.
 /// </summary>
 public class TextareaOptions : EditBufferOptions
 {
+    /// <summary>
+    /// Gets or sets the initial value.
+    /// </summary>
     public string? InitialValue { get; init; }
+    /// <summary>
+    /// Gets or sets the focused background color.
+    /// </summary>
     public Rgba? FocusedBackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the focused text color.
+    /// </summary>
     public Rgba? FocusedTextColor { get; init; }
+    /// <summary>
+    /// Gets or sets the placeholder.
+    /// </summary>
     public string? Placeholder { get; init; }
+    /// <summary>
+    /// Gets or sets the placeholder color.
+    /// </summary>
     public Rgba? PlaceholderColor { get; init; }
+    /// <summary>
+    /// Gets or sets the on submit.
+    /// </summary>
     public Action? OnSubmit { get; init; }
 }
 
 /// <summary>
-/// Multi-line text editor with cursor tracking, selection, undo/redo, and keybindings.
-/// Matches TypeScript TextareaRenderable from Textarea.ts.
+/// Multi-line text editor with cursor tracking, selection, undo/redo, and keyboard command handling.
 /// </summary>
 public class TextareaRenderable : EditBufferRenderable
 {
+    /// <summary>Event-name constants emitted by <see cref="TextareaRenderable"/>.</summary>
     public static class Events
     {
+        /// <summary>Raised when the editor is submitted.</summary>
         public const string Submit = "submit";
     }
 
@@ -38,6 +56,11 @@ public class TextareaRenderable : EditBufferRenderable
     private bool _initialValueSet;
     private Action? _submitListener;
 
+    /// <summary>
+    /// Initializes a new instance of the TextareaRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public TextareaRenderable(IRenderContext ctx, TextareaOptions? options = null)
         : base(ctx, options ?? new TextareaOptions())
     {
@@ -63,6 +86,7 @@ public class TextareaRenderable : EditBufferRenderable
 
     #region Properties
 
+    /// <summary>Gets or sets placeholder text shown when the editor is empty.</summary>
     public string? Placeholder
     {
         get => _placeholder;
@@ -74,6 +98,7 @@ public class TextareaRenderable : EditBufferRenderable
         }
     }
 
+    /// <summary>Gets or sets the color used for placeholder text.</summary>
     public Rgba PlaceholderColor
     {
         get => _placeholderColor;
@@ -85,6 +110,7 @@ public class TextareaRenderable : EditBufferRenderable
         }
     }
 
+    /// <inheritdoc />
     public override Rgba BackgroundColor
     {
         get => _unfocusedBackgroundColor;
@@ -95,6 +121,7 @@ public class TextareaRenderable : EditBufferRenderable
         }
     }
 
+    /// <inheritdoc />
     public override Rgba TextColor
     {
         get => _unfocusedTextColor;
@@ -105,6 +132,7 @@ public class TextareaRenderable : EditBufferRenderable
         }
     }
 
+    /// <summary>Gets or sets the background color used while the editor is focused.</summary>
     public Rgba FocusedBackgroundColor
     {
         get => _focusedBackgroundColor;
@@ -115,6 +143,7 @@ public class TextareaRenderable : EditBufferRenderable
         }
     }
 
+    /// <summary>Gets or sets the text color used while the editor is focused.</summary>
     public Rgba FocusedTextColor
     {
         get => _focusedTextColor;
@@ -125,6 +154,7 @@ public class TextareaRenderable : EditBufferRenderable
         }
     }
 
+    /// <summary>Sets the initial editor value the first time it is assigned.</summary>
     public string InitialValue
     {
         set
@@ -139,12 +169,14 @@ public class TextareaRenderable : EditBufferRenderable
 
     #region Focus
 
+    /// <inheritdoc />
     public override void Focus()
     {
         base.Focus();
         UpdateColors();
     }
 
+    /// <inheritdoc />
     public override void Blur()
     {
         base.Blur();
@@ -155,6 +187,7 @@ public class TextareaRenderable : EditBufferRenderable
 
     #region Keyboard
 
+    /// <inheritdoc />
     protected override void HandleKeyPress(KeyEvent key)
     {
         bool handled = DispatchAction(key);
@@ -270,6 +303,10 @@ public class TextareaRenderable : EditBufferRenderable
         };
     }
 
+    /// <summary>
+    /// Performs submit.
+    /// </summary>
+    /// <returns>true if submit; otherwise, false.</returns>
     public virtual bool Submit()
     {
         _submitListener?.Invoke();

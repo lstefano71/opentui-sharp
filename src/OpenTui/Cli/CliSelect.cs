@@ -8,6 +8,10 @@ public sealed class CliSelect<T>
     private readonly List<SelectOption<T>> _options = [];
     private int _pageSize = 10;
 
+    /// <summary>
+    /// Initializes a new instance of the CliSelect class.
+    /// </summary>
+    /// <param name="prompt">The prompt.</param>
     public CliSelect(string prompt) => _prompt = prompt;
 
     /// <summary>Adds simple string choices (value = label for string type).</summary>
@@ -28,8 +32,17 @@ public sealed class CliSelect<T>
     /// <summary>Sets the page size for long lists.</summary>
     public CliSelect<T> SetPageSize(int size) { _pageSize = size; return this; }
 
+    /// <summary>
+    /// Performs prompt.
+    /// </summary>
+    /// <returns>The result of prompt.</returns>
     public T Prompt() => Prompt(AnsiConsole.Instance);
 
+    /// <summary>
+    /// Performs prompt.
+    /// </summary>
+    /// <param name="console">The console.</param>
+    /// <returns>The result of prompt.</returns>
     public T Prompt(ICliConsole console)
     {
         if (_options.Count == 0)

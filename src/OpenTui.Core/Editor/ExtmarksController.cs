@@ -1,26 +1,80 @@
 namespace OpenTui.Core;
 
+/// <summary>
+/// Represents configuration options for Extmark.
+/// </summary>
 public sealed class ExtmarkOptions
 {
+    /// <summary>
+    /// Gets or sets the start.
+    /// </summary>
     public required uint Start { get; init; }
+    /// <summary>
+    /// Gets or sets the end.
+    /// </summary>
     public required uint End { get; init; }
+    /// <summary>
+    /// Gets or sets the virtual.
+    /// </summary>
     public bool Virtual { get; init; }
+    /// <summary>
+    /// Gets or sets the style id.
+    /// </summary>
     public uint? StyleId { get; init; }
+    /// <summary>
+    /// Gets or sets the priority.
+    /// </summary>
     public byte? Priority { get; init; }
+    /// <summary>
+    /// Gets or sets the data.
+    /// </summary>
     public object? Data { get; init; }
+    /// <summary>
+    /// Gets or sets the type id.
+    /// </summary>
     public int TypeId { get; init; }
+    /// <summary>
+    /// Gets or sets the metadata.
+    /// </summary>
     public object? Metadata { get; init; }
 }
 
+/// <summary>
+/// Represents an Extmark.
+/// </summary>
 public sealed class Extmark
 {
+    /// <summary>
+    /// Gets or sets the id.
+    /// </summary>
     public required int Id { get; init; }
+    /// <summary>
+    /// Gets or sets the start.
+    /// </summary>
     public uint Start { get; internal set; }
+    /// <summary>
+    /// Gets or sets the end.
+    /// </summary>
     public uint End { get; internal set; }
+    /// <summary>
+    /// Gets or sets the virtual.
+    /// </summary>
     public bool Virtual { get; internal set; }
+    /// <summary>
+    /// Gets or sets the style id.
+    /// </summary>
     public uint? StyleId { get; internal set; }
+    /// <summary>
+    /// Gets or sets the priority.
+    /// </summary>
     public byte? Priority { get; internal set; }
+    /// <summary>
+    /// Gets or sets the data.
+    /// </summary>
     public object? Data { get; internal set; }
+    /// <summary>
+    /// Gets or sets the type id.
+    /// </summary>
     public int TypeId { get; internal set; }
 
     internal Extmark Clone() =>
@@ -37,6 +91,9 @@ public sealed class Extmark
         };
 }
 
+/// <summary>
+/// Represents an Extmarks Controller.
+/// </summary>
 public sealed class ExtmarksController
 {
     private readonly EditBuffer _editBuffer;
@@ -60,6 +117,11 @@ public sealed class ExtmarksController
         _textBuffer = textBuffer;
     }
 
+    /// <summary>
+    /// Performs create.
+    /// </summary>
+    /// <param name="options">The configuration options.</param>
+    /// <returns>The result of create.</returns>
     public int Create(ExtmarkOptions options)
     {
         EnsureNotDestroyed();
@@ -92,6 +154,11 @@ public sealed class ExtmarksController
         return id;
     }
 
+    /// <summary>
+    /// Performs delete.
+    /// </summary>
+    /// <param name="id">The identifier.</param>
+    /// <returns>true if delete; otherwise, false.</returns>
     public bool Delete(int id)
     {
         EnsureNotDestroyed();
@@ -103,16 +170,39 @@ public sealed class ExtmarksController
         return true;
     }
 
+    /// <summary>
+    /// Performs get.
+    /// </summary>
+    /// <param name="id">The identifier.</param>
+    /// <returns>The result of get.</returns>
     public Extmark? Get(int id) => _destroyed || !_extmarks.TryGetValue(id, out var extmark) ? null : extmark.Clone();
 
+    /// <summary>
+    /// Gets an all.
+    /// </summary>
+    /// <returns>The all.</returns>
     public IReadOnlyList<Extmark> GetAll() => _destroyed ? [] : _extmarks.Values.Select(extmark => extmark.Clone()).ToArray();
 
+    /// <summary>
+    /// Gets a virtual.
+    /// </summary>
+    /// <returns>The virtual.</returns>
     public IReadOnlyList<Extmark> GetVirtual() =>
         _destroyed ? [] : _extmarks.Values.Where(extmark => extmark.Virtual).Select(extmark => extmark.Clone()).ToArray();
 
+    /// <summary>
+    /// Gets an at offset.
+    /// </summary>
+    /// <param name="offset">The offset.</param>
+    /// <returns>The at offset.</returns>
     public IReadOnlyList<Extmark> GetAtOffset(uint offset) =>
         _destroyed ? [] : _extmarks.Values.Where(extmark => offset >= extmark.Start && offset < extmark.End).Select(extmark => extmark.Clone()).ToArray();
 
+    /// <summary>
+    /// Gets an all for type id.
+    /// </summary>
+    /// <param name="typeId">The type id.</param>
+    /// <returns>The all for type id.</returns>
     public IReadOnlyList<Extmark> GetAllForTypeId(int typeId)
     {
         if (_destroyed || !_extmarksByTypeId.TryGetValue(typeId, out var ids))
@@ -121,6 +211,9 @@ public sealed class ExtmarksController
         return ids.Select(id => _extmarks[id].Clone()).ToArray();
     }
 
+    /// <summary>
+    /// Performs clear.
+    /// </summary>
     public void Clear()
     {
         if (_destroyed)
@@ -130,6 +223,11 @@ public sealed class ExtmarksController
         UpdateHighlights();
     }
 
+    /// <summary>
+    /// Performs register type.
+    /// </summary>
+    /// <param name="typeName">The type name.</param>
+    /// <returns>The result of register type.</returns>
     public int RegisterType(string typeName)
     {
         EnsureNotDestroyed();
@@ -143,15 +241,33 @@ public sealed class ExtmarksController
         return typeId;
     }
 
+    /// <summary>
+    /// Gets a type id.
+    /// </summary>
+    /// <param name="typeName">The type name.</param>
+    /// <returns>The type id.</returns>
     public int? GetTypeId(string typeName) =>
         _destroyed || !_typeNameToId.TryGetValue(typeName, out var typeId) ? null : typeId;
 
+    /// <summary>
+    /// Gets a type name.
+    /// </summary>
+    /// <param name="typeId">The type id.</param>
+    /// <returns>The type name.</returns>
     public string? GetTypeName(int typeId) =>
         _destroyed || !_typeIdToName.TryGetValue(typeId, out var typeName) ? null : typeName;
 
+    /// <summary>
+    /// Gets a metadata for.
+    /// </summary>
+    /// <param name="extmarkId">The extmark id.</param>
+    /// <returns>The metadata for.</returns>
     public object? GetMetadataFor(int extmarkId) =>
         _destroyed || !_metadata.TryGetValue(extmarkId, out var metadata) ? null : metadata;
 
+    /// <summary>
+    /// Performs destroy.
+    /// </summary>
     public void Destroy()
     {
         if (_destroyed)

@@ -8,10 +8,25 @@ namespace OpenTui.Core;
 /// </summary>
 public enum StdinResponseProtocol : byte
 {
+    /// <summary>
+    /// Represents the Unknown option.
+    /// </summary>
     Unknown,
+    /// <summary>
+    /// Represents the Csi option.
+    /// </summary>
     Csi,
+    /// <summary>
+    /// Represents the Osc option.
+    /// </summary>
     Osc,
+    /// <summary>
+    /// Represents the Dcs option.
+    /// </summary>
     Dcs,
+    /// <summary>
+    /// Represents the Apc option.
+    /// </summary>
     Apc,
 }
 
@@ -20,9 +35,21 @@ public enum StdinResponseProtocol : byte
 /// </summary>
 public sealed class ProtocolContext
 {
+    /// <summary>
+    /// Gets or sets the kitty keyboard enabled.
+    /// </summary>
     public bool KittyKeyboardEnabled { get; set; }
+    /// <summary>
+    /// Gets or sets the private capability replies active.
+    /// </summary>
     public bool PrivateCapabilityRepliesActive { get; set; }
+    /// <summary>
+    /// Gets or sets the pixel resolution query active.
+    /// </summary>
     public bool PixelResolutionQueryActive { get; set; }
+    /// <summary>
+    /// Gets or sets the explicit width cpr active.
+    /// </summary>
     public bool ExplicitWidthCprActive { get; set; }
 
     internal ProtocolContext Clone() => new()
@@ -39,11 +66,29 @@ public sealed class ProtocolContext
 /// </summary>
 public sealed class StdinParserOptions
 {
+    /// <summary>
+    /// Gets or sets the timeout ms.
+    /// </summary>
     public int? TimeoutMs { get; set; }
+    /// <summary>
+    /// Gets or sets the max pending bytes.
+    /// </summary>
     public int? MaxPendingBytes { get; set; }
+    /// <summary>
+    /// Gets or sets the arm timeouts.
+    /// </summary>
     public bool ArmTimeouts { get; set; } = true;
+    /// <summary>
+    /// Gets or sets the on timeout flush.
+    /// </summary>
     public Action? OnTimeoutFlush { get; set; }
+    /// <summary>
+    /// Gets or sets a value indicating whether use kitty keyboard.
+    /// </summary>
     public bool UseKittyKeyboard { get; set; } = true;
+    /// <summary>
+    /// Gets or sets the protocol context.
+    /// </summary>
     public ProtocolContext? ProtocolContext { get; set; }
 }
 
@@ -87,6 +132,10 @@ public sealed partial class StdinParser
     private PasteCollector? _paste;
 
     // ── Constructor ──────────────────────────────────────────────────────
+    /// <summary>
+    /// Initializes a new instance of the StdinParser class.
+    /// </summary>
+    /// <param name="options">The configuration options.</param>
     public StdinParser(StdinParserOptions? options = null)
     {
         options ??= new StdinParserOptions();

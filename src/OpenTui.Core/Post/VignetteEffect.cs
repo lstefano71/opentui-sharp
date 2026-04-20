@@ -19,11 +19,18 @@ public sealed class VignetteEffect
     private int _cachedWidth = -1;
     private int _cachedHeight = -1;
 
+    /// <summary>
+    /// Initializes a new instance of the VignetteEffect class.
+    /// </summary>
+    /// <param name="strength">The strength.</param>
     public VignetteEffect(float strength = 0.5f)
     {
         Strength = strength;
     }
 
+    /// <summary>
+    /// Gets or sets the strength.
+    /// </summary>
     public float Strength
     {
         get => _strength;
@@ -36,6 +43,11 @@ public sealed class VignetteEffect
         }
     }
 
+    /// <summary>
+    /// Performs apply.
+    /// </summary>
+    /// <param name="buffer">The target buffer.</param>
+    /// <param name="_">The .</param>
     public void Apply(OptimizedBuffer buffer, float _)
     {
         int width = (int)buffer.Width;

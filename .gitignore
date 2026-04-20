@@ -43,3 +43,4 @@ runtimes/
 TestResults/
 *.trx
 coverage/
+build-warnings.log

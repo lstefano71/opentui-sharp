@@ -6,10 +6,25 @@ namespace OpenTui.Core;
 /// </summary>
 public class TimelineOptions
 {
+    /// <summary>
+    /// Gets or sets the duration.
+    /// </summary>
     public float Duration { get; init; } = 1000;
+    /// <summary>
+    /// Gets or sets the loop.
+    /// </summary>
     public bool Loop { get; init; }
+    /// <summary>
+    /// Gets or sets the auto play.
+    /// </summary>
     public bool AutoPlay { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the on complete.
+    /// </summary>
     public Action? OnComplete { get; init; }
+    /// <summary>
+    /// Gets or sets the on pause.
+    /// </summary>
     public Action? OnPause { get; init; }
 }
 
@@ -23,16 +38,49 @@ public class TimelineOptions
 /// </summary>
 public class AnimationOptions
 {
+    /// <summary>
+    /// Gets or sets the duration.
+    /// </summary>
     public float Duration { get; init; } = 1000;
+    /// <summary>
+    /// Gets or sets the ease.
+    /// </summary>
     public string Ease { get; init; } = "linear";
+    /// <summary>
+    /// Gets or sets the loop.
+    /// </summary>
     public bool Loop { get; init; }
+    /// <summary>
+    /// Gets or sets the loop count.
+    /// </summary>
     public int LoopCount { get; init; } = 1;
+    /// <summary>
+    /// Gets or sets the loop delay.
+    /// </summary>
     public float LoopDelay { get; init; }
+    /// <summary>
+    /// Gets or sets the alternate.
+    /// </summary>
     public bool Alternate { get; init; }
+    /// <summary>
+    /// Gets or sets the once.
+    /// </summary>
     public bool Once { get; init; }
+    /// <summary>
+    /// Gets or sets the on update.
+    /// </summary>
     public Action<AnimationState>? OnUpdate { get; init; }
+    /// <summary>
+    /// Gets or sets the on complete.
+    /// </summary>
     public Action? OnComplete { get; init; }
+    /// <summary>
+    /// Gets or sets the on start.
+    /// </summary>
     public Action? OnStart { get; init; }
+    /// <summary>
+    /// Gets or sets the on loop.
+    /// </summary>
     public Action? OnLoop { get; init; }
 
     /// <summary>
@@ -99,23 +147,45 @@ public class Timeline
     private Action? _onComplete;
     private Action? _onPause;
 
+    /// <summary>
+    /// Gets or sets the current time.
+    /// </summary>
     public float CurrentTime { get; private set; }
+    /// <summary>
+    /// Gets or sets a value indicating whether is playing.
+    /// </summary>
     public bool IsPlaying { get; private set; }
+    /// <summary>
+    /// Gets or sets a value indicating whether is complete.
+    /// </summary>
     public bool IsComplete { get; private set; }
+    /// <summary>
+    /// Gets or sets the synced.
+    /// </summary>
     public bool Synced { get; internal set; }
 
+    /// <summary>
+    /// Gets or sets the duration.
+    /// </summary>
     public float Duration
     {
         get => _duration;
         set => _duration = value;
     }
 
+    /// <summary>
+    /// Gets or sets the loop.
+    /// </summary>
     public bool Loop
     {
         get => _loop;
         set => _loop = value;
     }
 
+    /// <summary>
+    /// Initializes a new instance of the Timeline class.
+    /// </summary>
+    /// <param name="options">The configuration options.</param>
     public Timeline(TimelineOptions? options = null)
     {
         options ??= new TimelineOptions();
@@ -203,6 +273,10 @@ public class Timeline
 
     #region Playback Control
 
+    /// <summary>
+    /// Performs play.
+    /// </summary>
+    /// <returns>The result of play.</returns>
     public Timeline Play()
     {
         if (IsComplete) Restart();
@@ -213,6 +287,10 @@ public class Timeline
         return this;
     }
 
+    /// <summary>
+    /// Performs pause.
+    /// </summary>
+    /// <returns>The result of pause.</returns>
     public Timeline Pause()
     {
         IsPlaying = false;
@@ -223,6 +301,10 @@ public class Timeline
         return this;
     }
 
+    /// <summary>
+    /// Performs restart.
+    /// </summary>
+    /// <returns>The result of restart.</returns>
     public Timeline Restart()
     {
         CurrentTime = 0;
@@ -232,6 +314,9 @@ public class Timeline
         return this;
     }
 
+    /// <summary>
+    /// Performs reset items.
+    /// </summary>
     public void ResetItems()
     {
         foreach (var item in _items)
@@ -381,9 +466,17 @@ public class Timeline
 
     #region State Listeners
 
+    /// <summary>
+    /// Adds a state change listener.
+    /// </summary>
+    /// <param name="listener">The listener.</param>
     public void AddStateChangeListener(Action<Timeline> listener) =>
         _stateListeners.Add(listener);
 
+    /// <summary>
+    /// Removes a state change listener.
+    /// </summary>
+    /// <param name="listener">The listener.</param>
     public void RemoveStateChangeListener(Action<Timeline> listener) =>
         _stateListeners.Remove(listener);
 

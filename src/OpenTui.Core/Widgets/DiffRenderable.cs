@@ -6,27 +6,93 @@ namespace OpenTui.Core;
 /// </summary>
 public class DiffOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the diff.
+    /// </summary>
     public string Diff { get; init; } = "";
+    /// <summary>
+    /// Gets or sets the view.
+    /// </summary>
     public string View { get; init; } = "unified"; // "unified" | "split"
+    /// <summary>
+    /// Gets or sets the sync scroll.
+    /// </summary>
     public bool SyncScroll { get; init; }
+    /// <summary>
+    /// Gets or sets the filetype.
+    /// </summary>
     public string? Filetype { get; init; }
+    /// <summary>
+    /// Gets or sets the syntax style.
+    /// </summary>
     public SyntaxStyle? SyntaxStyle { get; init; }
+    /// <summary>
+    /// Gets or sets the wrap mode.
+    /// </summary>
     public byte WrapMode { get; init; } = 2; // word
+    /// <summary>
+    /// Gets or sets the conceal.
+    /// </summary>
     public bool Conceal { get; init; }
+    /// <summary>
+    /// Gets or sets a value indicating whether show line numbers.
+    /// </summary>
     public bool ShowLineNumbers { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the line number fg.
+    /// </summary>
     public Rgba? LineNumberFg { get; init; }
+    /// <summary>
+    /// Gets or sets the line number bg.
+    /// </summary>
     public Rgba? LineNumberBg { get; init; }
+    /// <summary>
+    /// Gets or sets the added bg.
+    /// </summary>
     public Rgba? AddedBg { get; init; }
+    /// <summary>
+    /// Gets or sets the removed bg.
+    /// </summary>
     public Rgba? RemovedBg { get; init; }
+    /// <summary>
+    /// Gets or sets the context bg.
+    /// </summary>
     public Rgba? ContextBg { get; init; }
+    /// <summary>
+    /// Gets or sets the added content bg.
+    /// </summary>
     public Rgba? AddedContentBg { get; init; }
+    /// <summary>
+    /// Gets or sets the removed content bg.
+    /// </summary>
     public Rgba? RemovedContentBg { get; init; }
+    /// <summary>
+    /// Gets or sets the context content bg.
+    /// </summary>
     public Rgba? ContextContentBg { get; init; }
+    /// <summary>
+    /// Gets or sets the added sign color.
+    /// </summary>
     public Rgba? AddedSignColor { get; init; }
+    /// <summary>
+    /// Gets or sets the removed sign color.
+    /// </summary>
     public Rgba? RemovedSignColor { get; init; }
+    /// <summary>
+    /// Gets or sets the added line number bg.
+    /// </summary>
     public Rgba? AddedLineNumberBg { get; init; }
+    /// <summary>
+    /// Gets or sets the removed line number bg.
+    /// </summary>
     public Rgba? RemovedLineNumberBg { get; init; }
+    /// <summary>
+    /// Gets or sets the selection bg.
+    /// </summary>
     public Rgba? SelectionBg { get; init; }
+    /// <summary>
+    /// Gets or sets the selection fg.
+    /// </summary>
     public Rgba? SelectionFg { get; init; }
 }
 
@@ -35,10 +101,25 @@ public class DiffOptions : RenderableOptions
 /// </summary>
 public sealed class DiffHunk
 {
+    /// <summary>
+    /// Gets or sets the old start.
+    /// </summary>
     public int OldStart { get; init; }
+    /// <summary>
+    /// Gets or sets the old lines.
+    /// </summary>
     public int OldLines { get; init; }
+    /// <summary>
+    /// Gets or sets the new start.
+    /// </summary>
     public int NewStart { get; init; }
+    /// <summary>
+    /// Gets or sets the new lines.
+    /// </summary>
     public int NewLines { get; init; }
+    /// <summary>
+    /// Gets or sets the lines.
+    /// </summary>
     public List<DiffLine> Lines { get; init; } = [];
 }
 
@@ -47,11 +128,36 @@ public sealed class DiffHunk
 /// </summary>
 public sealed class DiffLine
 {
+    /// <summary>
+    /// Gets or sets the type.
+    /// </summary>
     public DiffLineType Type { get; init; }
+    /// <summary>
+    /// Gets or sets the content.
+    /// </summary>
     public string Content { get; init; } = "";
 }
 
-public enum DiffLineType { Context, Added, Removed }
+/// <summary>
+/// Specifies the available Diff Line Type values.
+/// </summary>
+public enum DiffLineType
+{
+    /// <summary>
+    /// Represents an unchanged context line.
+    /// </summary>
+    Context,
+
+    /// <summary>
+    /// Represents an added line.
+    /// </summary>
+    Added,
+
+    /// <summary>
+    /// Represents a removed line.
+    /// </summary>
+    Removed,
+}
 
 /// <summary>
 /// Unified/split diff viewer.
@@ -60,8 +166,14 @@ public enum DiffLineType { Context, Added, Removed }
 /// </summary>
 public class DiffRenderable : Renderable
 {
+    /// <summary>
+    /// Represents an Events.
+    /// </summary>
     public static class Events
     {
+        /// <summary>
+        /// Stores the scroll.
+        /// </summary>
         public const string Scroll = "scroll";
     }
 
@@ -91,6 +203,11 @@ public class DiffRenderable : Renderable
     private LineNumberRenderable? _leftLineNumbers;
     private LineNumberRenderable? _rightLineNumbers;
 
+    /// <summary>
+    /// Initializes a new instance of the DiffRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public DiffRenderable(IRenderContext ctx, DiffOptions? options = null)
         : base(ctx, options ?? new DiffOptions() { FlexDirection = FlexDirectionValue.Row })
     {
@@ -120,6 +237,9 @@ public class DiffRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the diff.
+    /// </summary>
     public string Diff
     {
         get => _diff;
@@ -132,6 +252,9 @@ public class DiffRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the view mode.
+    /// </summary>
     public string ViewMode
     {
         get => _viewMode;
@@ -145,26 +268,44 @@ public class DiffRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the sync scroll.
+    /// </summary>
     public bool SyncScroll
     {
         get => _syncScroll;
         set { _syncScroll = value; }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show line numbers.
+    /// </summary>
     public bool ShowLineNumbers
     {
         get => _showLineNumbers;
         set { _showLineNumbers = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the scroll top.
+    /// </summary>
     public int ScrollTop
     {
         get => GetScrollAnchor()?.ScrollY ?? 0;
         set => SetScrollTop(value);
     }
 
+    /// <summary>
+    /// Gets the max scroll top.
+    /// </summary>
     public int MaxScrollTop => GetScrollAnchor()?.MaxScrollY ?? 0;
+    /// <summary>
+    /// Gets the viewport height.
+    /// </summary>
     public int ViewportHeight => GetScrollAnchor()?.Height ?? 0;
+    /// <summary>
+    /// Gets the scroll height.
+    /// </summary>
     public int ScrollHeight => MaxScrollTop + ViewportHeight;
 
     #endregion
@@ -544,6 +685,7 @@ public class DiffRenderable : Renderable
         SetScrollTop(0);
     }
 
+    /// <inheritdoc />
     protected override void OnMouseEvent(UiMouseEvent evt)
     {
         if (evt.Type != MouseEventType.Scroll || evt.Scroll is not { } scroll)
@@ -585,6 +727,7 @@ public class DiffRenderable : Renderable
 
     #region Dispose
 
+    /// <inheritdoc />
     protected override void DestroySelf()
     {
         ClearChildren();

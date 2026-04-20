@@ -24,6 +24,11 @@ public class BoxRenderable : Renderable
     private string? _bottomTitle;
     private TitleAlignment _bottomTitleAlignment;
 
+    /// <summary>
+    /// Initializes a new instance of the BoxRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public BoxRenderable(IRenderContext ctx, BoxOptions? options = null)
         : base(ctx, options ?? new BoxOptions())
     {
@@ -57,14 +62,23 @@ public class BoxRenderable : Renderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba BackgroundColor
     {
         get => _backgroundColor;
         set { _backgroundColor = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets a value indicating whether has border.
+    /// </summary>
     public bool HasBorder => _hasBorder;
 
+    /// <summary>
+    /// Gets or sets the border.
+    /// </summary>
     public bool Border
     {
         get => _hasBorder;
@@ -77,6 +91,9 @@ public class BoxRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the active border sides.
+    /// </summary>
     public BorderSides ActiveBorderSides
     {
         get => _borderSides;
@@ -89,6 +106,9 @@ public class BoxRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the border style.
+    /// </summary>
     public BorderStyle BorderStyle
     {
         get => _borderStyle;
@@ -100,6 +120,9 @@ public class BoxRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the border color.
+    /// </summary>
     public Rgba BorderColor
     {
         get => _borderColor;
@@ -111,6 +134,9 @@ public class BoxRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the focused border color.
+    /// </summary>
     public Rgba FocusedBorderColor
     {
         get => _focusedBorderColor;
@@ -122,6 +148,9 @@ public class BoxRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the custom border chars.
+    /// </summary>
     public BorderCharacters? CustomBorderChars
     {
         get => _customBorderChars;
@@ -133,30 +162,45 @@ public class BoxRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether should fill.
+    /// </summary>
     public bool ShouldFill
     {
         get => _shouldFill;
         set { _shouldFill = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the title.
+    /// </summary>
     public string? Title
     {
         get => _title;
         set { _title = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the title alignment.
+    /// </summary>
     public TitleAlignment TitleAlignment
     {
         get => _titleAlignment;
         set { _titleAlignment = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the bottom title.
+    /// </summary>
     public string? BottomTitle
     {
         get => _bottomTitle;
         set { _bottomTitle = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the bottom title alignment.
+    /// </summary>
     public TitleAlignment BottomTitleAlignment
     {
         get => _bottomTitleAlignment;
@@ -167,18 +211,30 @@ public class BoxRenderable : Renderable
 
     #region Gap
 
+    /// <summary>
+    /// Sets the gap.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
     public void SetGap(float value)
     {
         YGNodeStyleAPI.YGNodeStyleSetGap(YogaNode, YGGutter.All, value);
         RequestRender();
     }
 
+    /// <summary>
+    /// Sets the row gap.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
     public void SetRowGap(float value)
     {
         YGNodeStyleAPI.YGNodeStyleSetGap(YogaNode, YGGutter.Row, value);
         RequestRender();
     }
 
+    /// <summary>
+    /// Sets the column gap.
+    /// </summary>
+    /// <param name="value">The value to set.</param>
     public void SetColumnGap(float value)
     {
         YGNodeStyleAPI.YGNodeStyleSetGap(YogaNode, YGGutter.Column, value);
@@ -189,6 +245,7 @@ public class BoxRenderable : Renderable
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         bool hasBorderVisible = _borderSides != BorderSides.None;
@@ -218,6 +275,7 @@ public class BoxRenderable : Renderable
             bottomTitleAlignment: _bottomTitleAlignment);
     }
 
+    /// <inheritdoc />
     protected override (int x, int y, int w, int h) GetScissorRect()
     {
         var baseX = _buffered ? 0 : (int)_screenX;

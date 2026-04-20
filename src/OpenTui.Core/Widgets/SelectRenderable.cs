@@ -9,9 +9,18 @@ public class SelectRenderable : BoxRenderable
 {
     #region Events
 
+    /// <summary>
+    /// Represents an Events.
+    /// </summary>
     public static class Events
     {
+        /// <summary>
+        /// Stores the selection changed.
+        /// </summary>
         public const string SelectionChanged = "selectionChanged";
+        /// <summary>
+        /// Stores the item selected.
+        /// </summary>
         public const string ItemSelected = "itemSelected";
     }
 
@@ -39,6 +48,11 @@ public class SelectRenderable : BoxRenderable
     private int _lastMouseClickIndex = -1;
     private const int DoubleClickThresholdMs = 400;
 
+    /// <summary>
+    /// Initializes a new instance of the SelectRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public SelectRenderable(IRenderContext ctx, SelectOptions? options = null)
         : base(ctx, options ?? new SelectOptions { Buffered = true })
     {
@@ -65,6 +79,9 @@ public class SelectRenderable : BoxRenderable
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the options.
+    /// </summary>
     public SelectOption[] Options
     {
         get => _options;
@@ -77,36 +94,54 @@ public class SelectRenderable : BoxRenderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the selected index.
+    /// </summary>
     public int SelectedIndex
     {
         get => _selectedIndex;
         set => SetSelectedIndex(value);
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show scroll indicator.
+    /// </summary>
     public bool ShowScrollIndicator
     {
         get => _showScrollIndicator;
         set { _showScrollIndicator = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets a value indicating whether show description.
+    /// </summary>
     public bool ShowDescription
     {
         get => _showDescription;
         set { _showDescription = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the wrap selection.
+    /// </summary>
     public bool WrapSelection
     {
         get => _wrapSelection;
         set => _wrapSelection = value;
     }
 
+    /// <summary>
+    /// Gets or sets the item spacing.
+    /// </summary>
     public int ItemSpacing
     {
         get => _itemSpacing;
         set { _itemSpacing = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the fast scroll step.
+    /// </summary>
     public int FastScrollStep
     {
         get => _fastScrollStep;
@@ -117,11 +152,23 @@ public class SelectRenderable : BoxRenderable
 
     #region Selection
 
+    /// <summary>
+    /// Gets a selected option.
+    /// </summary>
+    /// <returns>The selected option.</returns>
     public SelectOption? GetSelectedOption() =>
         _selectedIndex >= 0 && _selectedIndex < _options.Length ? _options[_selectedIndex] : null;
 
+    /// <summary>
+    /// Gets a selected index.
+    /// </summary>
+    /// <returns>The selected index.</returns>
     public int GetSelectedIndex() => _selectedIndex;
 
+    /// <summary>
+    /// Sets the selected index.
+    /// </summary>
+    /// <param name="index">The zero-based index.</param>
     public void SetSelectedIndex(int index)
     {
         if (_options.Length == 0) return;
@@ -132,6 +179,10 @@ public class SelectRenderable : BoxRenderable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs move up.
+    /// </summary>
+    /// <param name="steps">The steps.</param>
     public void MoveUp(int steps = 1)
     {
         if (_options.Length == 0) return;
@@ -145,6 +196,10 @@ public class SelectRenderable : BoxRenderable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs move down.
+    /// </summary>
+    /// <param name="steps">The steps.</param>
     public void MoveDown(int steps = 1)
     {
         if (_options.Length == 0) return;
@@ -158,6 +213,9 @@ public class SelectRenderable : BoxRenderable
         RequestRender();
     }
 
+    /// <summary>
+    /// Performs select current.
+    /// </summary>
     public void SelectCurrent()
     {
         Emit<(int Index, SelectOption? Option)>(Events.ItemSelected,
@@ -191,6 +249,7 @@ public class SelectRenderable : BoxRenderable
 
     #region Keyboard
 
+    /// <inheritdoc />
     protected override void HandleKeyPress(KeyEvent key)
     {
         switch (key.Name)
@@ -216,6 +275,7 @@ public class SelectRenderable : BoxRenderable
 
     #region Mouse
 
+    /// <inheritdoc />
     protected override void OnMouseEvent(UiMouseEvent evt)
     {
         if (evt.Type != MouseEventType.Down || evt.Button != (int)MouseButton.Left)
@@ -248,6 +308,7 @@ public class SelectRenderable : BoxRenderable
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         // Draw background

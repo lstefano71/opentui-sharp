@@ -40,20 +40,65 @@ public abstract class Widget : IEnumerable<Widget>
 
     // Layout shortcut properties
 
+    /// <summary>
+    /// Gets or sets the flex direction.
+    /// </summary>
     public FlexDirection FlexDirection { get => Layout.FlexDirection; set => Layout.FlexDirection = value; }
+    /// <summary>
+    /// Gets or sets the justify content.
+    /// </summary>
     public Justify JustifyContent { get => Layout.JustifyContent; set => Layout.JustifyContent = value; }
+    /// <summary>
+    /// Gets or sets the align items.
+    /// </summary>
     public Align AlignItems { get => Layout.AlignItems; set => Layout.AlignItems = value; }
+    /// <summary>
+    /// Gets or sets the align self.
+    /// </summary>
     public Align AlignSelf { get => Layout.AlignSelf; set => Layout.AlignSelf = value; }
+    /// <summary>
+    /// Gets or sets the flex grow.
+    /// </summary>
     public float FlexGrow { get => Layout.FlexGrow; set => Layout.FlexGrow = value; }
+    /// <summary>
+    /// Gets or sets the flex shrink.
+    /// </summary>
     public float FlexShrink { get => Layout.FlexShrink; set => Layout.FlexShrink = value; }
+    /// <summary>
+    /// Gets or sets the width.
+    /// </summary>
     public float Width { set => Layout.Width = value; }
+    /// <summary>
+    /// Gets or sets the height.
+    /// </summary>
     public float Height { set => Layout.Height = value; }
+    /// <summary>
+    /// Gets or sets the min width.
+    /// </summary>
     public float MinWidth { set => Layout.MinWidth = value; }
+    /// <summary>
+    /// Gets or sets the min height.
+    /// </summary>
     public float MinHeight { set => Layout.MinHeight = value; }
+    /// <summary>
+    /// Gets or sets the max width.
+    /// </summary>
     public float MaxWidth { set => Layout.MaxWidth = value; }
+    /// <summary>
+    /// Gets or sets the max height.
+    /// </summary>
     public float MaxHeight { set => Layout.MaxHeight = value; }
+    /// <summary>
+    /// Gets or sets the margin.
+    /// </summary>
     public float Margin { set => Layout.Margin = value; }
+    /// <summary>
+    /// Gets or sets the padding.
+    /// </summary>
     public float Padding { set => Layout.Padding = value; }
+    /// <summary>
+    /// Gets or sets the gap.
+    /// </summary>
     public float Gap { set => Layout.Gap = value; }
 
     /// <summary>Adds a child widget.</summary>

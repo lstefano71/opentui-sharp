@@ -12,21 +12,64 @@ namespace OpenTui.Core;
 public readonly record struct Rgba(float R, float G, float B, float A = 1f)
 {
     // Common constants
+    /// <summary>
+    /// Stores the transparent.
+    /// </summary>
     public static readonly Rgba Transparent = new(0f, 0f, 0f, 0f);
+    /// <summary>
+    /// Stores the white.
+    /// </summary>
     public static readonly Rgba White = new(1f, 1f, 1f, 1f);
+    /// <summary>
+    /// Stores the black.
+    /// </summary>
     public static readonly Rgba Black = new(0f, 0f, 0f, 1f);
+    /// <summary>
+    /// Stores the red.
+    /// </summary>
     public static readonly Rgba Red = new(1f, 0f, 0f, 1f);
+    /// <summary>
+    /// Stores the green.
+    /// </summary>
     public static readonly Rgba Green = new(0f, 128f / 255f, 0f, 1f);
+    /// <summary>
+    /// Stores the blue.
+    /// </summary>
     public static readonly Rgba Blue = new(0f, 0f, 1f, 1f);
+    /// <summary>
+    /// Stores the yellow.
+    /// </summary>
     public static readonly Rgba Yellow = new(1f, 1f, 0f, 1f);
+    /// <summary>
+    /// Stores the cyan.
+    /// </summary>
     public static readonly Rgba Cyan = new(0f, 1f, 1f, 1f);
+    /// <summary>
+    /// Stores the magenta.
+    /// </summary>
     public static readonly Rgba Magenta = new(1f, 0f, 1f, 1f);
 
     // Factory methods
 
+    /// <summary>
+    /// Performs from values.
+    /// </summary>
+    /// <param name="r">The r.</param>
+    /// <param name="g">The g.</param>
+    /// <param name="b">The b.</param>
+    /// <param name="a">The a.</param>
+    /// <returns>The result of from values.</returns>
     public static Rgba FromValues(float r, float g, float b, float a = 1f)
         => new(r, g, b, a);
 
+    /// <summary>
+    /// Performs from ints.
+    /// </summary>
+    /// <param name="r">The r.</param>
+    /// <param name="g">The g.</param>
+    /// <param name="b">The b.</param>
+    /// <param name="a">The a.</param>
+    /// <returns>The result of from ints.</returns>
     public static Rgba FromInts(int r, int g, int b, int a = 255)
         => new(r / 255f, g / 255f, b / 255f, a / 255f);
 
@@ -76,9 +119,17 @@ public readonly record struct Rgba(float R, float G, float B, float A = 1f)
             : $"#{r:X2}{g:X2}{b:X2}{a:X2}";
     }
 
+    /// <inheritdoc />
     public override string ToString() => ToHex();
 
     // HSV conversion (matching reference hsvToRgb)
+    /// <summary>
+    /// Performs from hsv.
+    /// </summary>
+    /// <param name="h">The height value.</param>
+    /// <param name="s">The s.</param>
+    /// <param name="v">The v.</param>
+    /// <returns>The result of from hsv.</returns>
     public static Rgba FromHsv(float h, float s, float v)
     {
         float r = 0, g = 0, b = 0;

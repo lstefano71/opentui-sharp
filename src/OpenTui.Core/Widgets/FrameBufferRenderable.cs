@@ -7,7 +7,13 @@ namespace OpenTui.Core;
 /// </summary>
 public class FrameBufferOptions : RenderableOptions
 {
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba? BackgroundColor { get; init; }
+    /// <summary>
+    /// Gets or sets the respect alpha.
+    /// </summary>
     public bool RespectAlpha { get; init; } = true;
 }
 
@@ -26,6 +32,11 @@ public class FrameBufferRenderable : Renderable
     private int _lastWidth;
     private int _lastHeight;
 
+    /// <summary>
+    /// Initializes a new instance of the FrameBufferRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public FrameBufferRenderable(IRenderContext ctx, FrameBufferOptions? options = null)
         : base(ctx, options ?? new FrameBufferOptions())
     {
@@ -47,12 +58,18 @@ public class FrameBufferRenderable : Renderable
         }
     }
 
+    /// <summary>
+    /// Gets or sets the background color.
+    /// </summary>
     public Rgba BackgroundColor
     {
         get => _backgroundColor;
         set { _backgroundColor = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the respect alpha.
+    /// </summary>
     public bool RespectAlpha
     {
         get => _respectAlpha;
@@ -103,12 +120,14 @@ public class FrameBufferRenderable : Renderable
         _lastHeight = _heightValue;
     }
 
+    /// <inheritdoc />
     protected override void OnResize(int width, int height)
     {
         EnsureBuffer();
         base.OnResize(width, height);
     }
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_privateBuffer == null || _widthValue == 0 || _heightValue == 0) return;
@@ -118,6 +137,7 @@ public class FrameBufferRenderable : Renderable
             _privateBuffer, 0, 0, (uint)_widthValue, (uint)_heightValue);
     }
 
+    /// <inheritdoc />
     protected override void DestroySelf()
     {
         _privateBuffer?.Dispose();

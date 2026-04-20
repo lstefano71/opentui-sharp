@@ -6,13 +6,37 @@ namespace OpenTui.Core;
 /// </summary>
 public class CodeOptions : TextBufferOptions
 {
+    /// <summary>
+    /// Gets or sets the content.
+    /// </summary>
     public string? Content { get; init; }
+    /// <summary>
+    /// Gets or sets the filetype.
+    /// </summary>
     public string? Filetype { get; init; }
+    /// <summary>
+    /// Gets or sets the syntax style.
+    /// </summary>
     public SyntaxStyle? SyntaxStyle { get; init; }
+    /// <summary>
+    /// Gets or sets the conceal.
+    /// </summary>
     public bool Conceal { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the draw unstyled text.
+    /// </summary>
     public bool DrawUnstyledText { get; init; } = true;
+    /// <summary>
+    /// Gets or sets the streaming.
+    /// </summary>
     public bool Streaming { get; init; }
+    /// <summary>
+    /// Gets or sets the on chunks.
+    /// </summary>
     public Action<List<TextChunk>, object?>? OnChunks { get; init; }
+    /// <summary>
+    /// Gets or sets the on highlight.
+    /// </summary>
     public Action<object?>? OnHighlight { get; init; }
 }
 
@@ -36,6 +60,11 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
     private bool _highlightsDirty;
     private int _highlightSnapshotId;
 
+    /// <summary>
+    /// Initializes a new instance of the CodeRenderable class.
+    /// </summary>
+    /// <param name="ctx">The render context.</param>
+    /// <param name="options">The configuration options.</param>
     public CodeRenderable(IRenderContext ctx, CodeOptions? options = null)
         : base(ctx, options ?? new CodeOptions())
     {
@@ -54,6 +83,9 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
 
     #region Properties
 
+    /// <summary>
+    /// Gets or sets the content.
+    /// </summary>
     public string Content
     {
         get => _content;
@@ -67,6 +99,9 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
         }
     }
 
+    /// <summary>
+    /// Gets or sets the filetype.
+    /// </summary>
     public string? Filetype
     {
         get => _filetype;
@@ -79,6 +114,9 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
         }
     }
 
+    /// <summary>
+    /// Gets or sets the code syntax style.
+    /// </summary>
     public SyntaxStyle? CodeSyntaxStyle
     {
         get => _syntaxStyle;
@@ -90,18 +128,27 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
         }
     }
 
+    /// <summary>
+    /// Gets or sets the conceal.
+    /// </summary>
     public bool Conceal
     {
         get => _conceal;
         set { _conceal = value; _highlightsDirty = true; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the draw unstyled text.
+    /// </summary>
     public bool DrawUnstyledText
     {
         get => _drawUnstyledText;
         set { _drawUnstyledText = value; RequestRender(); }
     }
 
+    /// <summary>
+    /// Gets or sets the streaming.
+    /// </summary>
     public bool Streaming
     {
         get => _streaming;
@@ -112,6 +159,9 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
 
     #region ILineInfoProvider
 
+    /// <summary>
+    /// Gets the line count.
+    /// </summary>
     public int LineCount
     {
         get
@@ -130,6 +180,10 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
     private LineInfo? _cachedLineInfo;
     private bool _lineInfoDirty = true;
 
+    /// <summary>
+    /// Gets a cached line info.
+    /// </summary>
+    /// <returns>The cached line info.</returns>
     public LineInfo? GetCachedLineInfo()
     {
         if (_lineInfoDirty)
@@ -177,6 +231,7 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
 
     #region Resize
 
+    /// <inheritdoc />
     protected override void OnResize(int width, int height)
     {
         InvalidateLineInfo();
@@ -187,6 +242,7 @@ public class CodeRenderable : TextBufferRenderable, ILineInfoProvider
 
     #region Rendering
 
+    /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
         if (_highlightsDirty)
