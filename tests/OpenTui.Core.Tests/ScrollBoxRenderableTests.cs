@@ -487,4 +487,67 @@ public sealed class ScrollBoxRenderableTests : IDisposable
     }
 
     #endregion
+
+    #region Scrollbar Visibility
+
+    [Fact]
+    public void ScrollBar_ManualVisible_False_StaysHiddenAfterRender()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "vis-test",
+            ScrollY = true,
+            FlexGrow = 1,
+        });
+
+        var content = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "tall-content",
+            Height = DimensionValue.Point(100),
+        });
+        scrollBox.Add(content);
+        _renderer.Root.Add(scrollBox);
+        RenderFrame();
+
+        // Scrollbar should be visible initially (content > viewport)
+        Assert.True(scrollBox.VerticalScrollBar!.Visible);
+
+        // User hides it
+        scrollBox.VerticalScrollBar.Visible = false;
+        RenderFrame();
+
+        // Must stay hidden — manual visibility takes precedence
+        Assert.False(scrollBox.VerticalScrollBar.Visible,
+            "Scrollbar should stay hidden after manual Visible=false");
+    }
+
+    [Fact]
+    public void ScrollBar_ResetVisibilityControl_RestoresAutoHide()
+    {
+        var scrollBox = new ScrollBoxRenderable(_renderer, new ScrollBoxOptions
+        {
+            Id = "reset-vis-test",
+            ScrollY = true,
+            FlexGrow = 1,
+        });
+
+        var content = new BoxRenderable(_renderer, new BoxOptions
+        {
+            Id = "tall-content",
+            Height = DimensionValue.Point(100),
+        });
+        scrollBox.Add(content);
+        _renderer.Root.Add(scrollBox);
+        RenderFrame();
+
+        // Hide manually, then reset
+        scrollBox.VerticalScrollBar!.Visible = false;
+        scrollBox.VerticalScrollBar.ResetVisibilityControl();
+
+        // Should auto-show because content > viewport
+        Assert.True(scrollBox.VerticalScrollBar.Visible,
+            "Scrollbar should auto-show after ResetVisibilityControl()");
+    }
+
+    #endregion
 }

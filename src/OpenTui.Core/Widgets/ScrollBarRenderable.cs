@@ -234,6 +234,29 @@ public class ScrollBarRenderable : Renderable
     #region Properties
 
     /// <summary>
+    /// Gets or sets visibility. Setting this marks the scrollbar as manually controlled,
+    /// preventing auto-visibility from overriding the value.
+    /// </summary>
+    public override bool Visible
+    {
+        get => base.Visible;
+        set
+        {
+            _manualVisibility = true;
+            base.Visible = value;
+        }
+    }
+
+    /// <summary>
+    /// Resets manual visibility control, allowing auto-hide behavior to resume.
+    /// </summary>
+    public void ResetVisibilityControl()
+    {
+        _manualVisibility = false;
+        RecalculateVisibility();
+    }
+
+    /// <summary>
     /// Gets or sets the scroll size.
     /// </summary>
     public float ScrollSize
@@ -400,7 +423,7 @@ public class ScrollBarRenderable : Renderable
     private void RecalculateVisibility()
     {
         if (_manualVisibility) return;
-        Visible = _scrollSize > _viewportSize;
+        base.Visible = _scrollSize > _viewportSize;
     }
 
     #endregion
