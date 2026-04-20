@@ -60,6 +60,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     private bool _immediateRerenderRequested;
     private bool _updateScheduled;
     private bool _isRunning;
+    private RendererControlState _controlState = RendererControlState.Idle;
+    private RendererControlState _previousControlState = RendererControlState.Idle;
+    private volatile bool _inputSuspended;
     private int _renderRequestSuspensionCount;
     private bool _deferredRenderRequested;
     private Timer? _renderTimer;
@@ -188,7 +191,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     /// <summary>
     /// Gets the current control state.
     /// </summary>
-    public string CurrentControlState => _liveRequestCounter > 0 ? "auto_started" : "idle";
+    public RendererControlState CurrentControlState => _controlState;
 
     /// <summary>
     /// Gets the theme mode.
@@ -605,6 +608,43 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         }
     }
 
+    private void SuspendTerminalIO()
+    {
+        _inputSuspended = true;
+
+        if (_useMouse)
+            _nativeRenderer.DisableMouse();
+
+        var kittyConfig = _config.UseKittyKeyboard;
+        if (kittyConfig is not null)
+            _nativeRenderer.DisableKittyKeyboard();
+
+        RestoreConsoleMode();
+        _nativeRenderer.Suspend();
+    }
+
+    private void ResumeTerminalIO()
+    {
+        SetupRawInput();
+        _nativeRenderer.Resume();
+
+        if (_useMouse)
+            _nativeRenderer.EnableMouse();
+
+        var kittyConfig = _config.UseKittyKeyboard;
+        if (kittyConfig is not null)
+            _nativeRenderer.EnableKittyKeyboard(kittyConfig.BuildFlags());
+
+        CurrentRenderBuffer.Clear(_backgroundColor);
+
+        lock (_stdinLock)
+        {
+            _stdinParser?.Reset();
+        }
+
+        _inputSuspended = false;
+    }
+
     private void OnCancelKeyPress(object? sender, ConsoleCancelEventArgs e)
     {
         if (_config.ExitOnCtrlC)
@@ -698,6 +738,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
                 }
 
                 if (bytesRead <= 0) break;
+
+                if (_inputSuspended) continue;
 
                 if (_stdinParser is not null)
                 {
@@ -1096,6 +1138,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         lock (_renderLoopLock)
         {
             if (_isDestroyed) return;
+            if (_controlState == RendererControlState.ExplicitSuspended) return;
 
             if (_renderRequestSuspensionCount > 0)
             {
@@ -1392,30 +1435,131 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     public void RequestLive()
     {
         _liveRequestCounter++;
-        if (_liveRequestCounter == 1)
-            StartRunning();
+        if (_controlState == RendererControlState.Idle && _liveRequestCounter == 1)
+        {
+            _controlState = RendererControlState.AutoStarted;
+            InternalStart();
+        }
     }
 
     /// <inheritdoc/>
     public void DropLive()
     {
         _liveRequestCounter = Math.Max(0, _liveRequestCounter - 1);
-        if (_liveRequestCounter == 0)
-            StopRunning();
+        if (_controlState == RendererControlState.AutoStarted && _liveRequestCounter == 0)
+        {
+            _controlState = RendererControlState.Idle;
+            InternalPause();
+        }
     }
 
-    private void StartRunning()
+    private void InternalStart()
     {
         if (_isRunning || _isDestroyed) return;
         _isRunning = true;
-        RequestRender();
+        _updateScheduled = false;
+        _lastTimeMs = _clock.ElapsedMilliseconds;
+        _frameCount = 0;
+        _lastFpsTimeMs = _lastTimeMs;
+        _currentFps = 0;
+        _renderTimer?.Dispose();
+        _renderTimer = null;
+        _renderTimer = new Timer(_ => Loop(), null, 1, Timeout.Infinite);
     }
 
-    private void StopRunning()
+    private void InternalPause()
     {
         _isRunning = false;
         _renderTimer?.Dispose();
         _renderTimer = null;
+    }
+
+    private void InternalStop()
+    {
+        if (!_isRunning && _renderTimer is null) return;
+        _isRunning = false;
+        _memorySnapshotTimer?.Dispose();
+        _memorySnapshotTimer = null;
+        _renderTimer?.Dispose();
+        _renderTimer = null;
+    }
+
+    #endregion
+
+    #region Lifecycle Control
+
+    /// <summary>
+    /// Explicitly starts the render loop. Overrides auto-management.
+    /// </summary>
+    public void Start()
+    {
+        if (_isDestroyed) return;
+        _controlState = RendererControlState.ExplicitStarted;
+        InternalStart();
+    }
+
+    /// <summary>
+    /// Hands control back to auto-management. If the loop is running,
+    /// transitions to AutoStarted; otherwise transitions to Idle.
+    /// </summary>
+    public void Auto()
+    {
+        if (_isDestroyed) return;
+        _controlState = _isRunning
+            ? RendererControlState.AutoStarted
+            : RendererControlState.Idle;
+    }
+
+    /// <summary>
+    /// Pauses the render loop. The loop can be resumed with Resume() or Start().
+    /// </summary>
+    public void Pause()
+    {
+        if (_isDestroyed) return;
+        _controlState = RendererControlState.ExplicitPaused;
+        InternalPause();
+    }
+
+    /// <summary>
+    /// Suspends the renderer, tearing down terminal I/O so a child process
+    /// (e.g., an external editor) can use the terminal. Call Resume() to restore.
+    /// </summary>
+    public void Suspend()
+    {
+        if (_isDestroyed) return;
+        _previousControlState = _controlState;
+        _controlState = RendererControlState.ExplicitSuspended;
+        InternalPause();
+        SuspendTerminalIO();
+    }
+
+    /// <summary>
+    /// Resumes the renderer after a Suspend(), restoring terminal I/O
+    /// and restarting the loop if it was previously running.
+    /// </summary>
+    public void Resume()
+    {
+        if (_isDestroyed) return;
+        if (_controlState != RendererControlState.ExplicitSuspended) return;
+
+        ResumeTerminalIO();
+
+        _controlState = _previousControlState;
+
+        if (_controlState is RendererControlState.AutoStarted or RendererControlState.ExplicitStarted)
+            InternalStart();
+        else
+            RequestRender();
+    }
+
+    /// <summary>
+    /// Explicitly stops the render loop.
+    /// </summary>
+    public void Stop()
+    {
+        if (_isDestroyed) return;
+        _controlState = RendererControlState.ExplicitStopped;
+        InternalStop();
     }
 
     #endregion
@@ -2413,7 +2557,7 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
             _renderTimer?.Dispose();
             _renderTimer = null;
 
-            StopRunning();
+            InternalStop();
             Console.Dispose();
             Root.DestroyRecursively();
             FlushCapturedStdout(_terminalHeight, force: true);

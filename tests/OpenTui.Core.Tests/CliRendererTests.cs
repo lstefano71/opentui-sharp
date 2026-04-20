@@ -968,17 +968,17 @@ public sealed class CliRendererTests : IDisposable
     public void LiveMode_RequestAndDrop()
     {
         Assert.Equal(0, _renderer.LiveRequestCount);
-        Assert.Equal("idle", _renderer.CurrentControlState);
+        Assert.Equal(RendererControlState.Idle, _renderer.CurrentControlState);
 
         _renderer.RequestLive();
         Assert.True(_renderer.IsRunning);
         Assert.Equal(1, _renderer.LiveRequestCount);
-        Assert.Equal("auto_started", _renderer.CurrentControlState);
+        Assert.Equal(RendererControlState.AutoStarted, _renderer.CurrentControlState);
 
         _renderer.DropLive();
         Assert.False(_renderer.IsRunning);
         Assert.Equal(0, _renderer.LiveRequestCount);
-        Assert.Equal("idle", _renderer.CurrentControlState);
+        Assert.Equal(RendererControlState.Idle, _renderer.CurrentControlState);
     }
 
     [Fact]
@@ -988,7 +988,7 @@ public sealed class CliRendererTests : IDisposable
         _renderer.DropLive(); // should not go below 0 or throw
         Assert.False(_renderer.IsRunning);
         Assert.Equal(0, _renderer.LiveRequestCount);
-        Assert.Equal("idle", _renderer.CurrentControlState);
+        Assert.Equal(RendererControlState.Idle, _renderer.CurrentControlState);
     }
 
     [Fact]
@@ -1149,4 +1149,131 @@ public sealed class CliRendererTests : IDisposable
             @"\x1b\].*?(?:\x07|\x1b\\)",
             string.Empty);
     }
+
+    #region Lifecycle State Machine
+
+    [Fact]
+    public void Start_SetsExplicitStartedState()
+    {
+        _renderer.Start();
+        Assert.Equal(RendererControlState.ExplicitStarted, _renderer.CurrentControlState);
+        Assert.True(_renderer.IsRunning);
+    }
+
+    [Fact]
+    public void Stop_SetsExplicitStoppedState()
+    {
+        _renderer.Start();
+        _renderer.Stop();
+        Assert.Equal(RendererControlState.ExplicitStopped, _renderer.CurrentControlState);
+        Assert.False(_renderer.IsRunning);
+    }
+
+    [Fact]
+    public void Auto_TransitionsToIdleWhenNotRunning()
+    {
+        _renderer.Auto();
+        Assert.Equal(RendererControlState.Idle, _renderer.CurrentControlState);
+    }
+
+    [Fact]
+    public void Auto_TransitionsToAutoStartedWhenRunning()
+    {
+        _renderer.Start();
+        _renderer.Auto();
+        Assert.Equal(RendererControlState.AutoStarted, _renderer.CurrentControlState);
+    }
+
+    [Fact]
+    public void Pause_SetsExplicitPausedState()
+    {
+        _renderer.Start();
+        _renderer.Pause();
+        Assert.Equal(RendererControlState.ExplicitPaused, _renderer.CurrentControlState);
+        Assert.False(_renderer.IsRunning);
+    }
+
+    [Fact]
+    public void Suspend_SetsExplicitSuspendedState()
+    {
+        _renderer.Start();
+        _renderer.Suspend();
+        Assert.Equal(RendererControlState.ExplicitSuspended, _renderer.CurrentControlState);
+        Assert.False(_renderer.IsRunning);
+    }
+
+    [Fact]
+    public void Resume_RestoresPreviousState()
+    {
+        _renderer.Start();
+        _renderer.Suspend();
+        _renderer.Resume();
+        Assert.Equal(RendererControlState.ExplicitStarted, _renderer.CurrentControlState);
+    }
+
+    [Fact]
+    public void Resume_NoOpIfNotSuspended()
+    {
+        _renderer.Start();
+        _renderer.Resume(); // not suspended, should be no-op
+        Assert.Equal(RendererControlState.ExplicitStarted, _renderer.CurrentControlState);
+    }
+
+    [Fact]
+    public void RequestLive_OnlyTransitionsFromIdle()
+    {
+        _renderer.Pause();
+        _renderer.RequestLive();
+        Assert.Equal(RendererControlState.ExplicitPaused, _renderer.CurrentControlState);
+        Assert.False(_renderer.IsRunning);
+    }
+
+    [Fact]
+    public void RequestLive_TransitionsIdleToAutoStarted()
+    {
+        Assert.Equal(RendererControlState.Idle, _renderer.CurrentControlState);
+        _renderer.RequestLive();
+        Assert.Equal(RendererControlState.AutoStarted, _renderer.CurrentControlState);
+    }
+
+    [Fact]
+    public void DropLive_TransitionsAutoStartedToIdle()
+    {
+        _renderer.RequestLive();
+        Assert.Equal(RendererControlState.AutoStarted, _renderer.CurrentControlState);
+        _renderer.DropLive();
+        Assert.Equal(RendererControlState.Idle, _renderer.CurrentControlState);
+    }
+
+    [Fact]
+    public void DropLive_DoesNotStopExplicitStart()
+    {
+        _renderer.Start();
+        _renderer.RequestLive();
+        _renderer.DropLive();
+        Assert.Equal(RendererControlState.ExplicitStarted, _renderer.CurrentControlState);
+        Assert.True(_renderer.IsRunning);
+    }
+
+    [Fact]
+    public void Destroy_RespectsFromAnyState()
+    {
+        _renderer.Start();
+        _renderer.Destroy();
+        Assert.True(_renderer.IsDestroyed);
+    }
+
+    [Fact]
+    public void LifecycleMethods_NoOpAfterDestroy()
+    {
+        _renderer.Destroy();
+        _renderer.Start();
+        _renderer.Pause();
+        _renderer.Suspend();
+        _renderer.Resume();
+        _renderer.Stop();
+        Assert.True(_renderer.IsDestroyed);
+    }
+
+    #endregion
 }

@@ -103,6 +103,26 @@ public enum ExternalOutputMode
 }
 
 /// <summary>
+/// The lifecycle state of the renderer, controlling how the render loop behaves.
+/// Matches TypeScript RendererControlState (renderer.ts).
+/// </summary>
+public enum RendererControlState
+{
+    /// <summary>Idle — no continuous rendering. One-shot frames via RequestRender.</summary>
+    Idle,
+    /// <summary>Auto-started via RequestLive — live counter governs the loop.</summary>
+    AutoStarted,
+    /// <summary>Explicitly started by the user via Start().</summary>
+    ExplicitStarted,
+    /// <summary>Explicitly paused by the user via Pause().</summary>
+    ExplicitPaused,
+    /// <summary>Explicitly suspended — terminal I/O torn down for child process.</summary>
+    ExplicitSuspended,
+    /// <summary>Explicitly stopped by the user via Stop().</summary>
+    ExplicitStopped,
+}
+
+/// <summary>
 /// Kitty keyboard protocol options.
 /// See: https://sw.kovidgoyal.net/kitty/keyboard-protocol/
 /// </summary>

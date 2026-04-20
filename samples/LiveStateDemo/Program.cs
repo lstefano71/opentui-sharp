@@ -40,7 +40,7 @@ void UpdateRendererState()
     rendererStateText.Content =
         $"Renderer State: {(renderer.IsRunning ? "RUNNING" : "STOPPED")} | " +
         $"Live Requests: {renderer.LiveRequestCount}{liveIndicator} | " +
-        $"Control State: {renderer.CurrentControlState.ToUpperInvariant()} | " +
+        $"Control State: {renderer.CurrentControlState} | " +
         $"Frame: {frameCounter}";
 }
 
