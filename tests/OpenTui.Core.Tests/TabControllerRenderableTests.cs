@@ -1,3 +1,5 @@
+using System.Text;
+
 using OpenTui.Core;
 using Xunit;
 
@@ -5,6 +7,27 @@ namespace OpenTui.Core.Tests;
 
 public class TabControllerRenderableTests
 {
+    private static unsafe string ReadText(OptimizedBuffer buf, uint x, uint y, int length)
+    {
+        nint charPtr = buf.GetCharPtr();
+        uint* chars = (uint*)charPtr;
+        var sb = new StringBuilder(length);
+
+        for (int i = 0; i < length; i++)
+        {
+            uint codePoint = chars[(int)(y * buf.Width + x + (uint)i)];
+            if (codePoint == 0 || codePoint > 0x10FFFF || !Rune.TryCreate((int)codePoint, out var rune))
+            {
+                sb.Append(' ');
+                continue;
+            }
+
+            sb.Append(rune.ToString());
+        }
+
+        return sb.ToString();
+    }
+
     [Fact]
     public void AddTab_InitializesAndShowsFirstTab()
     {
@@ -151,5 +174,69 @@ public class TabControllerRenderableTests
         Assert.False(controller.TabStrip.Focused);
 
         controller.DestroyRecursively();
+    }
+
+    [Fact]
+    public void CustomDescription_CoexistsWithDefaultHelpText()
+    {
+        var ctx = new TestRenderContext();
+        var controller = new TabControllerRenderable(ctx);
+
+        controller.AddTab(new TabControllerTab
+        {
+            Title = "One",
+            Description = "Custom description",
+            Initialize = _ => { },
+        });
+
+        controller.AddTab(new TabControllerTab
+        {
+            Title = "Two",
+            Initialize = _ => { },
+        });
+
+        Assert.Equal("Custom description", controller.TabStrip.GetSelectedOption()!.Description);
+        Assert.Equal(
+            "Tab 1/2 - Use Left/Right arrows to navigate | Press Ctrl+C to exit | D or .: toggle debug | Ctrl+G: dump hit grid",
+            controller.GetCurrentHelpText());
+
+        controller.SwitchToTab(1);
+
+        Assert.Equal(
+            "Tab 2/2 - Use Left/Right arrows to navigate | Press Ctrl+C to exit | D or .: toggle debug | Ctrl+G: dump hit grid",
+            controller.GetCurrentHelpText());
+
+        controller.DestroyRecursively();
+    }
+
+    [Fact]
+    public void TransparentControllerBackground_StillRendersHelpLine()
+    {
+        using var renderer = CliRenderer.Create(new CliRendererConfig
+        {
+            Testing = true,
+            Width = 100,
+            Height = 24,
+        });
+
+        var controller = new TabControllerRenderable(renderer, new TabControllerOptions
+        {
+            Width = DimensionValue.Point(100),
+            Height = DimensionValue.Point(24),
+            TabBarHeight = 4,
+        });
+
+        controller.AddTab(new TabControllerTab
+        {
+            Title = "One",
+            Description = "Custom description",
+            Initialize = _ => { },
+        });
+
+        renderer.Root.Add(controller);
+        renderer.RenderTestFrame();
+
+        string helpRow = ReadText(renderer.NextRenderBuffer, 1, 3, 80);
+        Assert.Contains("Use Left/Right arrows to navigate", helpRow);
     }
 }

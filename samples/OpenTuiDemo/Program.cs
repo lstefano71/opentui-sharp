@@ -1,6 +1,12 @@
 using OpenTui.Core;
 
 static Rgba Hex(string value) => Rgba.FromHex(value);
+// Intentionally keep a blue accent theme for the C# port rather than matching the upstream yellow tab strip.
+var demoTabTextColor = Hex("#E2E8F0");
+var demoTabHelpTextColor = Hex("#F8FAFC");
+var demoTabSelectedBackgroundColor = Hex("#1E3A5F");
+var demoTabSelectedTextColor = Hex("#38BDF8");
+var demoTabSelectedDescriptionColor = Hex("#94A3B8");
 
 static bool IsPlainKey(KeyEvent key, string name) =>
     string.Equals(key.Name, name, StringComparison.OrdinalIgnoreCase)
@@ -36,11 +42,12 @@ var tabController = new TabControllerRenderable(renderer, new TabControllerOptio
     Width = DimensionValue.Percent(100),
     Height = DimensionValue.Percent(100),
     TabBarHeight = 4,
-    TextColor = Hex("#E2E8F0"),
+    TextColor = demoTabTextColor,
+    HelpTextColor = demoTabHelpTextColor,
     TabBarBackgroundColor = Hex("#000028"),
-    SelectedBackgroundColor = Hex("#1E3A5F"),
-    SelectedTextColor = Hex("#38BDF8"),
-    SelectedDescriptionColor = Hex("#94A3B8"),
+    SelectedBackgroundColor = demoTabSelectedBackgroundColor,
+    SelectedTextColor = demoTabSelectedTextColor,
+    SelectedDescriptionColor = demoTabSelectedDescriptionColor,
     ShowDescription = true,
     ShowUnderline = true,
     ShowScrollArrows = true,

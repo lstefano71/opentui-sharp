@@ -9,6 +9,7 @@ public sealed class TabControllerOptions : RenderableOptions
     public int TabBarHeight { get; init; } = 4;
     public int TabWidth { get; init; } = 20;
     public Rgba? TabBarBackgroundColor { get; init; }
+    public Rgba? HelpTextColor { get; init; }
     public Rgba? TextColor { get; init; }
     public Rgba? SelectedBackgroundColor { get; init; }
     public Rgba? SelectedTextColor { get; init; }
@@ -54,6 +55,7 @@ public sealed class TabControllerRenderable : Renderable
     private readonly List<TabControllerState> _tabs = [];
     private readonly TabSelectRenderable _tabSelect;
     private readonly int _tabBarHeight;
+    private readonly Rgba _helpTextColor;
     private Rgba _backgroundColor;
     private int _currentTabIndex = -1;
 
@@ -64,6 +66,7 @@ public sealed class TabControllerRenderable : Renderable
 
         _backgroundColor = options.BackgroundColor ?? Rgba.Transparent;
         _tabBarHeight = Math.Max(1, options.TabBarHeight);
+        _helpTextColor = options.HelpTextColor ?? Rgba.FromHex("#FFFFFF");
 
         _tabSelect = new TabSelectRenderable(ctx, new TabSelectOptions
         {
@@ -107,6 +110,11 @@ public sealed class TabControllerRenderable : Renderable
     public int TabCount => _tabs.Count;
 
     public int GetCurrentTabIndex() => _currentTabIndex;
+
+    public string GetCurrentHelpText() =>
+        _tabs.Count == 0
+            ? string.Empty
+            : BuildHelpText(Math.Clamp(_currentTabIndex, 0, _tabs.Count - 1));
 
     public TabControllerTab? GetCurrentTab() =>
         _currentTabIndex >= 0 && _currentTabIndex < _tabs.Count
@@ -194,12 +202,21 @@ public sealed class TabControllerRenderable : Renderable
 
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
-        if (_backgroundColor.A == 0 || _widthValue <= 0 || _heightValue <= 0)
+        if (_widthValue <= 0 || _heightValue <= 0)
             return;
 
         int startX = _buffered ? 0 : (int)_screenX;
         int startY = _buffered ? 0 : (int)_screenY;
-        buffer.FillRect((uint)startX, (uint)startY, (uint)_widthValue, (uint)_heightValue, _backgroundColor);
+        if (_backgroundColor.A > 0)
+            buffer.FillRect((uint)startX, (uint)startY, (uint)_widthValue, (uint)_heightValue, _backgroundColor);
+
+        int helpLineY = 1 + (_tabSelect.ShowUnderline ? 1 : 0) + (_tabSelect.ShowDescription ? 1 : 0);
+        if (_tabs.Count > 0 && helpLineY < _tabBarHeight && helpLineY < _heightValue)
+        {
+            string helpText = TruncateText(GetCurrentHelpText(), _widthValue - 2);
+            if (helpText.Length > 0)
+                buffer.DrawText(helpText, (uint)(startX + 1), (uint)(startY + helpLineY), _helpTextColor);
+        }
     }
 
     private void SwitchToTab(int index, bool syncTabStrip)
@@ -240,17 +257,28 @@ public sealed class TabControllerRenderable : Renderable
 
     private void UpdateTabStripOptions()
     {
-        string DefaultDescription(int index) =>
-            $"Tab {index + 1}/{_tabs.Count} - Use Left/Right arrows to navigate | Press Ctrl+C to exit | D or .: toggle debug | Ctrl+G: dump hit grid";
-
         _tabSelect.Options =
         [
             .. _tabs.Select((tab, index) => new TabSelectOption
             {
                 Name = tab.Definition.Title,
-                Description = tab.Definition.Description ?? DefaultDescription(index),
+                Description = tab.Definition.Description ?? BuildHelpText(index),
                 Value = index,
             }),
         ];
+    }
+
+    private string BuildHelpText(int index) =>
+        $"Tab {index + 1}/{_tabs.Count} - Use Left/Right arrows to navigate | Press Ctrl+C to exit | D or .: toggle debug | Ctrl+G: dump hit grid";
+
+    private static string TruncateText(string text, int maxWidth)
+    {
+        if (maxWidth <= 0)
+            return string.Empty;
+
+        if (text.Length <= maxWidth)
+            return text;
+
+        return text[..(maxWidth - 1)] + "…";
     }
 }
