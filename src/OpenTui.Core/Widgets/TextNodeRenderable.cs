@@ -32,39 +32,27 @@ public class TextNodeOptions
 /// TextNode does NOT own a Yoga node — it's purely compositional.
 /// Matches TypeScript TextNodeRenderable from TextNode.ts.
 /// </summary>
-public class TextNodeRenderable
+public class TextNodeRenderable : BaseRenderable
 {
-    private static int _nextNum = 1;
-
     private Rgba? _fg;
     private Rgba? _bg;
     private TextAttributes _attributes;
     private string? _linkUrl;
     private readonly List<object> _children = []; // string | TextNodeRenderable
-    private bool _dirty;
 
     /// <summary>
     /// Gets or sets the parent.
     /// </summary>
-    public TextNodeRenderable? Parent { get; internal set; }
-    /// <summary>
-    /// Gets the num.
-    /// </summary>
-    public int Num { get; }
-    /// <summary>
-    /// Gets or sets the id.
-    /// </summary>
-    public string Id { get; set; }
+    public new TextNodeRenderable? Parent { get; internal set; }
 
     /// <summary>
     /// Initializes a new instance of the TextNodeRenderable class.
     /// </summary>
     /// <param name="options">The configuration options.</param>
     public TextNodeRenderable(TextNodeOptions? options = null)
+        : base(options?.Id)
     {
         options ??= new TextNodeOptions();
-        Num = Interlocked.Increment(ref _nextNum);
-        Id = options.Id ?? $"renderable-{Num}";
         _fg = options.Fg;
         _bg = options.Bg;
         _attributes = options.Attributes;
@@ -108,11 +96,6 @@ public class TextNodeRenderable
         get => _linkUrl;
         set { _linkUrl = value; RequestRender(); }
     }
-
-    /// <summary>
-    /// Gets a value indicating whether is dirty.
-    /// </summary>
-    public bool IsDirty => _dirty;
 
     /// <summary>
     /// Gets the children.
@@ -379,22 +362,13 @@ public class TextNodeRenderable
     #region Dirty Tracking
 
     /// <summary>
-    /// Performs request render.
+    /// Performs request render — propagates dirty flag up to parent.
     /// </summary>
-    public virtual void RequestRender()
+    public override void RequestRender()
     {
         MarkDirty();
         Parent?.RequestRender();
     }
-
-    /// <summary>
-    /// Performs mark dirty.
-    /// </summary>
-    protected void MarkDirty() => _dirty = true;
-    /// <summary>
-    /// Performs mark clean.
-    /// </summary>
-    protected void MarkClean() => _dirty = false;
 
     #endregion
 

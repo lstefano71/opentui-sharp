@@ -4,17 +4,16 @@ namespace OpenTui.Core;
 
 /// <summary>
 /// Abstract base renderable — the core abstraction tying layout (Yoga node),
-/// events (EventEmitter), child management, and rendering together.
-/// Matches TypeScript BaseRenderable + Renderable classes from Renderable.ts.
+/// events (EventEmitter via BaseRenderable), child management, and rendering together.
+/// Matches TypeScript Renderable class from Renderable.ts.
 ///
 /// Thread safety: Renderable and the render tree are single-threaded (like TS/Node.js).
 /// All operations must happen on the render thread.
 /// </summary>
-public abstract class Renderable : EventEmitter
+public abstract class Renderable : BaseRenderable
 {
     #region Static
 
-    private static int s_nextNum = 1;
     private static readonly Dictionary<int, Renderable> s_renderablesByNumber = [];
 
     /// <summary>Look up a renderable by its auto-assigned number (used by hit grid).</summary>
@@ -25,19 +24,6 @@ public abstract class Renderable : EventEmitter
 
     #region Fields — identity & base state
 
-    private string _id;
-    /// <summary>
-    /// Gets the num.
-    /// </summary>
-    public int Num { get; }
-    /// <summary>
-    /// Stores the dirty.
-    /// </summary>
-    protected bool _dirty;
-    /// <summary>
-    /// Stores the visible.
-    /// </summary>
-    protected bool _visible = true;
     /// <summary>
     /// Stores the is destroyed.
     /// </summary>
@@ -223,10 +209,9 @@ public abstract class Renderable : EventEmitter
     /// <param name="ctx">The render context.</param>
     /// <param name="options">The configuration options.</param>
     protected Renderable(IRenderContext ctx, RenderableOptions options)
+        : base(options.Id)
     {
         _ctx = ctx;
-        Num = Interlocked.Increment(ref s_nextNum);
-        _id = options.Id ?? $"renderable-{Num}";
         s_renderablesByNumber[Num] = this;
 
         RenderBeforeHook = options.RenderBefore;
@@ -259,9 +244,9 @@ public abstract class Renderable : EventEmitter
     #region Id
 
     /// <summary>
-    /// Gets or sets the id.
+    /// Gets or sets the id. Overrides BaseRenderable to update the parent's id map.
     /// </summary>
-    public string Id
+    public override string Id
     {
         get => _id;
         set
@@ -274,23 +259,6 @@ public abstract class Renderable : EventEmitter
             _id = value;
         }
     }
-
-    #endregion
-
-    #region Dirty
-
-    /// <summary>
-    /// Gets a value indicating whether is dirty.
-    /// </summary>
-    public bool IsDirty => _dirty;
-    /// <summary>
-    /// Performs mark clean.
-    /// </summary>
-    protected void MarkClean() => _dirty = false;
-    /// <summary>
-    /// Performs mark dirty.
-    /// </summary>
-    protected void MarkDirty() => _dirty = true;
 
     #endregion
 
@@ -310,9 +278,9 @@ public abstract class Renderable : EventEmitter
     #region Visible
 
     /// <summary>
-    /// Gets or sets the visible.
+    /// Gets or sets the visible. Overrides BaseRenderable to sync Yoga display and live count.
     /// </summary>
-    public bool Visible
+    public override bool Visible
     {
         get => _visible;
         set
@@ -1275,7 +1243,7 @@ public abstract class Renderable : EventEmitter
     /// <summary>
     /// Performs request render.
     /// </summary>
-    public void RequestRender()
+    public override void RequestRender()
     {
         MarkDirty();
         _ctx.RequestRender();
@@ -1417,7 +1385,7 @@ public abstract class Renderable : EventEmitter
     /// <summary>
     /// Performs destroy.
     /// </summary>
-    public virtual void Destroy()
+    public override void Destroy()
     {
         if (_isDestroyed) return;
         _isDestroyed = true;
@@ -1449,7 +1417,7 @@ public abstract class Renderable : EventEmitter
     /// <summary>
     /// Performs destroy recursively.
     /// </summary>
-    public virtual void DestroyRecursively()
+    public override void DestroyRecursively()
     {
         var children = _childrenInLayoutOrder.ToArray();
         foreach (var child in children)

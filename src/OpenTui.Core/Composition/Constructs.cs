@@ -1,11 +1,49 @@
 namespace OpenTui.Core;
 
 /// <summary>
+/// Specifies which child IDs receive delegated operations (add, remove, focus).
+/// Used with <see cref="Constructs.Delegate"/>.
+/// </summary>
+public sealed class DelegateMapping
+{
+    /// <summary>ID of the descendant that receives Add/InsertBefore operations.</summary>
+    public string? Add { get; init; }
+
+    /// <summary>ID of the descendant that receives Remove operations.</summary>
+    public string? Remove { get; init; }
+
+    /// <summary>ID of the descendant that receives Focus/Blur operations.</summary>
+    public string? Focus { get; init; }
+}
+
+/// <summary>
 /// Factory methods that create VNode descriptors for each renderable type.
 /// AOT-safe — uses factory delegates, not reflection.
 /// </summary>
 public static class Constructs
 {
+    /// <summary>
+    /// Creates a VNode that wraps an inner VNode with delegation.
+    /// When instantiated, produces a <see cref="DelegatingRenderable"/> that routes
+    /// add/remove/focus operations to specific descendant IDs.
+    /// </summary>
+    public static VNode Delegate(DelegateMapping mapping, VNode inner) =>
+        new VNode
+        {
+            Factory = ctx =>
+            {
+                var root = VNodeRuntime.Instantiate(ctx, inner);
+                return new DelegatingRenderable(ctx, new DelegatingOptions
+                {
+                    Root = root,
+                    AddTargetId = mapping.Add,
+                    RemoveTargetId = mapping.Remove,
+                    FocusTargetId = mapping.Focus,
+                });
+            },
+            Children = [],
+        };
+
     /// <summary>Creates a VNode for <see cref="GenericRenderable"/>.</summary>
     public static VNode Generic(GenericOptions options, params VChild[] children) =>
         new VNode
@@ -20,6 +58,14 @@ public static class Constructs
         {
             Factory = ctx => new BoxRenderable(ctx, options ?? new BoxOptions()),
             Children = children,
+        };
+
+    /// <summary>Creates a VNode for <see cref="TextRenderable"/> with styled content.</summary>
+    public static VNode Text(StyledText content) =>
+        new VNode
+        {
+            Factory = ctx => new TextRenderable(ctx, new TextOptions { StyledContent = content }),
+            Children = [],
         };
 
     /// <summary>Creates a VNode for <see cref="TextRenderable"/>.</summary>

@@ -1,4 +1,6 @@
 using OpenTui.Core;
+using static OpenTui.Core.Constructs;
+using static OpenTui.Core.VStyles;
 
 var textColor = Rgba.FromHex("#FFFFFF");
 var globalBgColor = Rgba.FromHex("#333333");
@@ -12,6 +14,7 @@ using var renderer = CliRenderer.Create(new CliRendererConfig
 });
 
 renderer.SetBackgroundColor(globalBgColor);
+renderer.Start();
 
 var mainGroup = new BoxRenderable(renderer, new BoxOptions
 {
@@ -23,6 +26,7 @@ var mainGroup = new BoxRenderable(renderer, new BoxOptions
 });
 renderer.Root.Add(mainGroup);
 
+// BaseBox example (imperative — renderAfter needs self-reference, no C# equivalent of TS `this` binding)
 mainGroup.Add(CreateExtendedBaseBox(renderer, new BoxOptions
 {
     Id = "extended-base-box",
@@ -34,227 +38,86 @@ mainGroup.Add(CreateExtendedBaseBox(renderer, new BoxOptions
     ZIndex = 1000,
 }));
 
-var tree = CreateMyRenderable(renderer, new[]
-{
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-1",
-        Width = DimensionValue.Point(20),
-        Height = DimensionValue.Point(3),
-        Border = true,
-        MarginBottom = DimensionValue.Point(1),
-    }, CreateText(renderer, "Hello")),
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-2",
-        Width = DimensionValue.Point(24),
-        Height = DimensionValue.Point(3),
-        Border = true,
-    }, CreateText(renderer, "VNode world")),
-});
+// Declarative VNode tree — Constructs.Box/Text compose a descriptor, VNodeRuntime.Instantiate materializes it.
+var tree = (BoxRenderable)VNodeRuntime.Instantiate(renderer, MyRenderable(
+    Box(new BoxOptions { Id = "child-1", Width = DimensionValue.Point(20), Height = DimensionValue.Point(3), Border = true, MarginBottom = DimensionValue.Point(1) },
+        Text(new TextOptions { Content = "Hello" })),
+    Box(new BoxOptions { Id = "child-2", Width = DimensionValue.Point(24), Height = DimensionValue.Point(3), Border = true },
+        Text(new TextOptions { Content = "VNode world" }))));
 tree.BackgroundColor = new Rgba(0f, 155f / 255f, 155f / 255f, 100f / 255f);
 mainGroup.Add(tree);
 
-var labeledInput = CreateLabeledInput(renderer, "labeled-input", "Label:", "Enter your text...");
-labeledInput.Focus();
-mainGroup.Add(labeledInput);
+// Delegate construct — focus routes to the inner input
+var input = VNodeRuntime.Instantiate(renderer, LabeledInput("labeled-input", "Label:", "Enter your text..."));
+input.Focus();
+mainGroup.Add(input);
 
-var delegatedVNode = CreateDelegatedVNodeRenderable(renderer, "delegated-demo-root", new[]
-{
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-1",
-        Width = DimensionValue.Point(20),
-        Height = DimensionValue.Point(3),
-        Border = true,
-        MarginBottom = DimensionValue.Point(1),
-    }, CreateText(renderer, "Hello delegated 1")),
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-2",
-        Width = DimensionValue.Point(24),
-        Height = DimensionValue.Point(3),
-        Border = true,
-    }, CreateText(renderer, "VNode world delegated 1")),
-}, new Rgba(155f / 255f, 0f, 155f / 255f, 100f / 255f));
-mainGroup.Add(delegatedVNode);
+// VNode delegated version — Delegate() wraps a VNode tree with add/remove routing
+mainGroup.Add(MyDelegateToVNodeRenderable("delegated-demo-root",
+[
+    Box(new BoxOptions { Id = "child-1", Width = DimensionValue.Point(20), Height = DimensionValue.Point(3), Border = true, MarginBottom = DimensionValue.Point(1) },
+        Text(new TextOptions { Content = "Hello delegated 1" })),
+    Box(new BoxOptions { Id = "child-2", Width = DimensionValue.Point(24), Height = DimensionValue.Point(3), Border = true },
+        Text(new TextOptions { Content = "VNode world delegated 1" })),
+], new Rgba(155f / 255f, 0f, 155f / 255f, 100f / 255f)));
 
-var instancedDelegated = CreateInstancedRenderable(renderer, "demo-root", new[]
-{
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-1",
-        Width = DimensionValue.Point(20),
-        Height = DimensionValue.Point(3),
-        Border = true,
-        MarginBottom = DimensionValue.Point(1),
-    }, CreateText(renderer, "Hello 2")),
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-2",
-        Width = DimensionValue.Point(24),
-        Height = DimensionValue.Point(3),
-        Border = true,
-    }, CreateText(renderer, "VNode world 2")),
-}, null);
-mainGroup.Add(instancedDelegated);
-instancedDelegated.Add(CreateBox(renderer, new BoxOptions
-{
-    Id = "child-3",
-    Width = DimensionValue.Point(24),
-    Height = DimensionValue.Point(3),
-    Border = true,
-}, CreateText(renderer, "VNode world 3")));
-instancedDelegated.Add(CreateButton(renderer, "Click me", () => Console.WriteLine("clicked"), Rgba.Parse("red")));
+// Instanced delegated version
+var instance = VNodeRuntime.Instantiate(renderer, MyDelegateToVNodeRenderable("demo-root",
+[
+    Box(new BoxOptions { Id = "child-1", Width = DimensionValue.Point(20), Height = DimensionValue.Point(3), Border = true, MarginBottom = DimensionValue.Point(1) },
+        Text(new TextOptions { Content = "Hello 2" })),
+    Box(new BoxOptions { Id = "child-2", Width = DimensionValue.Point(24), Height = DimensionValue.Point(3), Border = true },
+        Text(new TextOptions { Content = "VNode world 2" })),
+]));
+mainGroup.Add(instance);
 
-var renderableDelegated = CreateDelegatedRenderableComponent(renderer, new[]
-{
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-1",
-        Width = DimensionValue.Point(20),
-        Height = DimensionValue.Point(3),
-        Border = true,
-        MarginBottom = DimensionValue.Point(1),
-    }, CreateText(renderer, "Hello 4")),
-    CreateBox(renderer, new BoxOptions
-    {
-        Id = "child-2",
-        Width = DimensionValue.Point(24),
-        Height = DimensionValue.Point(3),
-        Border = true,
-    }, CreateText(renderer, "VNode world 4")),
-});
-mainGroup.Add(renderableDelegated);
-renderableDelegated.Add(CreateButton(renderer, "Click me too!", () => Console.WriteLine("clicked"), Rgba.Parse("red")));
+// Delegated to _box3, would otherwise end up in the top-level group!
+instance.Add(Box(new BoxOptions { Id = "child-3", Width = DimensionValue.Point(24), Height = DimensionValue.Point(3), Border = true },
+    Text(new TextOptions { Content = "VNode world 3" })));
+instance.Add(Button("Click me", () => Console.WriteLine("clicked"), Rgba.Parse("red")));
 
-mainGroup.Add(CreateAnimatedVNodeButton(renderer, "Animated VNode", () => Console.WriteLine("vnode 1 clicked"), Rgba.FromInts(0, 0, 255)));
-mainGroup.Add(CreateAnimatedVNodeButton(renderer, "Same VNode, different props", () => Console.WriteLine("vnode 2 clicked"), Rgba.FromInts(255, 0, 255)));
-mainGroup.Add(CreateClassRenderedButton(renderer, "ClassRender", () => Console.WriteLine("clicked"), Rgba.FromInts(0, 0, 255)));
+// Renderable delegated version
+var renderableInstance = VNodeRuntime.Instantiate(renderer, MyDelegateToRenderableComponent(
+[
+    Box(new BoxOptions { Id = "child-1", Width = DimensionValue.Point(20), Height = DimensionValue.Point(3), Border = true, MarginBottom = DimensionValue.Point(1) },
+        Text(new TextOptions { Content = "Hello 4" })),
+    Box(new BoxOptions { Id = "child-2", Width = DimensionValue.Point(24), Height = DimensionValue.Point(3), Border = true },
+        Text(new TextOptions { Content = "VNode world 4" })),
+]));
+mainGroup.Add(renderableInstance);
 
-mainGroup.Add(CreateStyleExamples(renderer));
+// Delegated to __box4, would otherwise end up in the top-level group!
+renderableInstance.Add(Button("Click me too!", () => Console.WriteLine("clicked"), Rgba.Parse("red")));
+
+// Custom rendering — Generic() construct with VNode children
+mainGroup.Add(VNodeButton("Animated VNode", () => Console.WriteLine("vnode 1 clicked"), Rgba.FromInts(0, 0, 255)));
+mainGroup.Add(VNodeButton("Same VNode, different props", () => Console.WriteLine("vnode 2 clicked"), Rgba.FromInts(255, 0, 255)));
+
+// Class method rendering — Generic() construct wrapping a class instance's render method
+mainGroup.Add(ButtonWithClassRender("ClassRender", () => Console.WriteLine("clicked"), Rgba.FromInts(0, 0, 255)));
+
+// VStyles — composable styled text matching TS vstyles API
+mainGroup.Add(StyleExamples());
 
 await Task.Delay(Timeout.Infinite);
 
-BoxRenderable CreateMyRenderable(IRenderContext ctx, IEnumerable<Renderable> children)
-{
-    void MouseHandler(UiMouseEvent evt) => Console.WriteLine($"mouseHandler {evt.Type}");
+// --- Declarative Component Functions (return VNode) ---
 
-    return CreateBox(ctx, new BoxOptions
-    {
-        Id = "inner",
-    }, CreateBox(ctx, new BoxOptions
-    {
-        Border = true,
-        BorderStyle = BorderStyle.Double,
-        Padding = DimensionValue.Point(1),
-        OnMouseDown = MouseHandler,
-        FlexDirection = FlexDirectionValue.Row,
-    }, children.ToArray()));
-}
+// Wraps children in a bordered double-line container
+static VNode MyRenderable(params VChild[] children) =>
+    Box(new BoxOptions { Id = "inner" },
+        Box(new BoxOptions
+        {
+            Border = true,
+            BorderStyle = BorderStyle.Double,
+            Padding = DimensionValue.Point(1),
+            OnMouseDown = evt => Console.WriteLine($"mouseHandler {evt.Type}"),
+            FlexDirection = FlexDirectionValue.Row,
+        }, children));
 
-DelegatingRenderable CreateLabeledInput(IRenderContext ctx, string id, string label, string placeholder)
-{
-    var root = CreateBox(ctx, new BoxOptions
-    {
-        Id = $"{id}-labeled-outer",
-        FlexDirection = FlexDirectionValue.Row,
-    },
-    CreateText(ctx, label + " "),
-    new InputRenderable(ctx, new InputOptions
-    {
-        Id = $"{id}-input",
-        Placeholder = placeholder,
-        Width = DimensionValue.Point(20),
-        BackgroundColor = Rgba.Parse("white"),
-        TextColor = Rgba.Parse("black"),
-        CursorColor = Rgba.Parse("blue"),
-        FocusedBackgroundColor = Rgba.Parse("orange"),
-    }));
-
-    return new DelegatingRenderable(ctx, new DelegatingOptions
-    {
-        Id = $"{id}-delegate",
-        Root = root,
-        FocusTargetId = $"{id}-input",
-    });
-}
-
-DelegatingRenderable CreateDelegatedVNodeRenderable(
-    IRenderContext ctx,
-    string id,
-    IEnumerable<Renderable> children,
-    Rgba? backgroundColor)
-{
-    var outer = CreateBox(ctx, new BoxOptions
-    {
-        Id = $"{id}_outer3",
-        Border = true,
-        BorderColor = Rgba.Parse("blue"),
-    }, CreateBox(ctx, new BoxOptions
-    {
-        Id = $"{id}_inner3",
-        Border = true,
-        BorderColor = Rgba.Parse("magenta"),
-    }, CreateBox(ctx, new BoxOptions
-    {
-        Id = $"{id}_box3",
-        FlexDirection = FlexDirectionValue.Row,
-        Border = true,
-        Padding = DimensionValue.Point(1),
-    }, children.ToArray())));
-
-    if (backgroundColor is { } bg)
-        outer.BackgroundColor = bg;
-
-    return new DelegatingRenderable(ctx, new DelegatingOptions
-    {
-        Id = $"{id}-delegate",
-        Root = outer,
-        AddTargetId = $"{id}_box3",
-        RemoveTargetId = $"{id}_box3",
-    });
-}
-
-DelegatingRenderable CreateInstancedRenderable(
-    IRenderContext ctx,
-    string id,
-    IEnumerable<Renderable> children,
-    Rgba? backgroundColor) =>
-    CreateDelegatedVNodeRenderable(ctx, id, children, backgroundColor);
-
-DelegatingRenderable CreateDelegatedRenderableComponent(IRenderContext ctx, IEnumerable<Renderable> children)
-{
-    var root = CreateBox(ctx, new BoxOptions
-    {
-        Id = "__outer4",
-        Border = true,
-        BorderColor = Rgba.Parse("blue"),
-    }, CreateBox(ctx, new BoxOptions
-    {
-        Id = "__inner4",
-        Border = true,
-        BorderColor = Rgba.Parse("magenta"),
-    }, CreateBox(ctx, new BoxOptions
-    {
-        Id = "__box4",
-        FlexDirection = FlexDirectionValue.Row,
-        Border = true,
-        Padding = DimensionValue.Point(1),
-    }, children.ToArray())));
-
-    return new DelegatingRenderable(ctx, new DelegatingOptions
-    {
-        Id = "renderable-delegate",
-        Root = root,
-        AddTargetId = "__box4",
-        RemoveTargetId = "__box4",
-    });
-}
-
-BoxRenderable CreateButton(IRenderContext ctx, string title, Action onClick, Rgba? borderColor = null, params Renderable[] children)
-{
-    return CreateBox(ctx, new BoxOptions
+// Simple button with border and click handler
+static VNode Button(string title, Action onClick, Rgba? borderColor = null) =>
+    Box(new BoxOptions
     {
         Id = "button",
         Border = true,
@@ -262,22 +125,54 @@ BoxRenderable CreateButton(IRenderContext ctx, string title, Action onClick, Rgb
         BorderColor = borderColor,
         PaddingLeft = DimensionValue.Point(1),
         PaddingRight = DimensionValue.Point(1),
-    }, [CreateText(ctx, title, selectable: false), .. children]);
-}
+    }, Text(new TextOptions { Content = title, Selectable = false }));
 
-GenericRenderable CreateAnimatedVNodeButton(IRenderContext ctx, string title, Action onClick, Rgba borderColor)
-{
-    int width = Math.Max(title.Length + 4, 12);
-    var button = new GenericRenderable(ctx, new GenericOptions
+// Delegate construct — add/remove route to inner _box3
+static VNode MyDelegateToVNodeRenderable(string id, VChild[] children, Rgba? backgroundColor = null) =>
+    Delegate(
+        new DelegateMapping { Add = $"{id}_box3", Remove = $"{id}_box3" },
+        Box(new BoxOptions { Id = $"{id}_outer3", Border = true, BorderColor = Rgba.Parse("blue"), BackgroundColor = backgroundColor },
+            Box(new BoxOptions { Id = $"{id}_inner3", Border = true, BorderColor = Rgba.Parse("magenta") },
+                Box(new BoxOptions { Id = $"{id}_box3", FlexDirection = FlexDirectionValue.Row, Border = true, Padding = DimensionValue.Point(1) },
+                    children))));
+
+// Delegate construct — same pattern, different IDs
+static VNode MyDelegateToRenderableComponent(VChild[] children) =>
+    Delegate(
+        new DelegateMapping { Add = "__box4", Remove = "__box4" },
+        Box(new BoxOptions { Id = "__outer4", Border = true, BorderColor = Rgba.Parse("blue") },
+            Box(new BoxOptions { Id = "__inner4", Border = true, BorderColor = Rgba.Parse("magenta") },
+                Box(new BoxOptions { Id = "__box4", FlexDirection = FlexDirectionValue.Row, Border = true, Padding = DimensionValue.Point(1) },
+                    children))));
+
+// Delegate construct — focus routes to the inner input
+static VNode LabeledInput(string id, string label, string placeholder) =>
+    Delegate(
+        new DelegateMapping { Focus = $"{id}-input" },
+        Box(new BoxOptions { FlexDirection = FlexDirectionValue.Row, Id = $"{id}-labeled-outer" },
+            Text(new TextOptions { Content = label + " " }),
+            Input(new InputOptions
+            {
+                Id = $"{id}-input",
+                Placeholder = placeholder,
+                Width = DimensionValue.Point(20),
+                BackgroundColor = Rgba.Parse("white"),
+                TextColor = Rgba.Parse("black"),
+                CursorColor = Rgba.Parse("blue"),
+                FocusedBackgroundColor = Rgba.Parse("orange"),
+            })));
+
+// Generic() construct — custom rendering with VNode hit-area child
+VNode VNodeButton(string title, Action onClick, Rgba borderColor) =>
+    Generic(new GenericOptions
     {
         Id = $"{title}-generic",
-        Width = DimensionValue.Point(width),
+        Width = DimensionValue.Point(Math.Max(title.Length + 4, 12)),
         Height = DimensionValue.Point(3),
         Margin = DimensionValue.Point(1),
-        Render = (buffer, deltaTime, renderable) => DemoRenderFn(title, borderColor, buffer, renderable, textColor, globalBgColor, transparent),
-    });
-
-    button.Add(CreateBox(ctx, new BoxOptions
+        Render = (buffer, deltaTime, renderable) =>
+            RenderHelpers.DemoRenderFn(title, borderColor, buffer, renderable, textColor, globalBgColor, transparent),
+    }, Box(new BoxOptions
     {
         Id = "button",
         Width = DimensionValue.Percent(100),
@@ -285,37 +180,56 @@ GenericRenderable CreateAnimatedVNodeButton(IRenderContext ctx, string title, Ac
         OnMouseDown = _ => onClick(),
     }));
 
-    return button;
-}
-
-GenericRenderable CreateClassRenderedButton(IRenderContext ctx, string title, Action onClick, Rgba borderColor)
+// Generic() construct — class instance provides the render method
+VNode ButtonWithClassRender(string title, Action onClick, Rgba borderColor)
 {
-    var rendererRoot = new MyRoot(title, borderColor);
-    var button = new GenericRenderable(ctx, new GenericOptions
+    var root = new MyRoot(title, borderColor);
+    return Generic(new GenericOptions
     {
         Id = $"{title}-class-render",
-        Width = DimensionValue.Point(rendererRoot.Width),
+        Width = DimensionValue.Point(root.Width),
         Height = DimensionValue.Point(3),
         MarginLeft = DimensionValue.Point(1),
-        Render = (buffer, deltaTime, renderable) => rendererRoot.Render(buffer, deltaTime, renderable, textColor, globalBgColor, transparent),
-    });
-
-    button.Add(CreateBox(ctx, new BoxOptions
+        Render = (buffer, deltaTime, renderable) =>
+            root.Render(buffer, deltaTime, renderable, textColor, globalBgColor, transparent),
+    }, Box(new BoxOptions
     {
         Id = "button",
         Width = DimensionValue.Percent(100),
         Height = DimensionValue.Percent(100),
         OnMouseDown = _ => onClick(),
     }));
-
-    return button;
 }
 
-BoxRenderable CreateBaseBox(IRenderContext ctx, BoxOptions props, params Renderable[] children)
+// VStyles — entire styled text section as a declarative VNode tree
+static VNode StyleExamples() =>
+    Box(new BoxOptions { Id = "style-examples", FlexDirection = FlexDirectionValue.Column, MarginTop = DimensionValue.Point(2) },
+        // Basic styles
+        Text(Bold("Bold Text")),
+        Text(Italic("Italic Text")),
+        Text(Underline("Underlined Text")),
+        Text(Dim("Dim Text")),
+        // Combined styles
+        Text(BoldItalic("Bold and Italic")),
+        Text(BoldUnderline("Bold and Underlined")),
+        Text(ItalicUnderline("Italic and Underlined")),
+        // Colors
+        Text(Color("#ff6b6b", "Red Text")),
+        Text(BgColor("#4ecdc4", "Text with Background")),
+        // Custom styling
+        Text(Styled(TextAttributes.Bold | TextAttributes.Underline, "Custom Styled")),
+        // Stacked styles — inner styles compose with outer
+        Text(Bold(Underline("hello"), " world")),
+        Text(Color("#ff6b6b", Bold("Bold Red"), " normal")),
+        Text(Italic(Color("#4ecdc4", "Green Italic"), " normal again")));
+
+// --- Imperative Helpers (renderAfter needs self-reference) ---
+
+static BoxRenderable CreateBaseBox(IRenderContext ctx, BoxOptions props, params Renderable[] children)
 {
     var renderAfter = props.RenderAfter;
     BoxRenderable? box = null;
-    box = CreateBox(ctx, new BoxOptions
+    box = new BoxRenderable(ctx, new BoxOptions
     {
         Id = props.Id ?? "base-box",
         Border = true,
@@ -335,12 +249,15 @@ BoxRenderable CreateBaseBox(IRenderContext ctx, BoxOptions props, params Rendera
             buffer.DrawText("Hello", (uint)(box.X + 1), (uint)(box.Y + 1), Rgba.White);
             renderAfter?.Invoke(buffer, deltaTime);
         },
-    }, children);
+    });
+
+    foreach (var child in children)
+        box.Add(child);
 
     return box;
 }
 
-BoxRenderable CreateExtendedBaseBox(IRenderContext ctx, BoxOptions props)
+static BoxRenderable CreateExtendedBaseBox(IRenderContext ctx, BoxOptions props)
 {
     BoxRenderable? extended = null;
     extended = CreateBaseBox(ctx, new BoxOptions
@@ -364,76 +281,10 @@ BoxRenderable CreateExtendedBaseBox(IRenderContext ctx, BoxOptions props)
     return extended;
 }
 
-BoxRenderable CreateStyleExamples(IRenderContext ctx)
-{
-    return CreateBox(ctx, new BoxOptions
-    {
-        Id = "style-examples",
-        FlexDirection = FlexDirectionValue.Column,
-        MarginTop = DimensionValue.Point(2),
-    },
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Bold Text").WithAttributes(TextAttributes.Bold))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Italic Text").WithAttributes(TextAttributes.Italic))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Underlined Text").WithAttributes(TextAttributes.Underline))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Dim Text").WithAttributes(TextAttributes.Dim))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Bold and Italic").WithAttributes(TextAttributes.Bold | TextAttributes.Italic))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Bold and Underlined").WithAttributes(TextAttributes.Bold | TextAttributes.Underline))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Italic and Underlined").WithAttributes(TextAttributes.Italic | TextAttributes.Underline))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Styled("Red Text", fg: Rgba.FromHex("#ff6b6b")))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Styled("Text with Background", bg: Rgba.FromHex("#4ecdc4")))),
-    CreateStyledLine(ctx, new StyledText(TextChunk.Plain("Custom Styled").WithAttributes(TextAttributes.Bold | TextAttributes.Underline))),
-    CreateStyledLine(ctx, new StyledText(
-        TextChunk.Plain("hello").WithAttributes(TextAttributes.Bold | TextAttributes.Underline),
-        TextChunk.Plain(" world").WithAttributes(TextAttributes.Bold))),
-    CreateStyledLine(ctx, new StyledText(
-        TextChunk.Styled("Bold Red", fg: Rgba.FromHex("#ff6b6b"), attributes: TextAttributes.Bold),
-        TextChunk.Plain(" normal"))),
-    CreateStyledLine(ctx, new StyledText(
-        TextChunk.Styled("Green Italic", fg: Rgba.FromHex("#4ecdc4"), attributes: TextAttributes.Italic),
-        TextChunk.Plain(" normal again"))));
-}
+// --- Render Helpers ---
 
-TextRenderable CreateStyledLine(IRenderContext ctx, StyledText content) =>
-    new(ctx, new TextOptions
-    {
-        StyledContent = content,
-    });
-
-BoxRenderable CreateBox(IRenderContext ctx, BoxOptions options, params Renderable[] children)
-{
-    var box = new BoxRenderable(ctx, options);
-    foreach (var child in children)
-        box.Add(child);
-
-    return box;
-}
-
-TextRenderable CreateText(IRenderContext ctx, string content, bool selectable = true) =>
-    new(ctx, new TextOptions
-    {
-        Content = content,
-        Selectable = selectable,
-    });
-
-static void DemoRenderFn(
-    string title,
-    Rgba borderColor,
-    OptimizedBuffer buffer,
-    Renderable renderable,
-    Rgba textColor,
-    Rgba globalBgColor,
-    Rgba transparent) =>
-    VNodeCompositionRenderHelpers.DemoRenderFn(title, borderColor, buffer, renderable, textColor, globalBgColor, transparent);
-
-sealed class MyRoot(string title, Rgba borderColor)
-{
-    public int Width { get; } = Math.Max(title.Length + 4, 12);
-
-    public void Render(OptimizedBuffer buffer, float deltaTime, Renderable renderable, Rgba textColor, Rgba globalBgColor, Rgba transparent) =>
-        VNodeCompositionRenderHelpers.DemoRenderFn(title, borderColor, buffer, renderable, textColor, globalBgColor, transparent);
-}
-
-static class VNodeCompositionRenderHelpers
+// Type declarations must follow all top-level statements and local functions.
+static class RenderHelpers
 {
     public static void DemoRenderFn(
         string title,
@@ -486,4 +337,12 @@ static class VNodeCompositionRenderHelpers
         if (titleY >= y && titleY < y + height)
             buffer.DrawText(title, (uint)titleX, (uint)titleY, pulsingTextColor, transparent);
     }
+}
+
+sealed class MyRoot(string title, Rgba borderColor)
+{
+    public int Width { get; } = Math.Max(title.Length + 4, 12);
+
+    public void Render(OptimizedBuffer buffer, float deltaTime, Renderable renderable, Rgba textColor, Rgba globalBgColor, Rgba transparent) =>
+        RenderHelpers.DemoRenderFn(title, borderColor, buffer, renderable, textColor, globalBgColor, transparent);
 }

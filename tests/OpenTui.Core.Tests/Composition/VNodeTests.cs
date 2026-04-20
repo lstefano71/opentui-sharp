@@ -221,4 +221,117 @@ public sealed class VNodeTests : IDisposable
         Assert.IsType<TextRenderable>(mid.GetChildren()[0]);
         root.Destroy();
     }
+
+    #region Delegate Construct
+
+    [Fact]
+    public void Delegate_CreatesDelegatingRenderable()
+    {
+        var vnode = Constructs.Delegate(
+            new DelegateMapping { Add = "inner" },
+            Constructs.Box(new BoxOptions { Id = "inner" }));
+
+        var result = VNodeRuntime.Instantiate(_ctx, vnode);
+
+        Assert.IsType<DelegatingRenderable>(result);
+        result.Destroy();
+    }
+
+    [Fact]
+    public void Delegate_RoutesAddToTarget()
+    {
+        var vnode = Constructs.Delegate(
+            new DelegateMapping { Add = "target" },
+            Constructs.Box(new BoxOptions { Id = "target" }));
+
+        var delegated = VNodeRuntime.Instantiate(_ctx, vnode);
+        var child = new BoxRenderable(_ctx, new BoxOptions { Id = "added-child" });
+        delegated.Add(child);
+
+        // Child was added to "target" box, not to the DelegatingRenderable itself
+        var target = delegated.FindDescendantById("target");
+        Assert.NotNull(target);
+        Assert.Contains(child, target!.GetChildren());
+        delegated.Destroy();
+    }
+
+    [Fact]
+    public void Delegate_RoutesFocusToTarget()
+    {
+        var vnode = Constructs.Delegate(
+            new DelegateMapping { Focus = "focus-target" },
+            Constructs.Box(new BoxOptions { Id = "focus-target" }));
+
+        var delegated = VNodeRuntime.Instantiate(_ctx, vnode);
+
+        // Focus should route to the "focus-target" descendant
+        delegated.Focus();
+        var target = delegated.FindDescendantById("focus-target");
+        Assert.NotNull(target);
+        delegated.Destroy();
+    }
+
+    [Fact]
+    public void Delegate_NestedTree_InstantiatesChildren()
+    {
+        var vnode = Constructs.Delegate(
+            new DelegateMapping { Add = "box" },
+            Constructs.Box(new BoxOptions { Id = "outer" },
+                Constructs.Box(new BoxOptions { Id = "box" },
+                    Constructs.Text(new TextOptions { Content = "inside" }))));
+
+        var delegated = VNodeRuntime.Instantiate(_ctx, vnode);
+        var box = delegated.FindDescendantById("box");
+        Assert.NotNull(box);
+        Assert.Equal(1, box!.GetChildrenCount());
+        Assert.IsType<TextRenderable>(box.GetChildren()[0]);
+        delegated.Destroy();
+    }
+
+    [Fact]
+    public void Delegate_AddVNode_InstantiatesAndRoutes()
+    {
+        var vnode = Constructs.Delegate(
+            new DelegateMapping { Add = "target" },
+            Constructs.Box(new BoxOptions { Id = "target" }));
+
+        var delegated = VNodeRuntime.Instantiate(_ctx, vnode);
+
+        // Add a VNode — should be instantiated and routed to target
+        delegated.Add(Constructs.Text(new TextOptions { Content = "vnode-child" }));
+
+        var target = delegated.FindDescendantById("target");
+        Assert.NotNull(target);
+        Assert.Equal(1, target!.GetChildrenCount());
+        Assert.IsType<TextRenderable>(target.GetChildren()[0]);
+        delegated.Destroy();
+    }
+
+    #endregion
+
+    #region Text(StyledText) Construct
+
+    [Fact]
+    public void Text_StyledText_CreatesTextRenderableWithContent()
+    {
+        var styled = new StyledText(TextChunk.Styled("hello", fg: Rgba.FromInts(255, 0, 0)));
+        var vnode = Constructs.Text(styled);
+        var result = VNodeRuntime.Instantiate(_ctx, vnode);
+
+        Assert.IsType<TextRenderable>(result);
+        result.Destroy();
+    }
+
+    [Fact]
+    public void Text_VStyles_Integration()
+    {
+        var styled = VStyles.Bold("Bold Text");
+        var vnode = Constructs.Text(styled);
+        var result = VNodeRuntime.Instantiate(_ctx, vnode);
+
+        Assert.IsType<TextRenderable>(result);
+        result.Destroy();
+    }
+
+    #endregion
 }
