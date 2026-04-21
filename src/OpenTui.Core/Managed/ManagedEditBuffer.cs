@@ -10,6 +10,8 @@ namespace OpenTui.Core.Managed;
 /// </summary>
 public sealed class ManagedEditBuffer : IDisposable
 {
+    private static int _nextIdCounter;
+    private readonly ushort _id = (ushort)Interlocked.Increment(ref _nextIdCounter);
     private readonly ManagedTextBuffer _buffer;
     private bool _disposed;
     private uint _cursorLine;
@@ -62,11 +64,22 @@ public sealed class ManagedEditBuffer : IDisposable
 
     #region Cursor
 
+    /// <summary>Returns the unique identifier of the edit buffer.</summary>
+    public ushort GetId() => _id;
+
     /// <summary>Returns the underlying text buffer.</summary>
     public ManagedTextBuffer GetTextBuffer() => _buffer;
 
     /// <summary>Returns the current primary cursor position.</summary>
     public (uint Line, uint Col) GetPrimaryCursor() => (_cursorLine, _cursorCol);
+
+    /// <summary>Returns the current cursor position as a <see cref="LogicalCursor"/>.</summary>
+    public LogicalCursor GetCursorPosition()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        uint offset = CoordsToOffset(_cursorLine, _cursorCol) ?? 0;
+        return new LogicalCursor(_cursorLine, _cursorCol, offset);
+    }
 
     /// <summary>Sets the cursor position, clamping to valid range.</summary>
     public void SetCursor(uint line, uint col)
@@ -119,6 +132,69 @@ public sealed class ManagedEditBuffer : IDisposable
             _cursorCol = 0;
             CursorChanged?.Invoke();
         }
+    }
+
+    /// <summary>Moves cursor one logical line up, maintaining column where possible.</summary>
+    public void MoveCursorUp()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_cursorLine == 0)
+        {
+            if (_cursorCol != 0)
+            {
+                _cursorCol = 0;
+                CursorChanged?.Invoke();
+            }
+        }
+        else
+        {
+            _cursorLine--;
+            _cursorCol = Math.Min(_cursorCol, _buffer.GetLineLength(_cursorLine));
+            CursorChanged?.Invoke();
+        }
+    }
+
+    /// <summary>Moves cursor one logical line down, maintaining column where possible.</summary>
+    public void MoveCursorDown()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        uint lineCount = _buffer.LineCount;
+        if (_cursorLine + 1 >= lineCount)
+        {
+            uint lineLen = _buffer.GetLineLength(_cursorLine);
+            if (_cursorCol != lineLen)
+            {
+                _cursorCol = lineLen;
+                CursorChanged?.Invoke();
+            }
+        }
+        else
+        {
+            _cursorLine++;
+            _cursorCol = Math.Min(_cursorCol, _buffer.GetLineLength(_cursorLine));
+            CursorChanged?.Invoke();
+        }
+    }
+
+    /// <summary>Sets the cursor position by character offset.</summary>
+    public void SetCursorByOffset(uint offset)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var coords = OffsetToCoords(offset);
+        if (coords is not null)
+        {
+            var (line, col) = coords.Value;
+            SetCursor(line, col);
+        }
+    }
+
+    /// <summary>Moves the cursor to the start of the specified line, clamping to the last line.</summary>
+    public void GotoLine(uint line)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        uint lineCount = _buffer.LineCount;
+        uint targetLine = lineCount == 0 ? 0 : Math.Min(line, lineCount - 1);
+        SetCursor(targetLine, 0);
     }
 
     #endregion
@@ -236,6 +312,41 @@ public sealed class ManagedEditBuffer : IDisposable
 
     #region Offset conversion
 
+    /// <summary>Converts a character offset to a <see cref="LogicalCursor"/> position.</summary>
+    public bool OffsetToPosition(uint offset, out LogicalCursor cursor)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var coords = OffsetToCoords(offset);
+        if (coords is null)
+        {
+            cursor = default;
+            return false;
+        }
+        var (line, col) = coords.Value;
+        cursor = new LogicalCursor(line, col, offset);
+        return true;
+    }
+
+    /// <summary>Converts a row/column position to a character offset.</summary>
+    public uint PositionToOffset(uint row, uint col)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return CoordsToOffset(row, col) ?? 0;
+    }
+
+    /// <summary>Gets the byte offset of the start of the specified line.</summary>
+    public uint GetLineStartOffset(uint line)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        uint result = 0;
+        for (uint i = 0; i < line && i < _buffer.LineCount; i++)
+        {
+            string lineText = _buffer.GetLineText(i);
+            result += (uint)Encoding.UTF8.GetByteCount(lineText) + 1; // +1 for newline
+        }
+        return result;
+    }
+
     /// <summary>Converts line/col to a linear character offset.</summary>
     public uint? CoordsToOffset(uint line, uint col)
     {
@@ -293,6 +404,13 @@ public sealed class ManagedEditBuffer : IDisposable
         var (endLine, endCol) = endCoords.Value;
 
         return _buffer.GetTextRange(startLine, startCol, endLine, endCol);
+    }
+
+    /// <summary>Gets a range of text by row/column coordinates.</summary>
+    public string GetTextRangeByCoords(uint startRow, uint startCol, uint endRow, uint endCol)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _buffer.GetTextRange(startRow, startCol, endRow, endCol);
     }
 
     /// <summary>Returns the total character count across all lines (including newlines).</summary>
@@ -486,6 +604,47 @@ public sealed class ManagedEditBuffer : IDisposable
         CursorChanged?.Invoke();
     }
 
+    /// <summary>Inserts a character at the cursor position. Alias for <see cref="InsertText(string)"/>.</summary>
+    public void InsertChar(string ch) => InsertText(ch);
+
+    /// <summary>Inserts a newline at the current cursor position.</summary>
+    public void NewLine() => InsertText("\n");
+
+    /// <summary>Replaces the entire buffer content with the specified text.</summary>
+    public void ReplaceText(string text)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _buffer.StoreUndo("replace");
+        _buffer.Clear();
+        if (!string.IsNullOrEmpty(text))
+            _buffer.SetText(text);
+        _cursorLine = 0;
+        _cursorCol = 0;
+        CursorChanged?.Invoke();
+    }
+
+    /// <summary>Sets the entire text content, replacing any existing content.</summary>
+    public void SetText(string text)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _buffer.Clear();
+        if (!string.IsNullOrEmpty(text))
+            _buffer.SetText(text);
+        _cursorLine = 0;
+        _cursorCol = 0;
+        CursorChanged?.Invoke();
+    }
+
+    /// <summary>Clears all content from the edit buffer and resets the cursor.</summary>
+    public void Clear()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _buffer.Clear();
+        _cursorLine = 0;
+        _cursorCol = 0;
+        CursorChanged?.Invoke();
+    }
+
     /// <summary>Deletes the character after the cursor (Delete key).</summary>
     public void DeleteForward()
     {
@@ -664,18 +823,18 @@ public sealed class ManagedEditBuffer : IDisposable
 
     #region Undo / Redo
 
-    /// <summary>Undoes the last edit operation.</summary>
-    public void Undo()
+    /// <summary>Undoes the last edit operation. Returns the undo description, or empty if unavailable.</summary>
+    public string Undo()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _buffer.Undo();
+        return _buffer.Undo() ?? string.Empty;
     }
 
-    /// <summary>Redoes the last undone operation.</summary>
-    public void Redo()
+    /// <summary>Redoes the last undone operation. Returns the redo description, or empty if unavailable.</summary>
+    public string Redo()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _buffer.Redo();
+        return _buffer.Redo() ?? string.Empty;
     }
 
     /// <summary>
