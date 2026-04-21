@@ -291,7 +291,7 @@ public sealed class OptimizedBuffer : IDisposable
     public void DrawEditorView(nint editorView, int x, int y) =>
         OpenTuiNative.BufferDrawEditorView(Handle, editorView, x, y);
 
-    /// <summary>Draws an editor view into this buffer.</summary>
+    /// <summary>Draws an editor view into this buffer (managed path).</summary>
     public void DrawEditorView(EditorView editorView, int x, int y)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);

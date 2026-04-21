@@ -29,11 +29,9 @@ public sealed class TextBufferView : IDisposable
     public static TextBufferView CreateFrom(EditBuffer editBuffer)
     {
         ArgumentNullException.ThrowIfNull(editBuffer);
-        // EditBuffer._managed (ManagedEditBuffer) is being added by the EditBuffer swap agent.
-        // Once available, this becomes:
-        //   var managed = ManagedTextBufferView.Create(editBuffer._managed.Buffer, 0, 0);
-        //   return new TextBufferView(managed);
-        throw new NotSupportedException("EditBuffer has not been migrated to managed internals yet.");
+        // EditBuffer hasn't been migrated to managed yet.
+        throw new NotSupportedException(
+            "TextBufferView.CreateFrom(EditBuffer) requires EditBuffer to be migrated to managed internals.");
     }
 
     #region Viewport

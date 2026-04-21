@@ -1,7 +1,3 @@
-using System.Runtime.InteropServices;
-using System.Text;
-using OpenTui.Core.Native;
-
 namespace OpenTui.Core;
 
 /// <summary>
@@ -326,40 +322,15 @@ public class TextareaRenderable : EditBufferRenderable
         base.TextColor = effectiveFg;
     }
 
-    private unsafe void ApplyPlaceholder(string? placeholder)
+    private void ApplyPlaceholder(string? placeholder)
     {
         if (string.IsNullOrEmpty(placeholder))
         {
-            EditorView.SetPlaceholderStyledText([]);
+            EditorView.ClearPlaceholder();
             return;
         }
 
-        byte[] textBytes = Encoding.UTF8.GetBytes(placeholder);
-        float[] fg = [_placeholderColor.R, _placeholderColor.G, _placeholderColor.B, _placeholderColor.A];
-        var nativeChunk = new NativeStyledChunk[1];
-        GCHandle textPin = default;
-        GCHandle colorPin = default;
-
-        try
-        {
-            textPin = GCHandle.Alloc(textBytes, GCHandleType.Pinned);
-            colorPin = GCHandle.Alloc(fg, GCHandleType.Pinned);
-
-            nativeChunk[0] = new NativeStyledChunk
-            {
-                TextPtr = textPin.AddrOfPinnedObject(),
-                TextLen = (nuint)textBytes.Length,
-                FgPtr = colorPin.AddrOfPinnedObject(),
-                Attributes = (uint)TextAttributes.None,
-            };
-
-            EditorView.SetPlaceholderStyledText(nativeChunk);
-        }
-        finally
-        {
-            if (colorPin.IsAllocated) colorPin.Free();
-            if (textPin.IsAllocated) textPin.Free();
-        }
+        EditorView.SetPlaceholder(placeholder);
     }
 
     #endregion

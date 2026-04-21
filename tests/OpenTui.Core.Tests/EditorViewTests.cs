@@ -612,13 +612,13 @@ public class EditorViewTests
     #region 28. GetTextBufferView returns non-null handle
 
     [Fact]
-    public void GetTextBufferView_ReturnsNonZeroHandle()
+    public void GetTextBufferView_ReturnsNonNullView()
     {
         using var eb = EditBuffer.Create();
         using var ev = EditorView.Create(eb, 80, 10);
 
-        var tbv = ev.GetTextBufferView();
-        Assert.NotEqual(nint.Zero, tbv);
+        var tbv = ev.GetManagedTextBufferView();
+        Assert.NotNull(tbv);
     }
 
     #endregion

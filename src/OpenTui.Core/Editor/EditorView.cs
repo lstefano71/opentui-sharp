@@ -1,44 +1,19 @@
-using System.Runtime.InteropServices;
-using OpenTui.Core.Native;
-using OpenTui.Native;
+﻿using OpenTui.Core.Managed;
 
 namespace OpenTui.Core;
 
 /// <summary>
-/// Managed wrapper around the native editor view, providing viewport management,
+/// Managed wrapper around <see cref="ManagedEditorView"/>, providing viewport management,
 /// cursor movement, selection, and scrolling over an <see cref="EditBuffer"/>.
 /// </summary>
 public sealed class EditorView : IDisposable
 {
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeLineInfo
-    {
-        public nint StartColsPtr;
-        public uint StartColsLen;
-        public nint WidthColsPtr;
-        public uint WidthColsLen;
-        public nint SourcesPtr;
-        public uint SourcesLen;
-        public nint WrapsPtr;
-        public uint WrapsLen;
-        public uint WidthColsMax;
-    }
-
-    private nint _handle;
+    internal readonly ManagedEditorView _managed;
     private bool _disposed;
 
-    internal nint Handle
+    private EditorView(ManagedEditorView managed)
     {
-        get
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _handle;
-        }
-    }
-
-    private EditorView(nint handle)
-    {
-        _handle = handle;
+        _managed = managed;
     }
 
     /// <summary>Creates a new editor view for the given edit buffer.</summary>
@@ -47,34 +22,29 @@ public sealed class EditorView : IDisposable
         uint viewportWidth,
         uint viewportHeight)
     {
-        var handle = OpenTuiNative.CreateEditorView(
-            editBuffer.Handle, viewportWidth, viewportHeight);
-        if (handle == nint.Zero)
-            throw new InvalidOperationException("Failed to create native editor view.");
-        return new EditorView(handle);
+        var managed = ManagedEditorView.Create(
+            editBuffer._managed, viewportWidth, viewportHeight);
+        return new EditorView(managed);
     }
 
     #region Viewport
 
     /// <summary>Sets the viewport position and size.</summary>
     public void SetViewport(uint x, uint y, uint w, uint h, bool clamp = false) =>
-        OpenTuiNative.EditorViewSetViewport(Handle, x, y, w, h, clamp);
+        _managed.View.SetViewport(x, y, w, h);
 
     /// <summary>Gets the current viewport position and size.</summary>
-    public unsafe ViewportBounds GetViewport()
-    {
-        uint outX, outY, outW, outH;
-        OpenTuiNative.EditorViewGetViewport(Handle, (nint)(&outX), (nint)(&outY), (nint)(&outW), (nint)(&outH));
-        return new ViewportBounds((int)outX, (int)outY, (int)outW, (int)outH);
-    }
+    public ViewportBounds GetViewport() =>
+        new((int)_managed.View.ViewportX, (int)_managed.View.ViewportY,
+            (int)_managed.View.Width, (int)_managed.View.Height);
 
     /// <summary>Sets the viewport size in columns and rows.</summary>
     public void SetViewportSize(uint w, uint h) =>
-        OpenTuiNative.EditorViewSetViewportSize(Handle, w, h);
+        _managed.Resize(w, h);
 
     /// <summary>Sets the scroll margin as a fraction of viewport height.</summary>
     public void SetScrollMargin(float margin) =>
-        OpenTuiNative.EditorViewSetScrollMargin(Handle, margin);
+        _managed.ScrollMargin = margin;
 
     #endregion
 
@@ -82,13 +52,13 @@ public sealed class EditorView : IDisposable
 
     /// <summary>Sets the line wrap mode.</summary>
     public void SetWrapMode(byte mode) =>
-        OpenTuiNative.EditorViewSetWrapMode(Handle, mode);
+        _managed.WrapMode = (WrapMode)mode;
 
     /// <summary>Gets the number of virtual (wrapped) lines visible in the viewport.</summary>
-    public uint GetVirtualLineCount() => OpenTuiNative.EditorViewGetVirtualLineCount(Handle);
+    public uint GetVirtualLineCount() => _managed.View.GetVirtualLineCount();
 
     /// <summary>Gets the total number of virtual (wrapped) lines in the document.</summary>
-    public uint GetTotalVirtualLineCount() => OpenTuiNative.EditorViewGetTotalVirtualLineCount(Handle);
+    public uint GetTotalVirtualLineCount() => _managed.View.GetVirtualLineCount();
 
     #endregion
 
@@ -97,39 +67,32 @@ public sealed class EditorView : IDisposable
     /// <summary>Gets the current visual cursor position.</summary>
     public VisualCursor GetVisualCursor()
     {
-        VisualCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditorViewGetVisualCursor(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var vc = _managed.GetVisualCursor();
+        return new VisualCursor(vc.VisualRow, vc.VisualCol, vc.LogicalRow, vc.LogicalCol, vc.Offset);
     }
 
     /// <summary>Gets both the logical and visual cursor positions.</summary>
     public (LogicalCursor Logical, VisualCursor Visual) GetCursor()
     {
-        LogicalCursor logical = default;
-        VisualCursor visual = default;
-        unsafe
-        {
-            OpenTuiNative.EditorViewGetCursor(Handle, (nint)(&logical), (nint)(&visual));
-        }
+        var vc = _managed.GetVisualCursor();
+        var logical = new LogicalCursor(vc.LogicalRow, vc.LogicalCol, vc.Offset);
+        var visual = new VisualCursor(vc.VisualRow, vc.VisualCol, vc.LogicalRow, vc.LogicalCol, vc.Offset);
         return (logical, visual);
     }
 
     /// <summary>Sets the cursor position by character offset.</summary>
     public void SetCursorByOffset(uint offset) =>
-        OpenTuiNative.EditorViewSetCursorByOffset(Handle, offset);
+        _managed.EditBuffer.SetCursorByOffset(offset);
 
     #endregion
 
     #region Visual Movement
 
     /// <summary>Moves the cursor up one visual line.</summary>
-    public void MoveUpVisual() => OpenTuiNative.EditorViewMoveUpVisual(Handle);
+    public void MoveUpVisual() => _managed.MoveUp();
 
     /// <summary>Moves the cursor down one visual line.</summary>
-    public void MoveDownVisual() => OpenTuiNative.EditorViewMoveDownVisual(Handle);
+    public void MoveDownVisual() => _managed.MoveDown();
 
     #endregion
 
@@ -138,56 +101,40 @@ public sealed class EditorView : IDisposable
     /// <summary>Gets the previous word boundary cursor position.</summary>
     public VisualCursor GetPrevWordBoundary()
     {
-        VisualCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditorViewGetPrevWordBoundary(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var (line, col) = _managed.EditBuffer.GetPrevWordBoundary();
+        var vc = _managed.LogicalToVisualCursor(line, col);
+        return new VisualCursor(vc.VisualRow, vc.VisualCol, vc.LogicalRow, vc.LogicalCol, vc.Offset);
     }
 
     /// <summary>Gets the next word boundary cursor position.</summary>
     public VisualCursor GetNextWordBoundary()
     {
-        VisualCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditorViewGetNextWordBoundary(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var (line, col) = _managed.EditBuffer.GetNextWordBoundary();
+        var vc = _managed.LogicalToVisualCursor(line, col);
+        return new VisualCursor(vc.VisualRow, vc.VisualCol, vc.LogicalRow, vc.LogicalCol, vc.Offset);
     }
 
     /// <summary>Gets the visual start-of-line cursor position.</summary>
     public VisualCursor GetVisualSOL()
     {
-        VisualCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditorViewGetVisualSOL(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var vc = _managed.GetVisualSOL();
+        return new VisualCursor(vc.VisualRow, vc.VisualCol, vc.LogicalRow, vc.LogicalCol, vc.Offset);
     }
 
     /// <summary>Gets the visual end-of-line cursor position.</summary>
     public VisualCursor GetVisualEOL()
     {
-        VisualCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditorViewGetVisualEOL(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var vc = _managed.GetVisualEOL();
+        return new VisualCursor(vc.VisualRow, vc.VisualCol, vc.LogicalRow, vc.LogicalCol, vc.Offset);
     }
 
     /// <summary>Gets the end-of-line cursor position.</summary>
     public VisualCursor GetEOL()
     {
-        VisualCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditorViewGetEOL(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var (line, _) = _managed.EditBuffer.GetPrimaryCursor();
+        uint lineWidth = _managed.EditBuffer.GetLineWidth(line);
+        var vc = _managed.LogicalToVisualCursor(line, lineWidth);
+        return new VisualCursor(vc.VisualRow, vc.VisualCol, vc.LogicalRow, vc.LogicalCol, vc.Offset);
     }
 
     #endregion
@@ -196,14 +143,13 @@ public sealed class EditorView : IDisposable
 
     /// <summary>Sets the selection range by character offsets with optional selection colors.</summary>
     public void SetSelection(uint start, uint end, Rgba? selBg = null, Rgba? selFg = null) =>
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            OpenTuiNative.EditorViewSetSelection(Handle, start, end, bgPtr, fgPtr));
+        _managed.View.SetSelection(start, end, selBg, selFg);
 
     /// <summary>Resets (clears) the current selection.</summary>
-    public void ResetSelection() => OpenTuiNative.EditorViewResetSelection(Handle);
+    public void ResetSelection() => _managed.View.ResetSelection();
 
     /// <summary>Gets the current selection as a packed 64-bit value.</summary>
-    public ulong GetSelection() => OpenTuiNative.EditorViewGetSelection(Handle);
+    public ulong GetSelection() => _managed.View.GetSelectionInfo();
 
     /// <summary>Gets the current selection range, or null when no selection is active.</summary>
     public (uint Start, uint End)? GetSelectionRange()
@@ -220,135 +166,63 @@ public sealed class EditorView : IDisposable
     public bool HasSelection() => GetSelectionRange() is not null;
 
     /// <summary>Gets the currently selected text, or an empty string if nothing is selected.</summary>
-    public string GetSelectedText() =>
-        Utf8String.GetString((buf, len) => OpenTuiNative.EditorViewGetSelectedTextBytes(Handle, buf, len));
+    public string GetSelectedText() => _managed.GetSelectedText();
 
     /// <summary>Deletes the currently selected text.</summary>
-    public void DeleteSelectedText() => OpenTuiNative.EditorViewDeleteSelectedText(Handle);
+    public void DeleteSelectedText() => _managed.DeleteSelection();
 
     /// <summary>Sets a local (visual coordinate) selection.</summary>
-    public bool SetLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false)
-    {
-        bool result = false;
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            result = OpenTuiNative.EditorViewSetLocalSelection(Handle, sx, sy, ex, ey, bgPtr, fgPtr, extend, visual));
-        return result;
-    }
+    public bool SetLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false) =>
+        _managed.View.SetLocalSelection(sx, sy, ex, ey, selBg, selFg);
 
     /// <summary>Resets the local (visual coordinate) selection.</summary>
-    public void ResetLocalSelection() => OpenTuiNative.EditorViewResetLocalSelection(Handle);
+    public void ResetLocalSelection() => _managed.View.ResetLocalSelection();
 
     /// <summary>Updates the local (visual coordinate) selection extent.</summary>
-    public bool UpdateLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false)
-    {
-        bool result = false;
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            result = OpenTuiNative.EditorViewUpdateLocalSelection(Handle, sx, sy, ex, ey, bgPtr, fgPtr, extend, visual));
-        return result;
-    }
+    public bool UpdateLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false) =>
+        _managed.View.UpdateLocalSelection(sx, sy, ex, ey, selBg, selFg);
 
     /// <summary>Updates the end offset of the current selection.</summary>
     public void UpdateSelection(uint newEnd, Rgba? selFg = null, Rgba? selBg = null) =>
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            OpenTuiNative.EditorViewUpdateSelection(Handle, newEnd, bgPtr, fgPtr));
+        _managed.View.UpdateSelection(newEnd, selBg, selFg);
 
     #endregion
 
     #region Text Access
 
     /// <summary>Gets the editor text content.</summary>
-    public string GetText() =>
-        Utf8String.GetString((buf, len) => OpenTuiNative.EditorViewGetText(Handle, buf, len));
+    public string GetText() => _managed.EditBuffer.GetText();
 
-    /// <summary>Gets the underlying text buffer view handle.</summary>
-    public nint GetTextBufferView() => OpenTuiNative.EditorViewGetTextBufferView(Handle);
+    /// <summary>Gets the underlying managed text buffer view.</summary>
+    internal ManagedTextBufferView GetManagedTextBufferView() => _managed.View;
 
     #endregion
 
     #region Placeholder & Tab Indicators
 
-    /// <summary>Sets the placeholder styled text from native styled chunks.</summary>
-    internal unsafe void SetPlaceholderStyledText(ReadOnlySpan<NativeStyledChunk> chunks)
-    {
-        if (chunks.IsEmpty)
-        {
-            OpenTuiNative.EditorViewSetPlaceholderStyledText(Handle, 0, 0);
-            return;
-        }
+    /// <summary>Sets the placeholder text. In managed mode, pass plain text.</summary>
+    public void SetPlaceholder(string text) => _managed.SetPlaceholder(text);
 
-        fixed (NativeStyledChunk* ptr = chunks)
-        {
-            OpenTuiNative.EditorViewSetPlaceholderStyledText(Handle, (nint)ptr, (nuint)chunks.Length);
-        }
-    }
+    /// <summary>Clears the placeholder text.</summary>
+    public void ClearPlaceholder() => _managed.ClearPlaceholder();
 
     /// <summary>Sets the Unicode codepoint used to display tab indicators.</summary>
     public void SetTabIndicator(uint codepoint) =>
-        OpenTuiNative.EditorViewSetTabIndicator(Handle, codepoint);
+        _managed.View.TabIndicatorCodepoint = codepoint;
 
     /// <summary>Sets the color for tab indicator characters.</summary>
     public void SetTabIndicatorColor(Rgba color) =>
-        RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.EditorViewSetTabIndicatorColor(Handle, ptr));
+        _managed.View.TabIndicatorColor = color;
 
     #endregion
 
     #region Line Info
 
-    /// <summary>Gets line information directly into the output struct.</summary>
-    public void GetLineInfoDirect(nint outInfo) =>
-        OpenTuiNative.EditorViewGetLineInfoDirect(Handle, outInfo);
-
-    /// <summary>Gets logical line information directly into the output struct.</summary>
-    public void GetLogicalLineInfoDirect(nint outInfo) =>
-        OpenTuiNative.EditorViewGetLogicalLineInfoDirect(Handle, outInfo);
-
     /// <summary>Gets viewport-relative line layout information as a managed <see cref="LineInfo"/>.</summary>
-    public unsafe LineInfo GetLineInfo()
-    {
-        GetVirtualLineCount();
-
-        NativeLineInfo info = default;
-        OpenTuiNative.EditorViewGetLineInfoDirect(Handle, (nint)(&info));
-
-        return MarshalLineInfo(in info);
-    }
+    public LineInfo GetLineInfo() => _managed.View.GetLineInfo();
 
     /// <summary>Gets full-document logical line layout information as a managed <see cref="LineInfo"/>.</summary>
-    public unsafe LineInfo GetLogicalLineInfo()
-    {
-        GetVirtualLineCount();
-
-        NativeLineInfo info = default;
-        OpenTuiNative.EditorViewGetLogicalLineInfoDirect(Handle, (nint)(&info));
-
-        return MarshalLineInfo(in info);
-    }
-
-    private static unsafe LineInfo MarshalLineInfo(in NativeLineInfo info)
-    {
-        var startCols = new uint[info.StartColsLen];
-        var widthCols = new uint[info.WidthColsLen];
-        var sources = new uint[info.SourcesLen];
-        var wraps = new uint[info.WrapsLen];
-
-        for (int i = 0; i < (int)info.StartColsLen; i++)
-            startCols[i] = ((uint*)info.StartColsPtr)[i];
-        for (int i = 0; i < (int)info.WidthColsLen; i++)
-            widthCols[i] = ((uint*)info.WidthColsPtr)[i];
-        for (int i = 0; i < (int)info.SourcesLen; i++)
-            sources[i] = ((uint*)info.SourcesPtr)[i];
-        for (int i = 0; i < (int)info.WrapsLen; i++)
-            wraps[i] = ((uint*)info.WrapsPtr)[i];
-
-        return new LineInfo
-        {
-            LineStartCols = startCols,
-            LineWidthCols = widthCols,
-            LineSources = sources,
-            LineWraps = wraps,
-            LineWidthColsMax = info.WidthColsMax,
-        };
-    }
+    public LineInfo GetLogicalLineInfo() => _managed.View.GetLogicalLineInfo();
 
     #endregion
 
@@ -358,8 +232,7 @@ public sealed class EditorView : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            OpenTuiNative.EditorViewDestroy(_handle);
-            _handle = nint.Zero;
+            _managed.Dispose();
         }
     }
 }

@@ -1,101 +1,71 @@
-using System.Runtime.InteropServices;
-using OpenTui.Core.Native;
-using OpenTui.Native;
+﻿using OpenTui.Core.Managed;
 
 namespace OpenTui.Core;
 
 /// <summary>
-/// Managed wrapper around the native edit buffer, providing text editing,
+/// Managed wrapper around <see cref="ManagedEditBuffer"/>, providing text editing,
 /// cursor movement, word boundaries, undo/redo, and text range queries.
 /// </summary>
 public sealed class EditBuffer : IDisposable
 {
-    private nint _handle;
+    internal readonly ManagedEditBuffer _managed;
     private bool _disposed;
 
-    private EditBuffer(nint handle)
+    private EditBuffer(ManagedEditBuffer managed)
     {
-        _handle = handle;
+        _managed = managed;
     }
 
     /// <summary>Creates a new edit buffer with the specified width method.</summary>
     public static EditBuffer Create(byte widthMethod = 0)
     {
-        var handle = OpenTuiNative.CreateEditBuffer(widthMethod);
-        if (handle == nint.Zero)
-            throw new InvalidOperationException("Failed to create native edit buffer.");
-        return new EditBuffer(handle);
-    }
-
-    /// <summary>Gets the native edit buffer handle.</summary>
-    internal nint Handle
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _handle;
-        }
+        var managed = ManagedEditBuffer.Create((WidthMethod)widthMethod);
+        return new EditBuffer(managed);
     }
 
     #region Text Operations
 
     /// <summary>Sets the entire text content of the edit buffer.</summary>
-    public void SetText(string text)
-    {
-        var utf8 = new Utf8String(text);
-        utf8.WithPtr((ptr, len) => OpenTuiNative.EditBufferSetText(Handle, ptr, len));
-    }
+    public void SetText(string text) => _managed.SetText(text);
 
     /// <summary>Sets the text content from a registered memory buffer.</summary>
     public void SetTextFromMem(byte memId) =>
-        OpenTuiNative.EditBufferSetTextFromMem(Handle, memId);
+        throw new NotSupportedException("SetTextFromMem requires native handle; use SetText instead.");
 
     /// <summary>Inserts text at the current cursor position.</summary>
-    public void InsertText(string text)
-    {
-        var utf8 = new Utf8String(text);
-        utf8.WithPtr((ptr, len) => OpenTuiNative.EditBufferInsertText(Handle, ptr, len));
-    }
+    public void InsertText(string text) => _managed.InsertText(text);
 
     /// <summary>Inserts a character at the cursor position.</summary>
-    public void InsertChar(string ch)
-    {
-        var utf8 = new Utf8String(ch);
-        utf8.WithPtr((ptr, len) => OpenTuiNative.EditBufferInsertChar(Handle, ptr, len));
-    }
+    public void InsertChar(string ch) => _managed.InsertChar(ch);
 
     /// <summary>Replaces the current text content.</summary>
-    public void ReplaceText(string text)
-    {
-        var utf8 = new Utf8String(text);
-        utf8.WithPtr((ptr, len) => OpenTuiNative.EditBufferReplaceText(Handle, ptr, len));
-    }
+    public void ReplaceText(string text) => _managed.ReplaceText(text);
 
     /// <summary>Replaces the current text content from a registered memory buffer.</summary>
     public void ReplaceTextFromMem(byte memId) =>
-        OpenTuiNative.EditBufferReplaceTextFromMem(Handle, memId);
+        throw new NotSupportedException("ReplaceTextFromMem requires native handle; use ReplaceText instead.");
 
     /// <summary>Deletes the character at the cursor position (forward delete).</summary>
-    public void DeleteChar() => OpenTuiNative.EditBufferDeleteChar(Handle);
+    public void DeleteChar() => _managed.DeleteForward();
 
     /// <summary>Deletes the character before the cursor position (backspace).</summary>
-    public void DeleteCharBackward() => OpenTuiNative.EditBufferDeleteCharBackward(Handle);
+    public void DeleteCharBackward() => _managed.DeleteBackward();
 
     /// <summary>Deletes a range of text specified by row/column coordinates.</summary>
     public void DeleteRange(uint startRow, uint startCol, uint endRow, uint endCol) =>
-        OpenTuiNative.EditBufferDeleteRange(Handle, startRow, startCol, endRow, endCol);
+        _managed.DeleteRange(startRow, startCol, endRow, endCol);
 
     /// <summary>Deletes the current line.</summary>
-    public void DeleteLine() => OpenTuiNative.EditBufferDeleteLine(Handle);
+    public void DeleteLine() => _managed.DeleteLine();
 
     /// <summary>Inserts a newline at the cursor position.</summary>
-    public void NewLine() => OpenTuiNative.EditBufferNewLine(Handle);
+    public void NewLine() => _managed.NewLine();
 
     /// <summary>Clears all content from the edit buffer.</summary>
-    public void Clear() => OpenTuiNative.EditBufferClear(Handle);
+    public void Clear() => _managed.Clear();
 
     /// <summary>Clears the entire undo/redo history.</summary>
-    public void ClearHistory() => OpenTuiNative.EditBufferClearHistory(Handle);
+    public void ClearHistory() => _managed.ClearHistory();
 
     #endregion
 
@@ -104,44 +74,38 @@ public sealed class EditBuffer : IDisposable
     /// <summary>Gets the current cursor position as a logical row/col/offset.</summary>
     public LogicalCursor GetCursorPosition()
     {
-        LogicalCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditBufferGetCursorPosition(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var (line, col) = _managed.GetPrimaryCursor();
+        uint offset = _managed.Buffer.GetOffset(line, col);
+        return new LogicalCursor(line, col, offset);
     }
 
     /// <summary>Sets the cursor to the specified row and column.</summary>
-    public void SetCursor(uint row, uint col) =>
-        OpenTuiNative.EditBufferSetCursor(Handle, row, col);
+    public void SetCursor(uint row, uint col) => _managed.SetCursor(row, col);
 
     /// <summary>Sets the cursor to the specified line and column.</summary>
-    public void SetCursorToLineCol(uint line, uint col) =>
-        OpenTuiNative.EditBufferSetCursorToLineCol(Handle, line, col);
+    public void SetCursorToLineCol(uint line, uint col) => _managed.SetCursor(line, col);
 
     /// <summary>Sets the cursor position by character offset.</summary>
-    public void SetCursorByOffset(uint offset) =>
-        OpenTuiNative.EditBufferSetCursorByOffset(Handle, offset);
+    public void SetCursorByOffset(uint offset) => _managed.SetCursorByOffset(offset);
 
     #endregion
 
     #region Movement
 
     /// <summary>Moves the cursor one position to the left.</summary>
-    public void MoveCursorLeft() => OpenTuiNative.EditBufferMoveCursorLeft(Handle);
+    public void MoveCursorLeft() => _managed.MoveLeft();
 
     /// <summary>Moves the cursor one position to the right.</summary>
-    public void MoveCursorRight() => OpenTuiNative.EditBufferMoveCursorRight(Handle);
+    public void MoveCursorRight() => _managed.MoveRight();
 
     /// <summary>Moves the cursor one line up.</summary>
-    public void MoveCursorUp() => OpenTuiNative.EditBufferMoveCursorUp(Handle);
+    public void MoveCursorUp() => _managed.MoveCursorUp();
 
     /// <summary>Moves the cursor one line down.</summary>
-    public void MoveCursorDown() => OpenTuiNative.EditBufferMoveCursorDown(Handle);
+    public void MoveCursorDown() => _managed.MoveCursorDown();
 
     /// <summary>Moves the cursor to the specified line.</summary>
-    public void GotoLine(uint line) => OpenTuiNative.EditBufferGotoLine(Handle, line);
+    public void GotoLine(uint line) => _managed.GotoLine(line);
 
     #endregion
 
@@ -150,34 +114,26 @@ public sealed class EditBuffer : IDisposable
     /// <summary>Gets the previous word boundary cursor position.</summary>
     public LogicalCursor GetPrevWordBoundary()
     {
-        LogicalCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditBufferGetPrevWordBoundary(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var (line, col) = _managed.GetPrevWordBoundary();
+        uint offset = _managed.Buffer.GetOffset(line, col);
+        return new LogicalCursor(line, col, offset);
     }
 
     /// <summary>Gets the next word boundary cursor position.</summary>
     public LogicalCursor GetNextWordBoundary()
     {
-        LogicalCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditBufferGetNextWordBoundary(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var (line, col) = _managed.GetNextWordBoundary();
+        uint offset = _managed.Buffer.GetOffset(line, col);
+        return new LogicalCursor(line, col, offset);
     }
 
     /// <summary>Gets the end-of-line cursor position.</summary>
     public LogicalCursor GetEOL()
     {
-        LogicalCursor cursor = default;
-        unsafe
-        {
-            OpenTuiNative.EditBufferGetEOL(Handle, (nint)(&cursor));
-        }
-        return cursor;
+        var (line, _) = _managed.GetPrimaryCursor();
+        uint lineWidth = _managed.GetLineWidth(line);
+        uint offset = _managed.Buffer.GetOffset(line, lineWidth);
+        return new LogicalCursor(line, lineWidth, offset);
     }
 
     #endregion
@@ -185,53 +141,43 @@ public sealed class EditBuffer : IDisposable
     #region Undo / Redo
 
     /// <summary>Undoes the last edit operation. Returns the undo description, or empty if unavailable.</summary>
-    public string Undo() =>
-        Utf8String.GetString((outBuf, maxLen) => OpenTuiNative.EditBufferUndo(Handle, outBuf, maxLen));
+    public string Undo() => _managed.Undo();
 
     /// <summary>Redoes the last undone operation. Returns the redo description, or empty if unavailable.</summary>
-    public string Redo() =>
-        Utf8String.GetString((outBuf, maxLen) => OpenTuiNative.EditBufferRedo(Handle, outBuf, maxLen));
+    public string Redo() => _managed.Redo();
 
     /// <summary>Gets whether an undo operation is available.</summary>
-    public bool CanUndo() => OpenTuiNative.EditBufferCanUndo(Handle);
+    public bool CanUndo() => _managed.CanUndo;
 
     /// <summary>Gets whether a redo operation is available.</summary>
-    public bool CanRedo() => OpenTuiNative.EditBufferCanRedo(Handle);
+    public bool CanRedo() => _managed.CanRedo;
 
     #endregion
 
     #region Text Access
 
     /// <summary>Gets the entire text content of the buffer.</summary>
-    public string GetText() =>
-        Utf8String.GetString((outPtr, maxLen) => OpenTuiNative.EditBufferGetText(Handle, outPtr, maxLen));
+    public string GetText() => _managed.GetText();
 
-    /// <summary>Gets the underlying text buffer handle.</summary>
-    public nint GetTextBuffer() => OpenTuiNative.EditBufferGetTextBuffer(Handle);
+    /// <summary>Gets the underlying managed text buffer.</summary>
+    internal ManagedTextBuffer GetManagedTextBuffer() => _managed.Buffer;
 
     /// <summary>Gets the unique identifier of the edit buffer.</summary>
-    public ushort GetId() => OpenTuiNative.EditBufferGetId(Handle);
+    public ushort GetId() => _managed.GetId();
 
     #endregion
 
     #region Default Styling
 
     /// <summary>Sets the default foreground color for unstyled text in the edit buffer.</summary>
-    public void SetForeground(Rgba? fg) =>
-        RgbaMarshalling.WithColorPtr(fg, ptr =>
-            OpenTuiNative.TextBufferSetDefaultFg(GetTextBuffer(), ptr));
+    public void SetForeground(Rgba? fg) => _managed.Buffer.DefaultFg = fg;
 
     /// <summary>Sets the default background color for unstyled text in the edit buffer.</summary>
-    public void SetBackground(Rgba? bg) =>
-        RgbaMarshalling.WithColorPtr(bg, ptr =>
-            OpenTuiNative.TextBufferSetDefaultBg(GetTextBuffer(), ptr));
+    public void SetBackground(Rgba? bg) => _managed.Buffer.DefaultBg = bg;
 
     /// <summary>Sets the default text attributes for unstyled text in the edit buffer.</summary>
-    public unsafe void SetAttributes(TextAttributes attrs)
-    {
-        uint value = (uint)attrs;
-        OpenTuiNative.TextBufferSetDefaultAttributes(GetTextBuffer(), (nint)(&value));
-    }
+    public void SetAttributes(TextAttributes attrs) =>
+        _managed.Buffer.DefaultAttributes = (uint)attrs;
 
     #endregion
 
@@ -240,40 +186,45 @@ public sealed class EditBuffer : IDisposable
     /// <summary>Converts a character offset to a logical cursor position.</summary>
     public bool OffsetToPosition(uint offset, out LogicalCursor cursor)
     {
-        cursor = default;
-        unsafe
+        var buf = _managed.Buffer;
+        uint lineCount = buf.LineCount;
+        uint remaining = offset;
+        for (uint i = 0; i < lineCount; i++)
         {
-            fixed (LogicalCursor* p = &cursor)
+            uint lineLen = buf.GetLineLength(i);
+            if (remaining <= lineLen)
             {
-                return OpenTuiNative.EditBufferOffsetToPosition(Handle, offset, (nint)p);
+                cursor = new LogicalCursor(i, remaining, offset);
+                return true;
             }
+            remaining -= lineLen + 1; // +1 for newline
         }
+        cursor = default;
+        return false;
     }
 
     /// <summary>Converts a row/column position to a character offset.</summary>
     public uint PositionToOffset(uint row, uint col) =>
-        OpenTuiNative.EditBufferPositionToOffset(Handle, row, col);
+        _managed.Buffer.GetOffset(row, col);
 
     /// <summary>Gets the byte offset of the start of the specified line.</summary>
     public uint GetLineStartOffset(uint line) =>
-        OpenTuiNative.EditBufferGetLineStartOffset(Handle, line);
+        _managed.Buffer.GetOffset(line, 0);
 
     /// <summary>Gets a range of text by character offsets.</summary>
     public string GetTextRange(uint start, uint end) =>
-        Utf8String.GetString((outPtr, maxLen) =>
-            OpenTuiNative.EditBufferGetTextRange(Handle, start, end, outPtr, maxLen));
+        _managed.GetTextRange(start, end);
 
     /// <summary>Gets a range of text by row/column coordinates.</summary>
     public string GetTextRangeByCoords(uint startRow, uint startCol, uint endRow, uint endCol) =>
-        Utf8String.GetString((outPtr, maxLen) =>
-            OpenTuiNative.EditBufferGetTextRangeByCoords(Handle, startRow, startCol, endRow, endCol, outPtr, maxLen));
+        _managed.GetTextRangeByCoords(startRow, startCol, endRow, endCol);
 
     #endregion
 
     #region Debug
 
-    /// <summary>Dumps the internal rope structure for debugging.</summary>
-    public void DebugLogRope() => OpenTuiNative.EditBufferDebugLogRope(Handle);
+    /// <summary>Dumps the internal rope structure for debugging (no-op in managed mode).</summary>
+    public void DebugLogRope() { }
 
     #endregion
 
@@ -285,8 +236,7 @@ public sealed class EditBuffer : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            OpenTuiNative.EditBufferDestroy(_handle);
-            _handle = nint.Zero;
+            _managed.Dispose();
         }
     }
 
