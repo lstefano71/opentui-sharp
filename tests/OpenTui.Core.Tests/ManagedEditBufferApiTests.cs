@@ -267,9 +267,9 @@ public class ManagedEditBufferApiTests
     public void Undo_ReturnsMetaString()
     {
         using var eb = ManagedEditBuffer.Create();
-        eb.InsertText("Hello"); // stores "insert" undo checkpoint
+        eb.InsertText("Hello"); // stores "edit" undo checkpoint
         var meta = eb.Undo();
-        Assert.Equal("insert", meta);
+        Assert.Equal("edit", meta);
     }
 
     [Fact]

@@ -47,6 +47,8 @@ public sealed class ManagedBuffer : IDisposable
     private readonly List<float> _opacityStack = [];
     private readonly GraphemeTracker _graphemeTracker = new();
     private readonly LinkTracker _linkTracker = new();
+    private readonly Dictionary<uint, string> _renderGraphemes = [];
+    private uint _nextRenderGraphemeId;
     private readonly WidthMethod _widthMethod;
     private bool _disposed;
 
@@ -893,30 +895,32 @@ public sealed class ManagedBuffer : IDisposable
         var virtualLines = view.GetVirtualLines();
         if (virtualLines.Length == 0) return;
 
-        // Compute visible row range: virtual line i renders at screenY = y + i
-        int firstVisible = Math.Max(0, -y);
-        int lastPossible = Math.Min(virtualLines.Length, (int)Height - y);
-        if (firstVisible >= lastPossible) return;
+        // Compute visible row range, accounting for vertical scroll
+        int scrollTop = (int)view.ViewportY;
+        int firstVLine = scrollTop + Math.Max(0, -y);
+        int lastVLine = Math.Min(virtualLines.Length, scrollTop + (int)Height - y);
+        if (firstVLine >= lastVLine) return;
 
         uint horizontalOffset = view.ViewportX;
-        uint viewportWidth = view.Width;
+        uint viewportWidth = view.Width == 0 ? Width : view.Width;
 
         var buffer = view.Buffer;
         byte tabWidth = buffer.TabWidth;
         var syntaxStyle = buffer.SyntaxStyle;
+        if (syntaxStyle?.IsDisposed == true) syntaxStyle = null;
 
         // Selection state
         var selectionRange = view.GetSelectionRange();
         Rgba? selBg = view.SelectionBg;
         Rgba? selFg = view.SelectionFg;
 
-        // Cache per-logical-line char offset for selection hit testing
+        // Cache per-logical-line display offset for selection hit testing
         uint prevLogicalLine = uint.MaxValue;
-        uint lineCharOffset = 0;
+        uint lineDisplayOffset = 0;
 
-        for (int vlineIdx = firstVisible; vlineIdx < lastPossible; vlineIdx++)
+        for (int vlineIdx = firstVLine; vlineIdx < lastVLine; vlineIdx++)
         {
-            int screenY = y + vlineIdx;
+            int screenY = y + (vlineIdx - scrollTop);
             if (screenY < 0 || screenY >= (int)Height) continue;
 
             ref readonly var vline = ref virtualLines[vlineIdx];
@@ -925,10 +929,10 @@ public sealed class ManagedBuffer : IDisposable
 
             string lineText = buffer.GetLineText(logicalLine);
 
-            // Compute char offset once per logical line (for selection)
+            // Compute display offset once per logical line (for selection)
             if (selectionRange.HasValue && logicalLine != prevLogicalLine)
             {
-                lineCharOffset = buffer.GetOffset(logicalLine, 0);
+                lineDisplayOffset = buffer.GetDisplayOffset(logicalLine, 0);
                 prevLogicalLine = logicalLine;
             }
 
@@ -938,16 +942,53 @@ public sealed class ManagedBuffer : IDisposable
                 : [];
             int spanIdx = 0;
 
+            // Highlights (from AddHighlightByCharRange) - resolve even without syntaxStyle
+            // to allow selection-only highlights, but guard style lookups against disposal
+            ReadOnlySpan<Highlight> highlights = buffer.GetHighlights(logicalLine);
+
+            // ── Truncation path ──
+            if (view.Truncate && vline.WidthCols > viewportWidth && viewportWidth >= 4)
+            {
+                DrawTruncatedLine(view, buffer, lineText, vline, logicalLine,
+                    x, screenY, viewportWidth, tabWidth, syntaxStyle,
+                    styleSpans, highlights, selectionRange, selBg, selFg, lineDisplayOffset);
+                continue;
+            }
+
             uint col = 0;       // display column in logical line
             uint charIdx = 0;   // character index in logical line
+            int lastScreenX = -1; // last cell written (for combining marks)
 
             foreach (var rune in lineText.EnumerateRunes())
             {
                 uint displayWidth = TextWidth.CharWidth(rune, tabWidth);
 
-                // Skip zero-width characters (combining marks, ZWJ, etc.)
+                // Combining marks (zero-width): attach to previously written cell
                 if (displayWidth == 0)
                 {
+                    if (lastScreenX >= 0 && lastScreenX < (int)Width && screenY >= 0)
+                    {
+                        uint cellIdx = (uint)((uint)screenY * Width + (uint)lastScreenX);
+                        uint prevChar = _chars[(int)cellIdx];
+
+                        // Build combined grapheme string
+                        string combined;
+                        if (IsGraphemeChar(prevChar))
+                        {
+                            uint prevId = GraphemeIdFromChar(prevChar);
+                            string prevStr = _renderGraphemes.TryGetValue(prevId, out string? s) ? s : "\uFFFD";
+                            combined = prevStr + rune.ToString();
+                        }
+                        else
+                        {
+                            // Previous was a regular codepoint
+                            combined = char.ConvertFromUtf32((int)(prevChar & 0x1FFFFF)) + rune.ToString();
+                        }
+
+                        uint graphemeId = _nextRenderGraphemeId++;
+                        _renderGraphemes[graphemeId] = combined;
+                        _chars[(int)cellIdx] = CharFlagGrapheme | (graphemeId & GraphemeIdMask);
+                    }
                     charIdx++;
                     continue;
                 }
@@ -982,8 +1023,8 @@ public sealed class ManagedBuffer : IDisposable
 
                 if (screenX >= 0)
                 {
-                    Rgba cellFg = Rgba.White;
-                    Rgba cellBg = Rgba.Transparent;
+                    Rgba cellFg = buffer.DefaultFg ?? Rgba.White;
+                    Rgba cellBg = buffer.DefaultBg ?? Rgba.Transparent;
                     uint attrs = 0;
 
                     // ── Syntax highlighting ──
@@ -997,7 +1038,42 @@ public sealed class ManagedBuffer : IDisposable
                             ref readonly var span = ref styleSpans[spanIdx];
                             if (col >= span.Start && col < span.End)
                             {
-                                var style = syntaxStyle!.GetStyleById(span.StyleId);
+                                try
+                                {
+                                    var style = syntaxStyle!.GetStyleById(span.StyleId);
+                                    if (style.HasValue)
+                                    {
+                                        if (style.Value.Fg.HasValue) cellFg = style.Value.Fg.Value;
+                                        if (style.Value.Bg.HasValue) cellBg = style.Value.Bg.Value;
+                                        attrs = (uint)style.Value.Attributes;
+                                    }
+                                }
+                                catch (ObjectDisposedException) { }
+                            }
+                        }
+                    }
+
+                    // ── Highlights (from AddHighlightByCharRange) ──
+                    if (highlights.Length > 0 && syntaxStyle != null)
+                    {
+                        byte bestPriority = 0;
+                        uint bestStyleId = 0;
+                        bool found = false;
+                        for (int hi = 0; hi < highlights.Length; hi++)
+                        {
+                            ref readonly var hl = ref highlights[hi];
+                            if (col >= hl.Start && col < hl.End && hl.Priority >= bestPriority)
+                            {
+                                bestPriority = hl.Priority;
+                                bestStyleId = hl.StyleId;
+                                found = true;
+                            }
+                        }
+                        if (found)
+                        {
+                            try
+                            {
+                                var style = syntaxStyle.GetStyleById(bestStyleId);
                                 if (style.HasValue)
                                 {
                                     if (style.Value.Fg.HasValue) cellFg = style.Value.Fg.Value;
@@ -1005,15 +1081,16 @@ public sealed class ManagedBuffer : IDisposable
                                     attrs = (uint)style.Value.Attributes;
                                 }
                             }
+                            catch (ObjectDisposedException) { }
                         }
                     }
 
                     // ── Selection overlay ──
                     if (selectionRange.HasValue)
                     {
-                        uint charOffset = lineCharOffset + charIdx;
+                        uint displayOffset = lineDisplayOffset + col;
                         var (selStart, selEnd) = selectionRange.Value;
-                        if (charOffset >= selStart && charOffset < selEnd)
+                        if (displayOffset >= selStart && displayOffset < selEnd)
                         {
                             if (selBg.HasValue || selFg.HasValue)
                             {
@@ -1034,14 +1111,24 @@ public sealed class ManagedBuffer : IDisposable
 
                     if (rune.Value == '\t')
                     {
-                        // Tab: fill with spaces
+                        // Tab: fill with indicator (first cell) and spaces
                         for (uint t = 0; t < displayWidth; t++)
                         {
                             int tx = screenX + (int)t;
                             if (tx >= (int)Width) break;
                             if (tx >= 0)
+                            {
+                                uint tabChar = DefaultSpaceChar;
+                                Rgba tabFg = cellFg;
+                                if (t == 0 && view.TabIndicatorCodepoint != 0)
+                                {
+                                    tabChar = view.TabIndicatorCodepoint;
+                                    if (view.TabIndicatorColor.HasValue)
+                                        tabFg = view.TabIndicatorColor.Value;
+                                }
                                 WriteTextBufferCell((uint)tx, (uint)screenY,
-                                    DefaultSpaceChar, cellFg, cellBg, attrs);
+                                    tabChar, tabFg, cellBg, attrs);
+                            }
                         }
                     }
                     else
@@ -1055,11 +1142,200 @@ public sealed class ManagedBuffer : IDisposable
                             WriteTextBufferCell((uint)(screenX + 1), (uint)screenY,
                                 CharFlagContinuation | codepoint, cellFg, cellBg, attrs);
                         }
+                        lastScreenX = screenX;
                     }
                 }
 
                 col += displayWidth;
                 charIdx++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Renders a truncated line as "prefix...suffix" when the line is wider than the viewport.
+    /// </summary>
+    private void DrawTruncatedLine(
+        ManagedTextBufferView view,
+        ManagedTextBuffer buffer,
+        string lineText,
+        in VirtualLine vline,
+        uint logicalLine,
+        int x, int screenY,
+        uint viewportWidth,
+        byte tabWidth,
+        ManagedSyntaxStyle? syntaxStyle,
+        ReadOnlySpan<StyleSpan> styleSpans,
+        ReadOnlySpan<Highlight> highlights,
+        (uint Start, uint End)? selectionRange,
+        Rgba? selBg, Rgba? selFg,
+        uint lineDisplayOffset)
+    {
+        uint prefixLen = (viewportWidth - 3) / 2;
+        uint suffixLen = viewportWidth - 3 - prefixLen;
+
+        // Build a mapping of visible characters: (rune, displayCol, displayWidth, charIdx)
+        Span<(Rune Rune, uint DisplayCol, uint DisplayWidth, uint CharIdx)> charMapBuf =
+            lineText.Length <= 256
+                ? stackalloc (Rune, uint, uint, uint)[lineText.Length]
+                : new (Rune, uint, uint, uint)[lineText.Length];
+        int charMapCount = 0;
+        {
+            uint dispCol = 0;
+            uint chIdx = 0;
+            foreach (var rune in lineText.EnumerateRunes())
+            {
+                uint dw = TextWidth.CharWidth(rune, tabWidth);
+                if (dw > 0)
+                    charMapBuf[charMapCount++] = (rune, dispCol, dw, chIdx);
+                chIdx++;
+                dispCol += dw;
+            }
+        }
+        var charMap = charMapBuf[..charMapCount];
+
+        uint totalDisplayWidth = charMapCount > 0
+            ? charMap[^1].DisplayCol + charMap[^1].DisplayWidth
+            : 0;
+
+        // Find suffix start index: last suffixLen display columns
+        int suffixFirstIdx = charMapCount;
+        {
+            uint suffixAccum = 0;
+            for (int i = charMapCount - 1; i >= 0; i--)
+            {
+                suffixAccum += charMap[i].DisplayWidth;
+                suffixFirstIdx = i;
+                if (suffixAccum >= suffixLen) break;
+            }
+        }
+
+        // Map elided range to display columns for selection on ellipsis
+        uint elidedDisplayStart = charMapCount > 0 ? charMap[Math.Min((int)prefixLen, charMapCount - 1)].DisplayCol : 0;
+        uint elidedDisplayEnd = suffixFirstIdx < charMapCount ? charMap[suffixFirstIdx].DisplayCol : 0;
+
+        int screenX = x;
+
+        // ── Render prefix ──
+        uint prefixRendered = 0;
+        for (int i = 0; i < charMapCount && prefixRendered < prefixLen; i++)
+        {
+            var (rune, srcCol, dw, chIdx) = charMap[i];
+            if (prefixRendered + dw > prefixLen) break;
+
+            Rgba fg = ResolveTruncFg(srcCol, syntaxStyle, styleSpans, highlights);
+            Rgba bg = Rgba.Transparent;
+            ApplyTruncSelection(ref fg, ref bg, lineDisplayOffset + srcCol, selectionRange, selBg, selFg);
+
+            if (screenX >= 0 && screenX < (int)Width)
+            {
+                WriteTextBufferCell((uint)screenX, (uint)screenY, (uint)rune.Value, fg, bg, 0);
+                if (dw == 2 && screenX + 1 < (int)Width)
+                    WriteTextBufferCell((uint)(screenX + 1), (uint)screenY,
+                        CharFlagContinuation | (uint)rune.Value, fg, bg, 0);
+            }
+            screenX += (int)dw;
+            prefixRendered += dw;
+        }
+
+        // ── Render ellipsis "..." ──
+        for (int d = 0; d < 3; d++)
+        {
+            Rgba dotFg = Rgba.White;
+            Rgba dotBg = Rgba.Transparent;
+            if (selectionRange.HasValue)
+            {
+                var (selStart, selEnd) = selectionRange.Value;
+                uint elidedAbsStart = lineDisplayOffset + elidedDisplayStart;
+                uint elidedAbsEnd = lineDisplayOffset + elidedDisplayEnd;
+                if (elidedAbsStart < selEnd && elidedAbsEnd > selStart)
+                {
+                    if (selBg.HasValue || selFg.HasValue)
+                    {
+                        if (selBg.HasValue) dotBg = selBg.Value;
+                        if (selFg.HasValue) dotFg = selFg.Value;
+                    }
+                    else
+                    {
+                        dotBg = dotFg;
+                        dotFg = Rgba.Black;
+                    }
+                }
+            }
+            if (screenX >= 0 && screenX < (int)Width)
+                WriteTextBufferCell((uint)screenX, (uint)screenY, (uint)'.', dotFg, dotBg, 0);
+            screenX++;
+        }
+
+        // ── Render suffix ──
+        for (int i = suffixFirstIdx; i < charMapCount; i++)
+        {
+            var (rune, srcCol, dw, chIdx) = charMap[i];
+
+            Rgba fg = ResolveTruncFg(srcCol, syntaxStyle, styleSpans, highlights);
+            Rgba bg = Rgba.Transparent;
+            ApplyTruncSelection(ref fg, ref bg, lineDisplayOffset + srcCol, selectionRange, selBg, selFg);
+
+            if (screenX >= 0 && screenX < (int)Width)
+            {
+                WriteTextBufferCell((uint)screenX, (uint)screenY, (uint)rune.Value, fg, bg, 0);
+                if (dw == 2 && screenX + 1 < (int)Width)
+                    WriteTextBufferCell((uint)(screenX + 1), (uint)screenY,
+                        CharFlagContinuation | (uint)rune.Value, fg, bg, 0);
+            }
+            screenX += (int)dw;
+        }
+    }
+
+    /// <summary>Resolves foreground color from style spans and highlights for truncated rendering.</summary>
+    private static Rgba ResolveTruncFg(uint srcCol, ManagedSyntaxStyle? syntaxStyle,
+        ReadOnlySpan<StyleSpan> styleSpans, ReadOnlySpan<Highlight> highlights)
+    {
+        Rgba fg = Rgba.White;
+        for (int si = 0; si < styleSpans.Length; si++)
+        {
+            ref readonly var span = ref styleSpans[si];
+            if (srcCol >= span.Start && srcCol < span.End)
+            {
+                var st = syntaxStyle!.GetStyleById(span.StyleId);
+                if (st.HasValue && st.Value.Fg.HasValue) fg = st.Value.Fg.Value;
+                break;
+            }
+        }
+        byte bestPri = 0;
+        Rgba? bestFg = null;
+        for (int hi = 0; hi < highlights.Length; hi++)
+        {
+            ref readonly var hl = ref highlights[hi];
+            if (srcCol >= hl.Start && srcCol < hl.End && hl.Priority >= bestPri)
+            {
+                bestPri = hl.Priority;
+                var st = syntaxStyle!.GetStyleById(hl.StyleId);
+                if (st.HasValue && st.Value.Fg.HasValue) bestFg = st.Value.Fg.Value;
+            }
+        }
+        if (bestFg.HasValue) fg = bestFg.Value;
+        return fg;
+    }
+
+    /// <summary>Applies selection overlay for truncated rendering.</summary>
+    private static void ApplyTruncSelection(ref Rgba fg, ref Rgba bg, uint displayOffset,
+        (uint Start, uint End)? selectionRange, Rgba? selBg, Rgba? selFg)
+    {
+        if (!selectionRange.HasValue) return;
+        var (selStart, selEnd) = selectionRange.Value;
+        if (displayOffset >= selStart && displayOffset < selEnd)
+        {
+            if (selBg.HasValue || selFg.HasValue)
+            {
+                if (selBg.HasValue) bg = selBg.Value;
+                if (selFg.HasValue) fg = selFg.Value;
+            }
+            else
+            {
+                Rgba newFg = bg.A > 0 ? bg : Rgba.Black;
+                bg = fg;
+                fg = newFg;
             }
         }
     }
@@ -1784,13 +2060,11 @@ public sealed class ManagedBuffer : IDisposable
 
                 if (IsGraphemeChar(c))
                 {
-                    // Look up grapheme in the pool
+                    // Look up grapheme in the render dictionary or pool
                     uint graphemeId = GraphemeIdFromChar(c);
                     try
                     {
-                        ReadOnlySpan<byte> bytes = _graphemeTracker.HasAny()
-                            ? ResolveGraphemeBytes(graphemeId)
-                            : [];
+                        ReadOnlySpan<byte> bytes = ResolveGraphemeBytes(graphemeId);
                         if (bytes.Length > 0)
                         {
                             int charsWritten = Encoding.UTF8.GetChars(bytes, graphemeCharBuf);
@@ -1827,13 +2101,11 @@ public sealed class ManagedBuffer : IDisposable
         return sb.ToString();
     }
 
-    /// <summary>Attempts to resolve grapheme bytes by ID. Override point for pools.</summary>
-    private static ReadOnlySpan<byte> ResolveGraphemeBytes(uint graphemeId)
+    /// <summary>Attempts to resolve grapheme bytes by ID from the render grapheme dictionary.</summary>
+    private ReadOnlySpan<byte> ResolveGraphemeBytes(uint graphemeId)
     {
-        // The ManagedBuffer doesn't own a ManagedGraphemePool directly;
-        // grapheme cells are created by DrawTextBufferView from the text buffer's pool.
-        // For resolution, we return empty — the grapheme data was encoded during rendering.
-        // A full implementation would require access to the pool that created the ID.
+        if (_renderGraphemes.TryGetValue(graphemeId, out string? graphemeStr))
+            return Encoding.UTF8.GetBytes(graphemeStr);
         return [];
     }
 

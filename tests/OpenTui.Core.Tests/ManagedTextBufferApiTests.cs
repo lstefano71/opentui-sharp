@@ -64,21 +64,21 @@ public class ManagedTextBufferApiTests : IDisposable
     public void AddHighlightByCharRange_SpansMultipleLines()
     {
         _tb.SetText("Hello\nWorld\nFoo");
-        // Char offsets: "Hello" = 0-4, \n = 5, "World" = 6-10, \n = 11, "Foo" = 12-14
+        // Display offsets (no newline gap): "Hello" = 0-4, "World" = 5-9, "Foo" = 10-12
         var hl = new Highlight { Start = 3, End = 8, StyleId = 1, HlRef = 99 };
         _tb.AddHighlightByCharRange(hl);
 
-        // Line 0: chars 3-4 (offset 3 to 5 = end of line)
+        // Line 0: display cols 3-4 (offset 3 to end of line 5)
         var line0 = _tb.GetLineHighlights(0);
         Assert.Single(line0);
         Assert.Equal(3u, line0[0].Start);
         Assert.Equal(5u, line0[0].End);
 
-        // Line 1: chars 0-1 (offset 6 to 8 = cols 0-2)
+        // Line 1: display cols 0-2 (offset 5 to 8 = line-relative 0-3)
         var line1 = _tb.GetLineHighlights(1);
         Assert.Single(line1);
         Assert.Equal(0u, line1[0].Start);
-        Assert.Equal(2u, line1[0].End);
+        Assert.Equal(3u, line1[0].End);
     }
 
     #endregion

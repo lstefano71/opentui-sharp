@@ -128,6 +128,7 @@ public sealed class ManagedTextBuffer : IDisposable
 
     // ── Highlight / style span caches (per-line) ─────────────────────
     private readonly List<List<Highlight>?> _lineHighlights = [];
+    private readonly List<Highlight> _charRangeHighlights = [];
     private readonly List<List<StyleSpan>?> _lineSpans = [];
     private uint _highlightBatchDepth;
     private readonly HashSet<int> _dirtySpanLines = [];
@@ -323,8 +324,13 @@ public sealed class ManagedTextBuffer : IDisposable
     {
         ThrowIfDisposed();
         ClearInternal();
-        if (utf8Text.IsEmpty) return;
+        if (utf8Text.IsEmpty)
+        {
+            ReapplyCharRangeHighlights();
+            return;
+        }
         AppendInternal(utf8Text);
+        ReapplyCharRangeHighlights();
     }
 
     /// <summary>Sets the text buffer content from a string.</summary>
@@ -332,7 +338,11 @@ public sealed class ManagedTextBuffer : IDisposable
     {
         ThrowIfDisposed();
         ClearInternal();
-        if (string.IsNullOrEmpty(text)) return;
+        if (string.IsNullOrEmpty(text))
+        {
+            ReapplyCharRangeHighlights();
+            return;
+        }
 
         int maxBytes = Encoding.UTF8.GetMaxByteCount(text.Length);
         byte[]? rented = null;
@@ -349,6 +359,7 @@ public sealed class ManagedTextBuffer : IDisposable
             if (rented is not null)
                 System.Buffers.ArrayPool<byte>.Shared.Return(rented);
         }
+        ReapplyCharRangeHighlights();
     }
 
     /// <summary>Appends UTF-8 text to the end of the buffer.</summary>
@@ -576,16 +587,28 @@ public sealed class ManagedTextBuffer : IDisposable
         uint endOffset = highlight.End;
         if (startOffset >= endOffset) return;
 
+        // Store persistently for re-application after SetText
+        _charRangeHighlights.Add(highlight);
+
+        ApplyCharRangeHighlight(highlight);
+    }
+
+    private void ApplyCharRangeHighlight(Highlight highlight)
+    {
+        uint startOffset = highlight.Start;
+        uint endOffset = highlight.End;
+        if (startOffset >= endOffset) return;
+
         uint lineCount = LineCount;
         uint charPos = 0;
 
         for (uint line = 0; line < lineCount; line++)
         {
-            uint lineLen = GetLineLength(line);
+            uint lineLen = LineWidthAt(line);
             uint lineStart = charPos;
             uint lineEnd = charPos + lineLen;
 
-            if (startOffset < lineEnd + 1 && endOffset > lineStart)
+            if (startOffset < lineEnd && endOffset > lineStart)
             {
                 uint hlStart = startOffset > lineStart ? startOffset - lineStart : 0;
                 uint hlEnd = endOffset < lineEnd ? endOffset - lineStart : lineLen;
@@ -604,7 +627,7 @@ public sealed class ManagedTextBuffer : IDisposable
                 }
             }
 
-            charPos = lineEnd + 1; // +1 for newline
+            charPos = lineEnd; // no newline gap: offsets are in display-width space
             if (charPos > endOffset) break;
         }
     }
@@ -688,6 +711,7 @@ public sealed class ManagedTextBuffer : IDisposable
         for (int i = 0; i < _lineHighlights.Count; i++)
             _lineHighlights[i]?.Clear();
         _lineHighlights.Clear();
+        _charRangeHighlights.Clear();
     }
 
     /// <summary>
@@ -849,10 +873,25 @@ public sealed class ManagedTextBuffer : IDisposable
     private void ClearInternal()
     {
         _rope.Clear();
-        ClearHighlights();
+        ClearLineHighlights();
         ClearStyleSpans();
         _contentEpoch++;
         MarkViewsDirty();
+    }
+
+    /// <summary>Clears per-line highlights only (preserves char-range highlight definitions).</summary>
+    private void ClearLineHighlights()
+    {
+        for (int i = 0; i < _lineHighlights.Count; i++)
+            _lineHighlights[i]?.Clear();
+        _lineHighlights.Clear();
+    }
+
+    private void ReapplyCharRangeHighlights()
+    {
+        if (_charRangeHighlights.Count == 0) return;
+        foreach (var hl in _charRangeHighlights)
+            ApplyCharRangeHighlight(hl);
     }
 
     private void ClearStyleSpans()
@@ -1108,6 +1147,123 @@ public sealed class ManagedTextBuffer : IDisposable
         return (uint)lineText.Length;
     }
 
+    #region Display column conversion
+
+    /// <summary>
+    /// Converts a display column position to a UTF-16 character index within a line.
+    /// Snaps forward: if displayCol lands in the middle of a wide character, returns
+    /// the char index of that character (i.e., includes it).
+    /// </summary>
+    public int DisplayColToCharIndex(uint line, uint displayCol, bool roundUp = false)
+    {
+        ThrowIfDisposed();
+        string lineText = GetLineText(line);
+        return DisplayColToCharIndex(lineText, displayCol, _tabWidth, roundUp);
+    }
+
+    /// <summary>
+    /// Converts a UTF-16 character index to a display column position within a line.
+    /// </summary>
+    public uint CharIndexToDisplayCol(uint line, int charIndex)
+    {
+        ThrowIfDisposed();
+        string lineText = GetLineText(line);
+        return CharIndexToDisplayCol(lineText, charIndex, _tabWidth);
+    }
+
+    /// <summary>
+    /// Converts a display column to a UTF-16 character index within the given text.
+    /// </summary>
+    internal static int DisplayColToCharIndex(string text, uint displayCol, byte tabWidth, bool roundUp = false)
+    {
+        uint col = 0;
+        int charIdx = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (col >= displayCol) break;
+            uint w = TextWidth.CharWidth(rune, tabWidth);
+            if (w > 0 && col + w > displayCol)
+            {
+                if (roundUp)
+                {
+                    // For end-of-range: snap past the wide character
+                    charIdx += rune.Utf16SequenceLength;
+                }
+                break;
+            }
+            col += w;
+            charIdx += rune.Utf16SequenceLength;
+        }
+
+        if (roundUp && charIdx > 0 && charIdx < text.Length)
+        {
+            // Snap forward to grapheme cluster boundary so we include the full cluster
+            // (e.g., emoji with skin tones, ZWJ sequences, combining marks)
+            var clusterStarts = System.Globalization.StringInfo.ParseCombiningCharacters(text);
+            for (int i = 0; i < clusterStarts.Length; i++)
+            {
+                if (clusterStarts[i] >= charIdx)
+                {
+                    // charIdx is at a cluster boundary — no snap needed
+                    break;
+                }
+                if (i + 1 < clusterStarts.Length && clusterStarts[i + 1] > charIdx)
+                {
+                    // charIdx falls inside this cluster — snap to next cluster boundary
+                    charIdx = clusterStarts[i + 1];
+                    break;
+                }
+                if (i == clusterStarts.Length - 1 && clusterStarts[i] < charIdx)
+                {
+                    // charIdx falls inside the last cluster — snap to end of string
+                    charIdx = text.Length;
+                    break;
+                }
+            }
+        }
+
+        return charIdx;
+    }
+
+    /// <summary>
+    /// Converts a UTF-16 character index to a display column.
+    /// </summary>
+    internal static uint CharIndexToDisplayCol(string text, int charIndex, byte tabWidth)
+    {
+        uint col = 0;
+        int idx = 0;
+        foreach (var rune in text.EnumerateRunes())
+        {
+            if (idx >= charIndex) break;
+            col += TextWidth.CharWidth(rune, tabWidth);
+            idx += rune.Utf16SequenceLength;
+        }
+        return col;
+    }
+
+    /// <summary>
+    /// Computes the display width of a string.
+    /// </summary>
+    internal static uint ComputeDisplayWidth(ReadOnlySpan<char> text, byte tabWidth)
+    {
+        uint width = 0;
+        int pos = 0;
+        while (pos < text.Length)
+        {
+            if (Rune.DecodeFromUtf16(text[pos..], out var rune, out int consumed)
+                != System.Buffers.OperationStatus.Done)
+            {
+                consumed = 1;
+                rune = Rune.ReplacementChar;
+            }
+            width += TextWidth.CharWidth(rune, tabWidth);
+            pos += consumed;
+        }
+        return width;
+    }
+
+    #endregion
+
     /// <summary>
     /// Gets the character offset one past the end of the text (total character positions).
     /// </summary>
@@ -1236,7 +1392,21 @@ public sealed class ManagedTextBuffer : IDisposable
     }
 
     /// <summary>
-    /// Converts a character offset to a (line, col) position.
+    /// Computes a flat offset in the display-column domain for a (line, displayCol) position.
+    /// Each line contributes LineWidthAt(line) + 1 (for newline). Used for selection offsets
+    /// to match the reference Zig implementation where offsets are weight-based (display columns).
+    /// </summary>
+    public uint GetDisplayOffset(uint line, uint displayCol)
+    {
+        ThrowIfDisposed();
+        uint offset = 0;
+        uint lineCount = LineCount;
+        uint targetLine = Math.Min(line, lineCount > 0 ? lineCount - 1 : 0);
+        for (uint i = 0; i < targetLine; i++)
+            offset += LineWidthAt(i) + 1; // +1 for newline
+        offset += Math.Min(displayCol, LineWidthAt(targetLine));
+        return offset;
+    }
     /// Walks lines until the offset is consumed.
     /// </summary>
     public (uint Line, uint Col) OffsetToLineCol(uint offset)
@@ -1267,50 +1437,57 @@ public sealed class ManagedTextBuffer : IDisposable
         ThrowIfDisposed();
         if (startOffset >= endOffset) return string.Empty;
 
-        // Convert start offset to line/col
+        // Offsets are in display-column space (LineWidthAt + 1 for newline).
+        // Convert to (line, displayCol), then to char indices for GetTextRange.
         uint lineCount = LineCount;
+
+        // Convert start offset to (line, displayCol)
         uint remaining = startOffset;
-        uint startLine = 0, startCol = 0;
+        uint startLine = 0, startDisplayCol = 0;
         bool foundStart = false;
 
         for (uint i = 0; i < lineCount; i++)
         {
-            uint lineLen = GetLineLength(i);
-            if (remaining <= lineLen)
+            uint lineWidth = LineWidthAt(i);
+            if (remaining <= lineWidth)
             {
                 startLine = i;
-                startCol = remaining;
+                startDisplayCol = remaining;
                 foundStart = true;
                 break;
             }
-            remaining -= lineLen + 1; // +1 for newline
+            remaining -= lineWidth + 1; // +1 for newline
         }
         if (!foundStart) return string.Empty;
 
-        // Convert end offset to line/col
+        // Convert end offset to (line, displayCol)
         remaining = endOffset;
-        uint endLine = 0, endCol = 0;
+        uint endLine = 0, endDisplayCol = 0;
         bool foundEnd = false;
 
         for (uint i = 0; i < lineCount; i++)
         {
-            uint lineLen = GetLineLength(i);
-            if (remaining <= lineLen)
+            uint lineWidth = LineWidthAt(i);
+            if (remaining <= lineWidth)
             {
                 endLine = i;
-                endCol = remaining;
+                endDisplayCol = remaining;
                 foundEnd = true;
                 break;
             }
-            remaining -= lineLen + 1;
+            remaining -= lineWidth + 1;
         }
         if (!foundEnd)
         {
             endLine = lineCount > 0 ? lineCount - 1 : 0;
-            endCol = lineCount > 0 ? GetLineLength(endLine) : 0;
+            endDisplayCol = lineCount > 0 ? LineWidthAt(endLine) : 0;
         }
 
-        return GetTextRange(startLine, startCol, endLine, endCol);
+        // Convert display columns to char indices
+        uint startCharCol = (uint)DisplayColToCharIndex(startLine, startDisplayCol);
+        uint endCharCol = (uint)DisplayColToCharIndex(endLine, endDisplayCol, roundUp: true);
+
+        return GetTextRange(startLine, startCharCol, endLine, endCharCol);
     }
 
     /// <summary>Reads a file and sets its content. Returns false if the file does not exist.</summary>
@@ -1391,9 +1568,8 @@ public sealed class ManagedTextBuffer : IDisposable
 
         string newText = string.Concat(fullText.AsSpan(0, (int)startOffset), fullText.AsSpan((int)endOffset));
 
-        // Replace buffer content
+        // Replace buffer content — keep old memRegistry entries for undo history
         _rope.Clear();
-        _memRegistry.Clear();
         ClearHighlights();
         ClearStyleSpans();
 
@@ -1426,10 +1602,10 @@ public sealed class ManagedTextBuffer : IDisposable
     }
 
     /// <summary>Undoes the last change. Returns the metadata, or null if nothing to undo.</summary>
-    public string? Undo()
+    public string? Undo(string currentMeta = "")
     {
         ThrowIfDisposed();
-        var result = _rope.Undo();
+        var result = _rope.Undo(currentMeta);
         if (result is not null)
         {
             _contentEpoch++;

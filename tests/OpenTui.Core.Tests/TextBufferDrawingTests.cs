@@ -21,75 +21,20 @@ public class TextBufferDrawingTests
     /// Reads the char codepoint at (x, y) from the raw buffer memory.
     /// The char array is uint32 per cell, row-major (width * y + x).
     /// </summary>
-    private static uint ReadCellChar(OptimizedBuffer buf, uint x, uint y)
-    {
-        nint charPtr = buf.GetCharPtr();
-        int offset = (int)(y * buf.Width + x);
-        unsafe
-        {
-            return ((uint*)charPtr)[offset];
-        }
-    }
+    private static uint ReadCellChar(OptimizedBuffer buf, uint x, uint y) =>
+        buf.GetCharAt(x, y);
 
-    /// <summary>
-    /// Reads the foreground color at (x, y). Colors are float[4] per cell.
-    /// </summary>
-    private static Rgba ReadCellFg(OptimizedBuffer buf, uint x, uint y)
-    {
-        nint fgPtr = buf.GetFgPtr();
-        int offset = (int)(y * buf.Width + x) * 4;
-        unsafe
-        {
-            float* p = (float*)fgPtr + offset / 1; // each cell = 4 floats
-            // Actually offset in floats = (y * width + x) * 4
-            int floatOff = (int)(y * buf.Width + x) * 4;
-            float* fp = (float*)fgPtr;
-            return new Rgba(fp[floatOff], fp[floatOff + 1], fp[floatOff + 2], fp[floatOff + 3]);
-        }
-    }
+    private static Rgba ReadCellFg(OptimizedBuffer buf, uint x, uint y) =>
+        buf.GetFgAt(x, y);
 
-    /// <summary>
-    /// Reads the background color at (x, y).
-    /// </summary>
-    private static Rgba ReadCellBg(OptimizedBuffer buf, uint x, uint y)
-    {
-        nint bgPtr = buf.GetBgPtr();
-        unsafe
-        {
-            int floatOff = (int)(y * buf.Width + x) * 4;
-            float* fp = (float*)bgPtr;
-            return new Rgba(fp[floatOff], fp[floatOff + 1], fp[floatOff + 2], fp[floatOff + 3]);
-        }
-    }
+    private static Rgba ReadCellBg(OptimizedBuffer buf, uint x, uint y) =>
+        buf.GetBgAt(x, y);
 
-    /// <summary>
-    /// Reads the text attributes at (x, y).
-    /// </summary>
-    private static uint ReadCellAttributes(OptimizedBuffer buf, uint x, uint y)
-    {
-        nint attrsPtr = buf.GetAttributesPtr();
-        int offset = (int)(y * buf.Width + x);
-        unsafe
-        {
-            return ((uint*)attrsPtr)[offset];
-        }
-    }
+    private static uint ReadCellAttributes(OptimizedBuffer buf, uint x, uint y) =>
+        buf.GetAttributesAt(x, y);
 
-    /// <summary>
-    /// Renders the buffer via WriteResolvedChars and returns the result as a UTF-8 string.
-    /// </summary>
-    private static string GetResolvedText(OptimizedBuffer buf, int maxLen = 4096, bool addLineBreaks = false)
-    {
-        unsafe
-        {
-            byte[] outBuf = new byte[maxLen];
-            fixed (byte* ptr = outBuf)
-            {
-                uint written = buf.WriteResolvedChars((nint)ptr, (nuint)maxLen, addLineBreaks);
-                return Encoding.UTF8.GetString(outBuf, 0, (int)written);
-            }
-        }
-    }
+    private static string GetResolvedText(OptimizedBuffer buf, int maxLen = 4096, bool addLineBreaks = false) =>
+        buf.GetResolvedText(addLineBreaks);
 
     private static bool ColorApproxEqual(float a, float b, float eps = 0.01f) =>
         MathF.Abs(a - b) < eps;

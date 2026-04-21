@@ -727,7 +727,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         var previousCursor = EditBuffer.GetCursorPosition();
         uint previousOffset = EditBuffer.GetCursorPosition().Offset;
         UpdateSelectionForMovement(select, beforeMovement: true);
-        EditBuffer.GotoLine(uint.MaxValue);
+        EditBuffer.GotoBufferEnd();
         if (!select && !EditorView.HasSelection())
             Extmarks.AdjustCursorAfterSetOffset(EditBuffer.GetCursorPosition().Offset, previousOffset);
         UpdateSelectionForMovement(select, beforeMovement: false);

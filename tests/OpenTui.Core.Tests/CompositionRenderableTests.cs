@@ -19,12 +19,8 @@ public sealed class CompositionRenderableTests : IDisposable
 
     public void Dispose() => _renderer.Dispose();
 
-    private static unsafe uint ReadCellChar(OptimizedBuffer buf, uint x, uint y)
-    {
-        nint charPtr = buf.GetCharPtr();
-        int offset = (int)(y * buf.Width + x);
-        return ((uint*)charPtr)[offset];
-    }
+    private static uint ReadCellChar(OptimizedBuffer buf, uint x, uint y) =>
+        buf.GetCharAt(x, y);
 
     private static string ReadRowText(OptimizedBuffer buf, int x, int y, int width)
     {

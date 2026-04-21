@@ -1,9 +1,6 @@
-using System.Runtime.InteropServices;
 using System.Text;
 using OpenTui.Core.Managed;
 using OpenTui.Core.Managed.Unicode;
-using OpenTui.Core.Native;
-using OpenTui.Native;
 
 namespace OpenTui.Core;
 
@@ -12,72 +9,39 @@ namespace OpenTui.Core;
 /// </summary>
 public sealed record BoxDrawOptions
 {
-    /// <summary>
-    /// Gets or sets the border chars.
-    /// </summary>
+    /// <summary>Gets or sets the border chars.</summary>
     public BorderCharacters BorderChars { get; init; } = BorderCharacters.Single;
-    /// <summary>
-    /// Gets or sets the sides.
-    /// </summary>
+    /// <summary>Gets or sets the sides.</summary>
     public BorderSides Sides { get; init; } = BorderSides.All;
-    /// <summary>
-    /// Gets or sets a value indicating whether should fill.
-    /// </summary>
+    /// <summary>Gets or sets a value indicating whether should fill.</summary>
     public bool ShouldFill { get; init; } = true;
-    /// <summary>
-    /// Gets or sets the border color.
-    /// </summary>
+    /// <summary>Gets or sets the border color.</summary>
     public Rgba? BorderColor { get; init; }
-    /// <summary>
-    /// Gets or sets the background color.
-    /// </summary>
+    /// <summary>Gets or sets the background color.</summary>
     public Rgba? BackgroundColor { get; init; }
-    /// <summary>
-    /// Gets or sets the title.
-    /// </summary>
+    /// <summary>Gets or sets the title.</summary>
     public string? Title { get; init; }
-    /// <summary>
-    /// Gets or sets the title alignment.
-    /// </summary>
+    /// <summary>Gets or sets the title alignment.</summary>
     public TitleAlignment TitleAlignment { get; init; } = TitleAlignment.Left;
-    /// <summary>
-    /// Gets or sets the bottom title.
-    /// </summary>
+    /// <summary>Gets or sets the bottom title.</summary>
     public string? BottomTitle { get; init; }
-    /// <summary>
-    /// Gets or sets the bottom title alignment.
-    /// </summary>
+    /// <summary>Gets or sets the bottom title alignment.</summary>
     public TitleAlignment BottomTitleAlignment { get; init; } = TitleAlignment.Left;
 }
 
 /// <summary>
-/// Safe managed wrapper around the native OpenTUI optimized buffer.
-/// Wraps all P/Invoke methods in the Buffer region of <see cref="OpenTuiNative"/>.
+/// Managed buffer for terminal cell rendering. Delegates to <see cref="ManagedBuffer"/>.
 /// </summary>
 public sealed class OptimizedBuffer : IDisposable
 {
-    private nint _handle;
     private bool _disposed;
-    private bool _ownsHandle = true;
-    internal ManagedBuffer? _managed;
+    internal ManagedBuffer Managed;
     private bool _ownsManaged = true;
-
-    private OptimizedBuffer(nint handle)
-    {
-        _handle = handle;
-    }
 
     private OptimizedBuffer(ManagedBuffer managed)
     {
-        _managed = managed;
+        Managed = managed;
     }
-
-    /// <summary>
-    /// Wraps an existing native buffer handle (e.g. from NativeRenderer.GetNextBuffer).
-    /// The wrapper does NOT own the handle — Dispose is a no-op.
-    /// </summary>
-    internal static OptimizedBuffer WrapExisting(nint handle) =>
-        new(handle) { _ownsHandle = false };
 
     /// <summary>
     /// Wraps an existing <see cref="ManagedBuffer"/> without taking ownership.
@@ -94,72 +58,107 @@ public sealed class OptimizedBuffer : IDisposable
         bool respectAlpha = false,
         string? id = null)
     {
-        var idBytes = id is null ? [] : Encoding.UTF8.GetBytes(id);
-        nint handle;
-        unsafe
-        {
-            fixed (byte* idPtr = idBytes)
-            {
-                handle = OpenTuiNative.CreateOptimizedBuffer(
-                    width, height, respectAlpha, (byte)widthMethod,
-                    idBytes.Length > 0 ? (nint)idPtr : nint.Zero, (nuint)idBytes.Length);
-            }
-        }
-        if (handle == nint.Zero)
-            throw new InvalidOperationException("Failed to create native optimized buffer.");
-        return new OptimizedBuffer(handle);
-    }
-
-    /// <summary>Gets the native buffer handle. For use by other wrappers that need the raw pointer.</summary>
-    internal nint Handle
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _handle;
-        }
+        var buf = ManagedBuffer.Create(width, height, widthMethod, respectAlpha, id);
+        return new OptimizedBuffer(buf);
     }
 
     #region Properties
 
     /// <summary>Gets the width of the buffer in columns.</summary>
-    public uint Width => OpenTuiNative.GetBufferWidth(Handle);
+    public uint Width
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Managed.Width;
+        }
+    }
 
     /// <summary>Gets the height of the buffer in rows.</summary>
-    public uint Height => OpenTuiNative.GetBufferHeight(Handle);
+    public uint Height
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Managed.Height;
+        }
+    }
 
     /// <summary>Gets or sets whether the buffer respects alpha transparency.</summary>
     public bool RespectAlpha
     {
-        get => OpenTuiNative.BufferGetRespectAlpha(Handle);
-        set => OpenTuiNative.BufferSetRespectAlpha(Handle, value);
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Managed.RespectAlpha;
+        }
+        set
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            Managed.RespectAlpha = value;
+        }
     }
 
     /// <summary>Gets the buffer's identifier string.</summary>
-    public string Id => Utf8String.GetString(
-        (outPtr, maxLen) => OpenTuiNative.BufferGetId(Handle, outPtr, maxLen));
+    public string Id
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Managed.Id;
+        }
+    }
 
     /// <summary>Gets the real character size accounting for wide/combining characters.</summary>
-    public uint RealCharSize => OpenTuiNative.BufferGetRealCharSize(Handle);
+    public uint RealCharSize
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Managed.RealCharSize;
+        }
+    }
 
     /// <summary>Gets the current effective opacity value.</summary>
-    public float CurrentOpacity => OpenTuiNative.BufferGetCurrentOpacity(Handle);
+    public float CurrentOpacity
+    {
+        get
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            return Managed.CurrentOpacity;
+        }
+    }
 
     #endregion
 
-    #region Raw Pointers (advanced)
+    #region Safe Cell Accessors
 
-    /// <summary>Gets a pointer to the buffer's character data array.</summary>
-    public nint GetCharPtr() => OpenTuiNative.BufferGetCharPtr(Handle);
+    /// <summary>Gets the char codepoint at (x, y).</summary>
+    public uint GetCharAt(uint x, uint y) => Managed.GetCharAt(x, y);
 
-    /// <summary>Gets a pointer to the buffer's foreground color data array.</summary>
-    public nint GetFgPtr() => OpenTuiNative.BufferGetFgPtr(Handle);
+    /// <summary>Gets the foreground color at (x, y).</summary>
+    public Rgba GetFgAt(uint x, uint y) => Managed.GetFgAt(x, y);
 
-    /// <summary>Gets a pointer to the buffer's background color data array.</summary>
-    public nint GetBgPtr() => OpenTuiNative.BufferGetBgPtr(Handle);
+    /// <summary>Gets the background color at (x, y).</summary>
+    public Rgba GetBgAt(uint x, uint y) => Managed.GetBgAt(x, y);
 
-    /// <summary>Gets a pointer to the buffer's cell attributes array.</summary>
-    public nint GetAttributesPtr() => OpenTuiNative.BufferGetAttributesPtr(Handle);
+    /// <summary>Gets the attributes at (x, y).</summary>
+    public uint GetAttributesAt(uint x, uint y) => Managed.GetAttributesAt(x, y);
+
+    /// <summary>Gets all char codepoints as a read-only span.</summary>
+    public ReadOnlySpan<uint> GetChars() => Managed.GetChars();
+
+    /// <summary>Gets all foreground colors as a read-only span.</summary>
+    public ReadOnlySpan<Rgba> GetFgColors() => Managed.GetFgColors();
+
+    /// <summary>Gets all background colors as a read-only span.</summary>
+    public ReadOnlySpan<Rgba> GetBgColors() => Managed.GetBgColors();
+
+    /// <summary>Gets all attributes as a read-only span.</summary>
+    public ReadOnlySpan<uint> GetAttributes() => Managed.GetAttributes();
+
+    /// <summary>Returns the buffer content as resolved text, with grapheme clusters expanded.</summary>
+    public string GetResolvedText(bool addLineBreaks = false) => Managed.GetResolvedText(addLineBreaks);
 
     #endregion
 
@@ -168,51 +167,38 @@ public sealed class OptimizedBuffer : IDisposable
     /// <summary>Clears the entire buffer, filling with the specified background color (default: transparent).</summary>
     public void Clear(Rgba? bgColor = null)
     {
-        var color = bgColor ?? Rgba.Transparent;
-        RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.BufferClear(Handle, ptr));
+        Managed.Clear(bgColor ?? Rgba.Transparent);
     }
 
     /// <summary>Draws a UTF-8 text string into the buffer at the given position with styling.</summary>
     public void DrawText(string text, uint x, uint y, Rgba fg, Rgba? bg = null, TextAttributes attrs = TextAttributes.None)
     {
-        var textBytes = Encoding.UTF8.GetBytes(text);
-        unsafe
-        {
-            fixed (byte* textPtr = textBytes)
-            {
-                var ptr = textBytes.Length > 0 ? (nint)textPtr : nint.Zero;
-                RgbaMarshalling.WithColorPtrs(fg, bg ?? Rgba.Transparent, (fgPtr, bgPtr) =>
-                    OpenTuiNative.BufferDrawText(Handle, ptr, (uint)textBytes.Length, x, y, fgPtr, bgPtr, (uint)attrs));
-            }
-        }
+        Managed.DrawText(text, x, y, fg, bg, attrs);
     }
 
     /// <summary>Sets a single cell in the buffer.</summary>
     public void SetCell(uint x, uint y, uint codepoint, Rgba fg, Rgba bg, TextAttributes attrs = TextAttributes.None) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferSetCell(Handle, x, y, codepoint, fgPtr, bgPtr, (uint)attrs));
+        Managed.Set(x, y, new ManagedBuffer.Cell(codepoint, fg, bg, (uint)attrs));
 
     /// <summary>Sets a single cell with alpha blending applied.</summary>
     public void SetCellWithAlphaBlending(uint x, uint y, uint codepoint, Rgba fg, Rgba bg, TextAttributes attrs = TextAttributes.None) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferSetCellWithAlphaBlending(Handle, x, y, codepoint, fgPtr, bgPtr, (uint)attrs));
+        Managed.SetCellWithAlphaBlending(x, y, codepoint, fg, bg, (uint)attrs);
 
     /// <summary>Fills a rectangular region with the specified color.</summary>
     public void FillRect(uint x, uint y, uint w, uint h, Rgba color) =>
-        RgbaMarshalling.WithColorPtr(color, ptr =>
-            OpenTuiNative.BufferFillRect(Handle, x, y, w, h, ptr));
+        Managed.FillRect(x, y, w, h, color);
 
     /// <summary>Draws a single character at the specified cell position with styling.</summary>
     public void DrawChar(uint codepoint, uint x, uint y, Rgba fg, Rgba bg, TextAttributes attrs = TextAttributes.None) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferDrawChar(Handle, codepoint, x, y, fgPtr, bgPtr, (uint)attrs));
+        Managed.DrawChar(codepoint, x, y, fg, bg, (uint)attrs);
 
     /// <summary>Draws a box using a <see cref="BoxDrawOptions"/> record.</summary>
     public void DrawBox(int x, int y, uint w, uint h, BoxDrawOptions? options = null)
     {
         var opts = options ?? new BoxDrawOptions();
-        DrawBoxCore(x, y, w, h, opts.BorderChars, opts.Sides, opts.ShouldFill,
-            opts.BorderColor, opts.BackgroundColor,
+        Managed.DrawBox(x, y, w, h,
+            opts.BorderChars, opts.Sides, opts.ShouldFill,
+            opts.BorderColor ?? Rgba.White, opts.BackgroundColor,
             opts.Title, opts.TitleAlignment,
             opts.BottomTitle, opts.BottomTitleAlignment);
     }
@@ -230,236 +216,28 @@ public sealed class OptimizedBuffer : IDisposable
         string? bottomTitle = null,
         TitleAlignment bottomTitleAlignment = TitleAlignment.Left)
     {
-        DrawBoxCore(x, y, w, h, borderChars ?? BorderCharacters.Single, sides, shouldFill,
-            borderColor, backgroundColor, title, titleAlignment, bottomTitle, bottomTitleAlignment);
-    }
-
-    private void DrawBoxCore(
-        int x, int y, uint w, uint h,
-        BorderCharacters borderChars, BorderSides sides, bool shouldFill,
-        Rgba? borderColor, Rgba? backgroundColor,
-        string? title, TitleAlignment titleAlignment,
-        string? bottomTitle, TitleAlignment bottomTitleAlignment)
-    {
-        uint[] codePoints = borderChars.ToCodePoints();
-
-        // Pack options bitfield: bits 0-3 border sides, bit 4 fill, bits 5-6 title align, bits 7-8 bottom title align
-        uint packed = (uint)sides & 0xF;
-        if (shouldFill) packed |= 1u << 4;
-        packed |= (uint)titleAlignment << 5;
-        packed |= (uint)bottomTitleAlignment << 7;
-
-        byte[]? titleBytes = title is not null ? Encoding.UTF8.GetBytes(title) : null;
-        byte[]? bottomTitleBytes = bottomTitle is not null ? Encoding.UTF8.GetBytes(bottomTitle) : null;
-
-        unsafe
-        {
-            fixed (uint* charsPtr = codePoints)
-            fixed (byte* titlePtr = titleBytes)
-            fixed (byte* bottomTitlePtr = bottomTitleBytes)
-            {
-                nint cPtr = (nint)charsPtr;
-                var tPtr = titleBytes is { Length: > 0 } ? (nint)titlePtr : nint.Zero;
-                var bPtr = bottomTitleBytes is { Length: > 0 } ? (nint)bottomTitlePtr : nint.Zero;
-
-                RgbaMarshalling.WithColorPtrs(borderColor ?? Rgba.White, backgroundColor ?? Rgba.Transparent,
-                    (borderPtr, bgPtr) =>
-                        OpenTuiNative.BufferDrawBox(Handle, x, y, w, h,
-                            cPtr, packed, borderPtr, bgPtr,
-                            tPtr, (uint)(titleBytes?.Length ?? 0),
-                            bPtr, (uint)(bottomTitleBytes?.Length ?? 0)));
-            }
-        }
+        Managed.DrawBox(x, y, w, h,
+            borderChars ?? BorderCharacters.Single, sides, shouldFill,
+            borderColor ?? Rgba.White, backgroundColor,
+            title, titleAlignment, bottomTitle, bottomTitleAlignment);
     }
 
     /// <summary>Draws a region from a source buffer into this buffer at the specified position.</summary>
     public void DrawFrameBuffer(int x, int y, OptimizedBuffer source, uint srcX, uint srcY, uint w, uint h) =>
-        OpenTuiNative.DrawFrameBuffer(Handle, x, y, source.Handle, srcX, srcY, w, h);
+        Managed.DrawFrameBuffer(x, y, source.Managed, srcX, srcY, w, h);
 
     /// <summary>Draws a text buffer view into this buffer.</summary>
-    public void DrawTextBufferView(nint textBufferView, int x, int y) =>
-        OpenTuiNative.BufferDrawTextBufferView(Handle, textBufferView, x, y);
-
-    /// <summary>Draws a text buffer view into this buffer (managed or native path).</summary>
     public void DrawTextBufferView(TextBufferView view, int x, int y)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        DrawManagedTextBufferView(view._managed, x, y);
+        Managed.DrawTextBufferView(view._managed, x, y);
     }
 
     /// <summary>Draws an editor view into this buffer.</summary>
-    public void DrawEditorView(nint editorView, int x, int y) =>
-        OpenTuiNative.BufferDrawEditorView(Handle, editorView, x, y);
-
-    /// <summary>Draws an editor view into this buffer (managed path).</summary>
     public void DrawEditorView(EditorView editorView, int x, int y)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        DrawManagedTextBufferView(editorView._managed.View, x, y);
-    }
-
-    /// <summary>Renders a managed text buffer view into this native buffer cell by cell.</summary>
-    private void DrawManagedTextBufferView(ManagedTextBufferView view, int x, int y)
-    {
-        view.UpdateVirtualLines();
-        var virtualLines = view.GetVirtualLines();
-        if (virtualLines.Length == 0) return;
-
-        uint bufWidth = Width;
-        uint bufHeight = Height;
-
-        int firstVisible = Math.Max(0, -y);
-        int lastPossible = Math.Min(virtualLines.Length, (int)bufHeight - y);
-        if (firstVisible >= lastPossible) return;
-
-        uint horizontalOffset = view.ViewportX;
-        uint viewportWidth = view.Width;
-
-        var buffer = view.Buffer;
-        byte tabWidth = buffer.TabWidth;
-        var syntaxStyle = buffer.SyntaxStyle;
-
-        var selectionRange = view.GetSelectionRange();
-        Rgba? selBg = view.SelectionBg;
-        Rgba? selFg = view.SelectionFg;
-
-        uint prevLogicalLine = uint.MaxValue;
-        uint lineCharOffset = 0;
-
-        for (int vlineIdx = firstVisible; vlineIdx < lastPossible; vlineIdx++)
-        {
-            int screenY = y + vlineIdx;
-            if (screenY < 0 || screenY >= (int)bufHeight) continue;
-
-            ref readonly var vline = ref virtualLines[vlineIdx];
-            uint logicalLine = vline.SourceLine;
-            if (logicalLine >= buffer.LineCount) break;
-
-            string lineText = buffer.GetLineText(logicalLine);
-
-            if (selectionRange.HasValue && logicalLine != prevLogicalLine)
-            {
-                lineCharOffset = buffer.GetOffset(logicalLine, 0);
-                prevLogicalLine = logicalLine;
-            }
-
-            ReadOnlySpan<StyleSpan> styleSpans = syntaxStyle != null
-                ? buffer.GetStyleSpans(logicalLine)
-                : [];
-            int spanIdx = 0;
-
-            uint col = 0;
-            uint charIdx = 0;
-
-            foreach (var rune in lineText.EnumerateRunes())
-            {
-                uint displayWidth = TextWidth.CharWidth(rune, tabWidth);
-                if (displayWidth == 0)
-                {
-                    charIdx++;
-                    continue;
-                }
-
-                if (col + displayWidth <= vline.SourceColOffset)
-                {
-                    col += displayWidth;
-                    charIdx++;
-                    continue;
-                }
-
-                if (col >= vline.SourceColOffset + vline.WidthCols)
-                    break;
-
-                uint columnInVline = col - vline.SourceColOffset;
-
-                if (columnInVline < horizontalOffset)
-                {
-                    col += displayWidth;
-                    charIdx++;
-                    continue;
-                }
-
-                if (columnInVline >= horizontalOffset + viewportWidth)
-                    break;
-
-                int screenX = x + (int)(columnInVline - horizontalOffset);
-                if (screenX >= (int)bufWidth) break;
-
-                if (screenX >= 0)
-                {
-                    Rgba cellFg = Rgba.White;
-                    Rgba cellBg = Rgba.Transparent;
-                    var attrs = TextAttributes.None;
-
-                    if (styleSpans.Length > 0)
-                    {
-                        while (spanIdx < styleSpans.Length && styleSpans[spanIdx].End <= col)
-                            spanIdx++;
-
-                        if (spanIdx < styleSpans.Length)
-                        {
-                            ref readonly var span = ref styleSpans[spanIdx];
-                            if (col >= span.Start && col < span.End)
-                            {
-                                var style = syntaxStyle!.GetStyleById(span.StyleId);
-                                if (style.HasValue)
-                                {
-                                    if (style.Value.Fg.HasValue) cellFg = style.Value.Fg.Value;
-                                    if (style.Value.Bg.HasValue) cellBg = style.Value.Bg.Value;
-                                    attrs = style.Value.Attributes;
-                                }
-                            }
-                        }
-                    }
-
-                    if (selectionRange.HasValue)
-                    {
-                        uint charOffset = lineCharOffset + charIdx;
-                        var (selStart, selEnd) = selectionRange.Value;
-                        if (charOffset >= selStart && charOffset < selEnd)
-                        {
-                            if (selBg.HasValue || selFg.HasValue)
-                            {
-                                if (selBg.HasValue) cellBg = selBg.Value;
-                                if (selFg.HasValue) cellFg = selFg.Value;
-                            }
-                            else
-                            {
-                                Rgba newFg = cellBg.A > 0 ? cellBg : Rgba.Black;
-                                cellBg = cellFg;
-                                cellFg = newFg;
-                            }
-                        }
-                    }
-
-                    uint codepoint = (uint)rune.Value;
-
-                    if (rune.Value == '\t')
-                    {
-                        for (uint t = 0; t < displayWidth; t++)
-                        {
-                            int tx = screenX + (int)t;
-                            if (tx >= (int)bufWidth) break;
-                            if (tx >= 0)
-                                SetCellWithAlphaBlending((uint)tx, (uint)screenY, ' ', cellFg, cellBg, attrs);
-                        }
-                    }
-                    else
-                    {
-                        SetCellWithAlphaBlending((uint)screenX, (uint)screenY, codepoint, cellFg, cellBg, attrs);
-
-                        if (displayWidth == 2 && screenX + 1 < (int)bufWidth)
-                        {
-                            SetCellWithAlphaBlending((uint)(screenX + 1), (uint)screenY,
-                                0x80000000 | codepoint, cellFg, cellBg, attrs);
-                        }
-                    }
-                }
-
-                col += displayWidth;
-                charIdx++;
-            }
-        }
+        Managed.DrawEditorView(editorView._managed, x, y);
     }
 
     /// <summary>Draws a border grid using precomputed column and row boundary offsets.</summary>
@@ -472,34 +250,7 @@ public sealed class OptimizedBuffer : IDisposable
         bool drawInner,
         bool drawOuter)
     {
-        if (columnOffsets.Length < 2 || rowOffsets.Length < 2 || (!drawInner && !drawOuter))
-            return;
-
-        uint[] codePoints = borderChars.ToCodePoints();
-        var options = new OpenTuiNative.ExternalGridDrawOptions(drawInner, drawOuter);
-        Span<float> borderFgFloats = [borderFg.R, borderFg.G, borderFg.B, borderFg.A];
-        Span<float> borderBgFloats = [borderBg.R, borderBg.G, borderBg.B, borderBg.A];
-
-        unsafe
-        {
-            fixed (uint* charsPtr = codePoints)
-            fixed (int* columnOffsetsPtr = columnOffsets)
-            fixed (int* rowOffsetsPtr = rowOffsets)
-            fixed (float* borderFgPtr = borderFgFloats)
-            fixed (float* borderBgPtr = borderBgFloats)
-            {
-                OpenTuiNative.BufferDrawGrid(
-                    Handle,
-                    (nint)charsPtr,
-                    (nint)borderFgPtr,
-                    (nint)borderBgPtr,
-                    (nint)columnOffsetsPtr,
-                    (uint)(columnOffsets.Length - 1),
-                    (nint)rowOffsetsPtr,
-                    (uint)(rowOffsets.Length - 1),
-                    options);
-            }
-        }
+        Managed.DrawGrid(columnOffsets, rowOffsets, borderChars, borderFg, borderBg, drawInner, drawOuter);
     }
 
     #endregion
@@ -514,35 +265,17 @@ public sealed class OptimizedBuffer : IDisposable
     {
         ArgumentNullException.ThrowIfNull(matrix);
         ArgumentNullException.ThrowIfNull(cellMask);
-
         if (matrix.Length < 16)
             throw new ArgumentException("Color matrix must contain at least 16 elements.", nameof(matrix));
-
-        int cellCount = cellMask.Length / 3;
-        if (cellCount == 0)
-            return;
-
-        unsafe
-        {
-            fixed (float* matrixPtr = matrix)
-            fixed (float* cellMaskPtr = cellMask)
-            {
-                OpenTuiNative.BufferColorMatrix(Handle,
-                    (nint)matrixPtr, (nint)cellMaskPtr, (nuint)cellCount,
-                    opacity, (byte)channel);
-            }
-        }
+        Managed.ColorMatrix(matrix, cellMask, opacity, channel);
     }
 
     /// <summary>
     /// Applies a color matrix transformation to whole cells identified by x/y pairs.
-    /// Each pair is converted to the native float cell-mask triplet format with strength 1.
     /// </summary>
     public void ColorMatrix(float[] matrix, uint[] region, float opacity = 1f, TargetChannel channel = TargetChannel.Both)
     {
-        if (matrix.Length == 0 || region.Length == 0)
-            return;
-
+        if (matrix.Length == 0 || region.Length == 0) return;
         var cellMask = new float[(region.Length / 2) * 3];
         int destIndex = 0;
         for (int i = 0; i + 1 < region.Length; i += 2)
@@ -551,8 +284,7 @@ public sealed class OptimizedBuffer : IDisposable
             cellMask[destIndex++] = region[i + 1];
             cellMask[destIndex++] = 1f;
         }
-
-        ColorMatrix(matrix, cellMask, opacity, channel);
+        Managed.ColorMatrix(matrix, cellMask, opacity, channel);
     }
 
     /// <summary>Applies a uniform color matrix transformation to the entire buffer.</summary>
@@ -561,42 +293,8 @@ public sealed class OptimizedBuffer : IDisposable
         ArgumentNullException.ThrowIfNull(matrix);
         if (matrix.Length < 16)
             throw new ArgumentException("Color matrix must contain at least 16 elements.", nameof(matrix));
-
-        unsafe
-        {
-            fixed (float* matrixPtr = matrix)
-            {
-                OpenTuiNative.BufferColorMatrixUniform(Handle,
-                    (nint)matrixPtr, opacity, (byte)channel);
-            }
-        }
+        Managed.ColorMatrixUniform(matrix, opacity, channel);
     }
-
-    #endregion
-
-    #region Grayscale / Supersampling / Packed
-
-    /// <summary>Draws a grayscale pixel buffer using the specified foreground/background colors.</summary>
-    public void DrawGrayscaleBuffer(int x, int y, nint data, uint w, uint h, Rgba fg, Rgba bg) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferDrawGrayscaleBuffer(Handle, x, y, data, w, h, fgPtr, bgPtr));
-
-    /// <summary>Draws a supersampled grayscale buffer using the specified foreground/background colors.</summary>
-    public void DrawGrayscaleBufferSupersampled(int x, int y, nint data, uint w, uint h, Rgba fg, Rgba bg) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferDrawGrayscaleBufferSupersampled(Handle, x, y, data, w, h, fgPtr, bgPtr));
-
-    /// <summary>Draws a super-sampled buffer at the specified position.</summary>
-    public void DrawSuperSampleBuffer(uint x, uint y, nint data, nuint dataLen, byte sampleFactor, uint width) =>
-        OpenTuiNative.BufferDrawSuperSampleBuffer(Handle, x, y, data, dataLen, sampleFactor, width);
-
-    /// <summary>Draws a packed pixel buffer at the specified position and dimensions.</summary>
-    public void DrawPackedBuffer(nint data, nuint dataLen, uint x, uint y, uint w, uint h) =>
-        OpenTuiNative.BufferDrawPackedBuffer(Handle, data, dataLen, x, y, w, h);
-
-    /// <summary>Writes pre-resolved character data into the buffer.</summary>
-    public uint WriteResolvedChars(nint chars, nuint len, bool append) =>
-        OpenTuiNative.BufferWriteResolvedChars(Handle, chars, len, append);
 
     #endregion
 
@@ -604,15 +302,15 @@ public sealed class OptimizedBuffer : IDisposable
 
     /// <summary>Pushes a scissor (clipping) rectangle onto the buffer's clip stack.</summary>
     public void PushScissorRect(int x, int y, uint w, uint h) =>
-        OpenTuiNative.BufferPushScissorRect(Handle, x, y, w, h);
+        Managed.PushScissorRect(x, y, w, h);
 
     /// <summary>Pops the most recent scissor rectangle from the buffer's clip stack.</summary>
     public void PopScissorRect() =>
-        OpenTuiNative.BufferPopScissorRect(Handle);
+        Managed.PopScissorRect();
 
     /// <summary>Clears all scissor rectangles from the buffer's clip stack.</summary>
     public void ClearScissorRects() =>
-        OpenTuiNative.BufferClearScissorRects(Handle);
+        Managed.ClearScissorRects();
 
     #endregion
 
@@ -620,15 +318,15 @@ public sealed class OptimizedBuffer : IDisposable
 
     /// <summary>Pushes an opacity value onto the buffer's opacity stack.</summary>
     public void PushOpacity(float opacity) =>
-        OpenTuiNative.BufferPushOpacity(Handle, opacity);
+        Managed.PushOpacity(opacity);
 
     /// <summary>Pops the most recent opacity value from the buffer's opacity stack.</summary>
     public void PopOpacity() =>
-        OpenTuiNative.BufferPopOpacity(Handle);
+        Managed.PopOpacity();
 
     /// <summary>Clears the entire opacity stack, resetting to full opacity.</summary>
     public void ClearOpacity() =>
-        OpenTuiNative.BufferClearOpacity(Handle);
+        Managed.ClearOpacity();
 
     #endregion
 
@@ -636,23 +334,22 @@ public sealed class OptimizedBuffer : IDisposable
 
     /// <summary>Resizes the buffer to new dimensions.</summary>
     public void Resize(uint w, uint h) =>
-        OpenTuiNative.BufferResize(Handle, w, h);
+        Managed.Resize(w, h);
 
     #endregion
 
     #region IDisposable
 
-    /// <summary>Destroys the native buffer and releases all resources.</summary>
+    /// <summary>Releases all resources held by the buffer.</summary>
     public void Dispose()
     {
         if (!_disposed)
         {
             _disposed = true;
-            if (_ownsHandle && _handle != nint.Zero)
+            if (_ownsManaged)
             {
-                OpenTuiNative.BufferDestroy(_handle);
+                Managed.Dispose();
             }
-            _handle = nint.Zero;
         }
     }
 

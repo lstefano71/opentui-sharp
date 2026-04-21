@@ -8,7 +8,7 @@ namespace OpenTui.Core;
 /// </summary>
 public sealed class EditBuffer : IDisposable
 {
-    internal readonly ManagedEditBuffer _managed;
+    internal ManagedEditBuffer _managed;
     private bool _disposed;
 
     private EditBuffer(ManagedEditBuffer managed)
@@ -72,12 +72,7 @@ public sealed class EditBuffer : IDisposable
     #region Cursor
 
     /// <summary>Gets the current cursor position as a logical row/col/offset.</summary>
-    public LogicalCursor GetCursorPosition()
-    {
-        var (line, col) = _managed.GetPrimaryCursor();
-        uint offset = _managed.Buffer.GetOffset(line, col);
-        return new LogicalCursor(line, col, offset);
-    }
+    public LogicalCursor GetCursorPosition() => _managed.GetCursorPosition();
 
     /// <summary>Sets the cursor to the specified row and column.</summary>
     public void SetCursor(uint row, uint col) => _managed.SetCursor(row, col);
@@ -107,6 +102,9 @@ public sealed class EditBuffer : IDisposable
     /// <summary>Moves the cursor to the specified line.</summary>
     public void GotoLine(uint line) => _managed.GotoLine(line);
 
+    /// <summary>Moves the cursor to the end of the last line in the buffer.</summary>
+    public void GotoBufferEnd() => _managed.GotoBufferEnd();
+
     #endregion
 
     #region Word Boundaries
@@ -115,25 +113,22 @@ public sealed class EditBuffer : IDisposable
     public LogicalCursor GetPrevWordBoundary()
     {
         var (line, col) = _managed.GetPrevWordBoundary();
-        uint offset = _managed.Buffer.GetOffset(line, col);
-        return new LogicalCursor(line, col, offset);
+        return new LogicalCursor(line, col, _managed.PositionToOffset(line, col));
     }
 
     /// <summary>Gets the next word boundary cursor position.</summary>
     public LogicalCursor GetNextWordBoundary()
     {
         var (line, col) = _managed.GetNextWordBoundary();
-        uint offset = _managed.Buffer.GetOffset(line, col);
-        return new LogicalCursor(line, col, offset);
+        return new LogicalCursor(line, col, _managed.PositionToOffset(line, col));
     }
 
     /// <summary>Gets the end-of-line cursor position.</summary>
     public LogicalCursor GetEOL()
     {
-        var (line, _) = _managed.GetPrimaryCursor();
-        uint lineWidth = _managed.GetLineWidth(line);
-        uint offset = _managed.Buffer.GetOffset(line, lineWidth);
-        return new LogicalCursor(line, lineWidth, offset);
+        var cursor = _managed.GetCursorPosition();
+        uint lineLen = _managed.GetLineWidth(cursor.Row);
+        return new LogicalCursor(cursor.Row, lineLen, _managed.PositionToOffset(cursor.Row, lineLen));
     }
 
     #endregion
@@ -162,6 +157,10 @@ public sealed class EditBuffer : IDisposable
     /// <summary>Gets the underlying managed text buffer.</summary>
     internal ManagedTextBuffer GetManagedTextBuffer() => _managed.Buffer;
 
+    /// <summary>Returns the native text buffer handle. Not supported in managed mode.</summary>
+    public nint GetTextBuffer() =>
+        throw new NotSupportedException("Use GetManagedTextBuffer() instead.");
+
     /// <summary>Gets the unique identifier of the edit buffer.</summary>
     public ushort GetId() => _managed.GetId();
 
@@ -184,32 +183,16 @@ public sealed class EditBuffer : IDisposable
     #region Position Conversion
 
     /// <summary>Converts a character offset to a logical cursor position.</summary>
-    public bool OffsetToPosition(uint offset, out LogicalCursor cursor)
-    {
-        var buf = _managed.Buffer;
-        uint lineCount = buf.LineCount;
-        uint remaining = offset;
-        for (uint i = 0; i < lineCount; i++)
-        {
-            uint lineLen = buf.GetLineLength(i);
-            if (remaining <= lineLen)
-            {
-                cursor = new LogicalCursor(i, remaining, offset);
-                return true;
-            }
-            remaining -= lineLen + 1; // +1 for newline
-        }
-        cursor = default;
-        return false;
-    }
+    public bool OffsetToPosition(uint offset, out LogicalCursor cursor) =>
+        _managed.OffsetToPosition(offset, out cursor);
 
     /// <summary>Converts a row/column position to a character offset.</summary>
     public uint PositionToOffset(uint row, uint col) =>
-        _managed.Buffer.GetOffset(row, col);
+        _managed.PositionToOffset(row, col);
 
     /// <summary>Gets the byte offset of the start of the specified line.</summary>
     public uint GetLineStartOffset(uint line) =>
-        _managed.Buffer.GetOffset(line, 0);
+        _managed.GetLineStartOffset(line);
 
     /// <summary>Gets a range of text by character offsets.</summary>
     public string GetTextRange(uint start, uint end) =>

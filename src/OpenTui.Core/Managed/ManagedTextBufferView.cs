@@ -122,7 +122,9 @@ public sealed class ManagedTextBufferView : IDisposable
     {
         get
         {
-            uint offset = _buffer.GetOffset(_cursorLine, _cursorCol);
+            // _cursorCol is a display column; convert to char index for GetOffset
+            uint charCol = (uint)_buffer.DisplayColToCharIndex(_cursorLine, _cursorCol);
+            uint offset = _buffer.GetOffset(_cursorLine, charCol);
             return new LogicalCursor(_cursorLine, _cursorCol, offset);
         }
     }
@@ -138,7 +140,8 @@ public sealed class ManagedTextBufferView : IDisposable
             uint vpRow = visualRow >= _scrollTop ? visualRow - _scrollTop : 0;
             uint vpCol = visualCol >= _scrollLeft ? visualCol - _scrollLeft : 0;
 
-            uint offset = _buffer.GetOffset(_cursorLine, _cursorCol);
+            uint offset = _buffer.GetOffset(_cursorLine,
+                (uint)_buffer.DisplayColToCharIndex(_cursorLine, _cursorCol));
             return new VisualCursor(vpRow, vpCol, _cursorLine, _cursorCol, offset);
         }
     }
@@ -151,7 +154,9 @@ public sealed class ManagedTextBufferView : IDisposable
     public LogicalCursor? SelectionAnchor => _selectionAnchor;
 
     /// <summary>Whether a text selection is currently active.</summary>
-    public bool HasSelection => _selectionAnchor.HasValue;
+    public bool HasSelection => _selectionAnchor.HasValue
+        || (_selectionStartOffset.HasValue && _selectionEndOffset.HasValue
+            && _selectionStartOffset != _selectionEndOffset);
 
     /// <summary>
     /// Begins a selection at the current cursor position.
@@ -234,6 +239,9 @@ public sealed class ManagedTextBufferView : IDisposable
             return _buffer.GetTextRangeByOffset(start, end);
 
         // Fall back to anchor-based selection (set via SetLocalSelection/UpdateSelection)
+        if (!_selectionAnchor.HasValue)
+            return string.Empty;
+
         var (cursorStart, cursorEnd) = GetSelectionCursorRange();
         return _buffer.GetTextRange(cursorStart.Row, cursorStart.Col, cursorEnd.Row, cursorEnd.Col);
     }
@@ -370,7 +378,7 @@ public sealed class ManagedTextBufferView : IDisposable
     {
         uint lineCount = _buffer.LineCount;
         _cursorLine = Math.Min(line, lineCount > 0 ? lineCount - 1 : 0);
-        uint lineLen = _buffer.GetLineLength(_cursorLine);
+        uint lineLen = _buffer.LineWidthAt(_cursorLine);
         _cursorCol = Math.Min(col, lineLen);
     }
 
@@ -399,7 +407,7 @@ public sealed class ManagedTextBufferView : IDisposable
         {
             uint savedCol = _cursorCol;
             _cursorLine = _cursorLine >= count ? _cursorLine - count : 0;
-            uint lineLen = _buffer.GetLineLength(_cursorLine);
+            uint lineLen = _buffer.LineWidthAt(_cursorLine);
             _cursorCol = Math.Min(savedCol, lineLen);
         }
     }
@@ -423,7 +431,7 @@ public sealed class ManagedTextBufferView : IDisposable
         {
             uint savedCol = _cursorCol;
             _cursorLine = Math.Min(_cursorLine + count, lastLine);
-            uint lineLen = _buffer.GetLineLength(_cursorLine);
+            uint lineLen = _buffer.LineWidthAt(_cursorLine);
             _cursorCol = Math.Min(savedCol, lineLen);
         }
     }
@@ -441,7 +449,7 @@ public sealed class ManagedTextBufferView : IDisposable
             {
                 // Wrap to end of previous line
                 _cursorLine--;
-                _cursorCol = _buffer.GetLineLength(_cursorLine);
+                _cursorCol = _buffer.LineWidthAt(_cursorLine);
             }
         }
     }
@@ -451,7 +459,7 @@ public sealed class ManagedTextBufferView : IDisposable
     {
         for (uint i = 0; i < count; i++)
         {
-            uint lineLen = _buffer.GetLineLength(_cursorLine);
+            uint lineLen = _buffer.LineWidthAt(_cursorLine);
             if (_cursorCol < lineLen)
             {
                 _cursorCol++;
@@ -474,7 +482,7 @@ public sealed class ManagedTextBufferView : IDisposable
     /// <summary>Moves the cursor to the end of the current line.</summary>
     public void MoveCursorToLineEnd()
     {
-        _cursorCol = _buffer.GetLineLength(_cursorLine);
+        _cursorCol = _buffer.LineWidthAt(_cursorLine);
     }
 
     /// <summary>Moves the cursor to the very beginning of the buffer.</summary>
@@ -489,7 +497,7 @@ public sealed class ManagedTextBufferView : IDisposable
     {
         uint lineCount = _buffer.LineCount;
         _cursorLine = lineCount > 0 ? lineCount - 1 : 0;
-        _cursorCol = _buffer.GetLineLength(_cursorLine);
+        _cursorCol = _buffer.LineWidthAt(_cursorLine);
     }
 
     /// <summary>Moves the cursor to the previous word boundary.</summary>
@@ -502,7 +510,7 @@ public sealed class ManagedTextBufferView : IDisposable
         if (_cursorCol == 0)
         {
             _cursorLine--;
-            _cursorCol = _buffer.GetLineLength(_cursorLine);
+            _cursorCol = _buffer.LineWidthAt(_cursorLine);
             return;
         }
 
@@ -525,7 +533,7 @@ public sealed class ManagedTextBufferView : IDisposable
     {
         uint lineCount = _buffer.LineCount;
         uint lastLine = lineCount > 0 ? lineCount - 1 : 0;
-        uint lineLen = _buffer.GetLineLength(_cursorLine);
+        uint lineLen = _buffer.LineWidthAt(_cursorLine);
 
         if (_cursorCol >= lineLen && _cursorLine >= lastLine)
             return;
@@ -599,7 +607,9 @@ public sealed class ManagedTextBufferView : IDisposable
     public LogicalCursor VisualToLogical(uint visualRow, uint visualCol)
     {
         var result = VisualToLogicalRaw(visualRow + _scrollTop, visualCol + _scrollLeft);
-        uint offset = _buffer.GetOffset(result.Line, result.Col);
+        // result.Col is a display column; GetOffset expects a char index
+        uint charCol = (uint)_buffer.DisplayColToCharIndex(result.Line, result.Col);
+        uint offset = _buffer.GetOffset(result.Line, charCol);
         return new LogicalCursor(result.Line, result.Col, offset);
     }
 
@@ -613,7 +623,9 @@ public sealed class ManagedTextBufferView : IDisposable
         uint vpRow = visualRow >= _scrollTop ? visualRow - _scrollTop : 0;
         uint vpCol = visualCol >= _scrollLeft ? visualCol - _scrollLeft : 0;
 
-        uint offset = _buffer.GetOffset(logicalLine, logicalCol);
+        // logicalCol is a display column; convert to char index for GetOffset
+        uint charCol = (uint)_buffer.DisplayColToCharIndex(logicalLine, logicalCol);
+        uint offset = _buffer.GetOffset(logicalLine, charCol);
         return new VisualCursor(vpRow, vpCol, logicalLine, logicalCol, offset);
     }
 
@@ -633,8 +645,11 @@ public sealed class ManagedTextBufferView : IDisposable
         uint savedHeight = _height;
         uint savedWrapWidth = _wrapWidth;
 
+        // When w=0, use a very large width so lines are not wrapped/truncated
+        uint measureWidth = w > 0 ? w : uint.MaxValue / 2;
+
         // Temporarily set viewport for measurement
-        _width = w;
+        _width = measureWidth;
         _height = h;
         _wrapWidth = 0; // measure uses viewport width directly
         InvalidateWrapCache();
@@ -654,11 +669,11 @@ public sealed class ManagedTextBufferView : IDisposable
                     maxWidth = lineWidth;
             }
 
-            uint effectiveWidth = Math.Min(maxWidth, w);
+            // Report intrinsic content size — don't cap at viewport width
             uint effectiveHeight = Math.Min(totalVirtualLines, h);
 
-            result = new MeasureResult(effectiveHeight, effectiveWidth);
-            return totalVirtualLines > h;
+            result = new MeasureResult(effectiveHeight, maxWidth);
+            return true; // measurement always succeeds
         }
         finally
         {
@@ -783,7 +798,14 @@ public sealed class ManagedTextBufferView : IDisposable
 
             string lineText = _buffer.GetLineText(vl.SourceLine);
             int startCol = (int)vl.SourceColOffset;
-            int endCol = startCol + (int)vl.WidthCols;
+            // Determine end char index from the next virtual line's SourceColOffset
+            // (WidthCols is display width, not char count)
+            int endCol;
+            uint nextIdx = vlineIdx + 1;
+            if (nextIdx < (uint)virtualLines.Length && virtualLines[nextIdx].SourceLine == vl.SourceLine)
+                endCol = (int)virtualLines[nextIdx].SourceColOffset;
+            else
+                endCol = lineText.Length;
             if (startCol < lineText.Length)
             {
                 int len = Math.Min(endCol, lineText.Length) - startCol;
@@ -793,8 +815,17 @@ public sealed class ManagedTextBufferView : IDisposable
                 }
             }
 
+            // Only insert \n between different source lines (not between wrapped segments)
             if (i < visibleCount - 1)
-                sb.Append('\n');
+            {
+                uint nextVlineIdx = vlineIdx + 1;
+                if (nextVlineIdx < (uint)virtualLines.Length)
+                {
+                    ref readonly var nextVl = ref virtualLines[nextVlineIdx];
+                    if (nextVl.SourceLine != vl.SourceLine)
+                        sb.Append('\n');
+                }
+            }
 
             if (sb.Length >= maxLen)
             {
@@ -901,7 +932,7 @@ public sealed class ManagedTextBufferView : IDisposable
     }
 
     /// <summary>
-    /// Converts viewport-relative visual coordinates to a buffer character offset.
+    /// Converts viewport-relative visual coordinates to a display-column-based buffer offset.
     /// </summary>
     private bool TryVisualToOffset(int visualX, int visualY, out uint offset)
     {
@@ -909,8 +940,8 @@ public sealed class ManagedTextBufferView : IDisposable
         if (visualX < 0 || visualY < 0)
             return false;
 
-        var logical = VisualToLogical((uint)visualY, (uint)visualX);
-        offset = logical.Offset;
+        var raw = VisualToLogicalRaw((uint)visualY + _scrollTop, (uint)visualX + _scrollLeft);
+        offset = _buffer.GetDisplayOffset(raw.Line, raw.Col);
         return true;
     }
 
@@ -1000,7 +1031,7 @@ public sealed class ManagedTextBufferView : IDisposable
             uint lineCount = _buffer.LineCount;
             var result = new VirtualLine[lineCount];
             for (uint i = 0; i < lineCount; i++)
-                result[i] = new VirtualLine(i, 0, _buffer.GetLineLength(i));
+                result[i] = new VirtualLine(i, 0, _buffer.LineWidthAt(i));
             _virtualLineArray = result;
             return;
         }
@@ -1011,7 +1042,12 @@ public sealed class ManagedTextBufferView : IDisposable
         for (int i = 0; i < cache.Count; i++)
         {
             var wl = cache[i];
-            arr[i] = new VirtualLine(wl.LogicalLine, wl.StartCol, wl.ColCount);
+            // ColCount is char count; convert to display width for VirtualLine.WidthCols
+            // StartCol is also char count; convert to display column for VirtualLine.SourceColOffset
+            string lineText = _buffer.GetLineText(wl.LogicalLine);
+            uint sourceDisplayCol = CalculateWidthFromCol(lineText, 0, wl.StartCol);
+            uint displayWidth = CalculateWidthFromCol(lineText, wl.StartCol, wl.StartCol + wl.ColCount);
+            arr[i] = new VirtualLine(wl.LogicalLine, sourceDisplayCol, displayWidth);
         }
         _virtualLineArray = arr;
     }
@@ -1206,8 +1242,9 @@ public sealed class ManagedTextBufferView : IDisposable
                 // Need to wrap
                 if (haveBreak && lastBreakCol > startCol)
                 {
-                    // Wrap at the last break opportunity
-                    uint wrapCol = lastBreakCol + 1; // after the break character
+                    // Wrap at the last break opportunity.
+                    // If the break char itself caused the overflow, don't include it on this line.
+                    uint wrapCol = (lastBreakCol < col) ? lastBreakCol + 1 : lastBreakCol;
                     _wrapLineCache!.Add(new WrapLine(logicalLine, startCol, wrapCol - startCol));
                     startCol = wrapCol;
 
@@ -1302,7 +1339,7 @@ public sealed class ManagedTextBufferView : IDisposable
         {
             uint lineCount = _buffer.LineCount;
             uint line = Math.Min(visualRow, lineCount > 0 ? lineCount - 1 : 0);
-            uint lineLen = _buffer.GetLineLength(line);
+            uint lineLen = _buffer.LineWidthAt(line);
             uint col = Math.Min(visualCol, lineLen);
             return (line, col);
         }
@@ -1316,11 +1353,14 @@ public sealed class ManagedTextBufferView : IDisposable
         uint idx = Math.Min(visualRow, (uint)(cache.Count - 1));
         var wl = cache[(int)idx];
 
-        uint logicalCol = wl.StartCol + visualCol;
-        uint lineLen2 = _buffer.GetLineLength(wl.LogicalLine);
-        logicalCol = Math.Min(logicalCol, lineLen2);
+        // wl.StartCol is a char index; visualCol is a display column offset.
+        // Convert wl.StartCol to a display column, then add visualCol.
+        uint wlStartDisplayCol = _buffer.CharIndexToDisplayCol(wl.LogicalLine, (int)wl.StartCol);
+        uint logicalDisplayCol = wlStartDisplayCol + visualCol;
+        uint lineWidth = _buffer.LineWidthAt(wl.LogicalLine);
+        logicalDisplayCol = Math.Min(logicalDisplayCol, lineWidth);
 
-        return (wl.LogicalLine, logicalCol);
+        return (wl.LogicalLine, logicalDisplayCol);
     }
 
     private void ClampScroll()

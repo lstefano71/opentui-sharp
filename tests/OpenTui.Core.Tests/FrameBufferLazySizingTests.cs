@@ -74,11 +74,8 @@ public sealed class FrameBufferLazySizingTests : IDisposable
         b.DrawText(line, 0, 0, Rgba.FromInts(220, 220, 220, 255), color);
     }
 
-    private static unsafe uint ReadCellChar(OptimizedBuffer buf, uint x, uint y)
-    {
-        var ptr = (uint*)buf.GetCharPtr();
-        return ptr[y * buf.Width + x];
-    }
+    private static uint ReadCellChar(OptimizedBuffer buf, uint x, uint y) =>
+        buf.GetCharAt(x, y);
 
     private static string ReadRowText(OptimizedBuffer buf, int x, int y, int width)
     {

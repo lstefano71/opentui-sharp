@@ -171,9 +171,18 @@ public sealed class EditorView : IDisposable
     /// <summary>Deletes the currently selected text.</summary>
     public void DeleteSelectedText() => _managed.DeleteSelection();
 
-    /// <summary>Sets a local (visual coordinate) selection.</summary>
-    public bool SetLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false) =>
-        _managed.View.SetLocalSelection(sx, sy, ex, ey, selBg, selFg);
+    /// <summary>Sets a local (visual coordinate) selection and moves cursor to the end position.</summary>
+    public bool SetLocalSelection(int sx, int sy, int ex, int ey, Rgba? selFg = null, Rgba? selBg = null, bool extend = false, bool visual = false)
+    {
+        bool result = _managed.View.SetLocalSelection(sx, sy, ex, ey, selBg, selFg);
+        if (result)
+        {
+            // Move cursor to end (focus) position, clamped to buffer bounds
+            var logical = _managed.View.VisualToLogical((uint)Math.Max(ey, 0), (uint)Math.Max(ex, 0));
+            _managed.EditBuffer.SetCursor(logical.Row, logical.Col);
+        }
+        return result;
+    }
 
     /// <summary>Resets the local (visual coordinate) selection.</summary>
     public void ResetLocalSelection() => _managed.View.ResetLocalSelection();

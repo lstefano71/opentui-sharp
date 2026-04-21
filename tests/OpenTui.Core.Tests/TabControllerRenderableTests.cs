@@ -7,24 +7,19 @@ namespace OpenTui.Core.Tests;
 
 public class TabControllerRenderableTests
 {
-    private static unsafe string ReadText(OptimizedBuffer buf, uint x, uint y, int length)
+    private static string ReadText(OptimizedBuffer buf, uint x, uint y, int length)
     {
-        nint charPtr = buf.GetCharPtr();
-        uint* chars = (uint*)charPtr;
         var sb = new StringBuilder(length);
-
         for (int i = 0; i < length; i++)
         {
-            uint codePoint = chars[(int)(y * buf.Width + x + (uint)i)];
+            uint codePoint = buf.GetCharAt(x + (uint)i, y);
             if (codePoint == 0 || codePoint > 0x10FFFF || !Rune.TryCreate((int)codePoint, out var rune))
             {
                 sb.Append(' ');
                 continue;
             }
-
             sb.Append(rune.ToString());
         }
-
         return sb.ToString();
     }
 

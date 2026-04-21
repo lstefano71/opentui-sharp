@@ -21,28 +21,14 @@ public sealed class ASCIIFontRenderableTests : IDisposable
 
     private void RenderFrame() => _renderer.RenderTestFrame();
 
-    private static unsafe uint ReadCellChar(OptimizedBuffer buffer, uint x, uint y)
-    {
-        nint charPtr = buffer.GetCharPtr();
-        int offset = (int)(y * buffer.Width + x);
-        return ((uint*)charPtr)[offset];
-    }
+    private static uint ReadCellChar(OptimizedBuffer buffer, uint x, uint y) =>
+        buffer.GetCharAt(x, y);
 
-    private static unsafe Rgba ReadCellFg(OptimizedBuffer buffer, uint x, uint y)
-    {
-        nint fgPtr = buffer.GetFgPtr();
-        int floatOff = (int)(y * buffer.Width + x) * 4;
-        float* fp = (float*)fgPtr;
-        return new Rgba(fp[floatOff], fp[floatOff + 1], fp[floatOff + 2], fp[floatOff + 3]);
-    }
+    private static Rgba ReadCellFg(OptimizedBuffer buffer, uint x, uint y) =>
+        buffer.GetFgAt(x, y);
 
-    private static unsafe Rgba ReadCellBg(OptimizedBuffer buffer, uint x, uint y)
-    {
-        nint bgPtr = buffer.GetBgPtr();
-        int floatOff = (int)(y * buffer.Width + x) * 4;
-        float* fp = (float*)bgPtr;
-        return new Rgba(fp[floatOff], fp[floatOff + 1], fp[floatOff + 2], fp[floatOff + 3]);
-    }
+    private static Rgba ReadCellBg(OptimizedBuffer buffer, uint x, uint y) =>
+        buffer.GetBgAt(x, y);
 
     [Fact]
     public void MeasureText_EmptyStringKeepsFontHeight()

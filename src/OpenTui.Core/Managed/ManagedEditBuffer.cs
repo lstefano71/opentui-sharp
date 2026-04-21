@@ -81,7 +81,7 @@ public sealed class ManagedEditBuffer : IDisposable
         return new LogicalCursor(_cursorLine, _cursorCol, offset);
     }
 
-    /// <summary>Sets the cursor position, clamping to valid range.</summary>
+    /// <summary>Sets the cursor position (in display columns), clamping to valid range.</summary>
     public void SetCursor(uint line, uint col)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -94,36 +94,44 @@ public sealed class ManagedEditBuffer : IDisposable
         else
         {
             _cursorLine = Math.Min(line, lineCount - 1);
-            _cursorCol = Math.Min(col, _buffer.GetLineLength(_cursorLine));
+            _cursorCol = Math.Min(col, _buffer.LineWidthAt(_cursorLine));
         }
         CursorChanged?.Invoke();
     }
 
-    /// <summary>Moves cursor one character left (wrapping to end of prev line if at col 0).</summary>
+    /// <summary>Moves cursor one visible character left (wrapping to end of prev line if at col 0).</summary>
     public void MoveLeft()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (_cursorCol > 0)
         {
-            _cursorCol--;
+            string lineText = _buffer.GetLineText(_cursorLine);
+            byte tabWidth = _buffer.TabWidth;
+            // Walk backwards from cursor display col to find the start of the previous visible char
+            uint prevCol = FindPrevVisibleCharCol(lineText, _cursorCol, tabWidth);
+            _cursorCol = prevCol;
             CursorChanged?.Invoke();
         }
         else if (_cursorLine > 0)
         {
             _cursorLine--;
-            _cursorCol = _buffer.GetLineLength(_cursorLine);
+            _cursorCol = _buffer.LineWidthAt(_cursorLine);
             CursorChanged?.Invoke();
         }
     }
 
-    /// <summary>Moves cursor one character right (wrapping to start of next line if at end).</summary>
+    /// <summary>Moves cursor one visible character right (wrapping to start of next line if at end).</summary>
     public void MoveRight()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        uint lineLen = _buffer.GetLineLength(_cursorLine);
-        if (_cursorCol < lineLen)
+        uint lineDisplayWidth = _buffer.LineWidthAt(_cursorLine);
+        if (_cursorCol < lineDisplayWidth)
         {
-            _cursorCol++;
+            string lineText = _buffer.GetLineText(_cursorLine);
+            byte tabWidth = _buffer.TabWidth;
+            // Walk forward from cursor display col to find the end of the next visible char
+            uint nextCol = FindNextVisibleCharCol(lineText, _cursorCol, tabWidth);
+            _cursorCol = nextCol;
             CursorChanged?.Invoke();
         }
         else if (_cursorLine + 1 < _buffer.LineCount)
@@ -149,7 +157,7 @@ public sealed class ManagedEditBuffer : IDisposable
         else
         {
             _cursorLine--;
-            _cursorCol = Math.Min(_cursorCol, _buffer.GetLineLength(_cursorLine));
+            _cursorCol = Math.Min(_cursorCol, _buffer.LineWidthAt(_cursorLine));
             CursorChanged?.Invoke();
         }
     }
@@ -161,17 +169,17 @@ public sealed class ManagedEditBuffer : IDisposable
         uint lineCount = _buffer.LineCount;
         if (_cursorLine + 1 >= lineCount)
         {
-            uint lineLen = _buffer.GetLineLength(_cursorLine);
-            if (_cursorCol != lineLen)
+            uint lineWidth = _buffer.LineWidthAt(_cursorLine);
+            if (_cursorCol != lineWidth)
             {
-                _cursorCol = lineLen;
+                _cursorCol = lineWidth;
                 CursorChanged?.Invoke();
             }
         }
         else
         {
             _cursorLine++;
-            _cursorCol = Math.Min(_cursorCol, _buffer.GetLineLength(_cursorLine));
+            _cursorCol = Math.Min(_cursorCol, _buffer.LineWidthAt(_cursorLine));
             CursorChanged?.Invoke();
         }
     }
@@ -197,6 +205,23 @@ public sealed class ManagedEditBuffer : IDisposable
         SetCursor(targetLine, 0);
     }
 
+    /// <summary>Moves the cursor to the end of the last line in the buffer.</summary>
+    public void GotoBufferEnd()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        uint lineCount = _buffer.LineCount;
+        if (lineCount == 0)
+        {
+            SetCursor(0, 0);
+        }
+        else
+        {
+            uint lastLine = lineCount - 1;
+            uint endCol = _buffer.LineWidthAt(lastLine);
+            SetCursor(lastLine, endCol);
+        }
+    }
+
     #endregion
 
     #region Line queries
@@ -205,7 +230,7 @@ public sealed class ManagedEditBuffer : IDisposable
     public uint GetLineCount() => _buffer.LineCount;
 
     /// <summary>Returns the display width of a specific line.</summary>
-    public uint GetLineWidth(uint line) => _buffer.GetLineLength(line);
+    public uint GetLineWidth(uint line) => _buffer.LineWidthAt(line);
 
     /// <summary>Returns the maximum display width across all lines.</summary>
     public uint GetMaxLineWidth() => _buffer.MaxLineWidth;
@@ -214,75 +239,101 @@ public sealed class ManagedEditBuffer : IDisposable
 
     #region Word boundaries
 
-    /// <summary>Scans backward from cursor to the previous word boundary.</summary>
+    /// <summary>Scans backward from cursor to the previous word boundary (display column).</summary>
     public (uint Line, uint Col) GetPrevWordBoundary()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         uint line = _cursorLine;
         uint col = _cursorCol;
 
+        if (line == 0 && col == 0) return (0, 0);
+
         // If at start of line, wrap to end of previous line
         if (col == 0)
         {
             if (line == 0) return (0, 0);
             line--;
-            col = _buffer.GetLineLength(line);
-            if (col == 0) return (line, 0);
+            return (line, _buffer.LineWidthAt(line));
         }
 
         string lineText = _buffer.GetLineText(line);
-        int pos = (int)Math.Min(col, (uint)lineText.Length);
+        byte tabWidth = _buffer.TabWidth;
 
-        // Skip whitespace/other backward
-        WordClass? startClass = null;
-        while (pos > 0)
+        // Find all break boundaries in this line, return the last one before cursor
+        uint? lastBoundary = null;
+        FindBreakBoundaries(lineText, tabWidth, (boundaryCol) =>
         {
-            int prevPos = pos;
-            if (Rune.DecodeLastFromUtf16(lineText.AsSpan(0, prevPos), out var rune, out int consumed)
-                != System.Buffers.OperationStatus.Done)
-            {
-                consumed = 1;
-                rune = Rune.ReplacementChar;
-            }
-            var cls = WordBoundary.ClassifyWord(rune);
+            if (boundaryCol < col)
+                lastBoundary = boundaryCol;
+            return boundaryCol < col; // stop scanning once we pass cursor
+        });
 
-            if (startClass is null)
-            {
-                startClass = cls;
-            }
-            else if (cls != startClass.Value)
-            {
-                break;
-            }
+        if (lastBoundary.HasValue)
+            return (line, lastBoundary.Value);
 
-            pos -= consumed;
-        }
+        // No break found before cursor — go to previous line end
+        if (line > 0)
+            return (line - 1, _buffer.LineWidthAt(line - 1));
 
-        return (line, (uint)pos);
+        return (0, 0);
     }
 
-    /// <summary>Scans forward from cursor to the next word boundary.</summary>
+    /// <summary>Scans forward from cursor to the next word boundary (display column).</summary>
     public (uint Line, uint Col) GetNextWordBoundary()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         uint line = _cursorLine;
         uint col = _cursorCol;
 
-        string lineText = _buffer.GetLineText(line);
-        int pos = (int)Math.Min(col, (uint)lineText.Length);
+        uint lineDisplayWidth = _buffer.LineWidthAt(line);
 
-        // If at end of line, wrap to start of next line
-        if (pos >= lineText.Length)
+        // If at/past end of line, wrap to start of next line
+        if (col >= lineDisplayWidth)
         {
             if (line + 1 < _buffer.LineCount)
-            {
                 return (line + 1, 0);
-            }
             return (line, col);
         }
 
-        // Skip current word class forward
-        WordClass? startClass = null;
+        string lineText = _buffer.GetLineText(line);
+        byte tabWidth = _buffer.TabWidth;
+
+        // Find first break boundary strictly after cursor
+        uint? firstBoundaryAfterCursor = null;
+        FindBreakBoundaries(lineText, tabWidth, (boundaryCol) =>
+        {
+            if (boundaryCol > col)
+            {
+                firstBoundaryAfterCursor = boundaryCol;
+                return false; // stop
+            }
+            return true; // continue
+        });
+
+        if (firstBoundaryAfterCursor.HasValue)
+            return (line, firstBoundaryAfterCursor.Value);
+
+        // No break found — go to next line
+        if (line + 1 < _buffer.LineCount)
+            return (line + 1, 0);
+        return (line, lineDisplayWidth);
+    }
+
+    /// <summary>
+    /// Walks through line text and calls the callback with each break boundary's display column.
+    /// A boundary is positioned AFTER the break character: breakCol + breakCharWidth.
+    /// Breaks occur at whitespace, punctuation, and CJK↔ASCII transitions.
+    /// The callback returns true to continue scanning, false to stop.
+    /// </summary>
+    private static void FindBreakBoundaries(string lineText, byte tabWidth, Func<uint, bool> callback)
+    {
+        uint displayCol = 0;
+        WordClass prevClass = WordClass.Other;
+        bool havePrev = false;
+        uint prevDisplayCol = 0;
+        uint prevCharWidth = 0;
+
+        int pos = 0;
         while (pos < lineText.Length)
         {
             if (Rune.DecodeFromUtf16(lineText.AsSpan(pos), out var rune, out int consumed)
@@ -291,21 +342,71 @@ public sealed class ManagedEditBuffer : IDisposable
                 consumed = 1;
                 rune = Rune.ReplacementChar;
             }
-            var cls = WordBoundary.ClassifyWord(rune);
 
-            if (startClass is null)
+            uint charWidth = TextWidth.CharWidth(rune, tabWidth);
+            var currentClass = WordBoundary.ClassifyWord(rune);
+
+            // CJK↔ASCII transition → break at PREVIOUS character
+            if (havePrev && IsCjkAsciiTransition(prevClass, currentClass))
             {
-                startClass = cls;
-            }
-            else if (cls != startClass.Value)
-            {
-                break;
+                uint boundary = prevDisplayCol + prevCharWidth;
+                if (!callback(boundary)) return;
             }
 
+            // Check if this character is a break character
+            bool isBreak;
+            int cp = rune.Value;
+            if (cp < 0x80)
+                isBreak = IsAsciiWrapBreak((byte)cp);
+            else
+                isBreak = IsUnicodeWrapBreak(cp);
+
+            if (isBreak)
+            {
+                uint boundary = displayCol + charWidth;
+                if (!callback(boundary)) return;
+            }
+
+            havePrev = true;
+            prevClass = currentClass;
+            prevDisplayCol = displayCol;
+            prevCharWidth = charWidth;
+            displayCol += charWidth;
             pos += consumed;
         }
+    }
 
-        return (line, (uint)pos);
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static bool IsAsciiWrapBreak(byte b) => b switch
+    {
+        (byte)' ' or (byte)'\t' => true,
+        (byte)'-' => true,
+        (byte)'/' or (byte)'\\' => true,
+        (byte)'.' or (byte)',' or (byte)';' or (byte)':' or (byte)'!' or (byte)'?' => true,
+        (byte)'(' or (byte)')' or (byte)'[' or (byte)']' or (byte)'{' or (byte)'}' => true,
+        _ => false,
+    };
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static bool IsUnicodeWrapBreak(int cp) => cp switch
+    {
+        0x00A0 => true, 0x1680 => true,
+        >= 0x2000 and <= 0x200A => true,
+        0x202F => true, 0x205F => true, 0x3000 => true, 0x200B => true, 0x00AD => true,
+        0x2010 => true, 0x3001 => true, 0x3002 => true, 0xFF01 => true, 0xFF1F => true,
+        _ => false,
+    };
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static bool IsCjkAsciiTransition(WordClass prev, WordClass curr)
+        => (prev == WordClass.CjkWord && curr == WordClass.AsciiWord)
+        || (prev == WordClass.AsciiWord && curr == WordClass.CjkWord);
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    private static bool IsWordCodepoint(Rune rune)
+    {
+        var cls = WordBoundary.ClassifyWord(rune);
+        return cls == WordClass.AsciiWord || cls == WordClass.CjkWord;
     }
 
     #endregion
@@ -347,7 +448,7 @@ public sealed class ManagedEditBuffer : IDisposable
         return result;
     }
 
-    /// <summary>Converts line/col to a linear character offset.</summary>
+    /// <summary>Converts line/col (display columns) to a linear display-width offset.</summary>
     public uint? CoordsToOffset(uint line, uint col)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -357,13 +458,13 @@ public sealed class ManagedEditBuffer : IDisposable
         uint offset = 0;
         for (uint i = 0; i < line; i++)
         {
-            offset += _buffer.GetLineLength(i) + 1; // +1 for newline
+            offset += _buffer.LineWidthAt(i) + 1; // +1 for newline
         }
-        offset += Math.Min(col, _buffer.GetLineLength(line));
+        offset += Math.Min(col, _buffer.LineWidthAt(line));
         return offset;
     }
 
-    /// <summary>Converts linear offset back to line/col.</summary>
+    /// <summary>Converts linear display-width offset back to line/col (display columns).</summary>
     public (uint Line, uint Col)? OffsetToCoords(uint offset)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -372,24 +473,22 @@ public sealed class ManagedEditBuffer : IDisposable
 
         for (uint i = 0; i < lineCount; i++)
         {
-            uint lineLen = _buffer.GetLineLength(i);
-            uint lineLenWithNewline = lineLen + 1; // +1 for newline separator
-            if (remaining <= lineLen)
+            uint lineWidth = _buffer.LineWidthAt(i);
+            if (remaining <= lineWidth)
             {
                 return (i, remaining);
             }
             if (i + 1 >= lineCount)
             {
-                // Last line — clamp to end
-                return (i, lineLen);
+                return (i, lineWidth);
             }
-            remaining -= lineLenWithNewline;
+            remaining -= lineWidth + 1; // +1 for newline
         }
 
         return lineCount == 0 ? (0u, 0u) : null;
     }
 
-    /// <summary>Extracts text between two linear offsets.</summary>
+    /// <summary>Extracts text between two linear display-width offsets.</summary>
     public string GetTextRange(uint startOffset, uint endOffset)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -400,20 +499,27 @@ public sealed class ManagedEditBuffer : IDisposable
 
         if (startCoords is null || endCoords is null) return string.Empty;
 
-        var (startLine, startCol) = startCoords.Value;
-        var (endLine, endCol) = endCoords.Value;
+        var (startLine, startDisplayCol) = startCoords.Value;
+        var (endLine, endDisplayCol) = endCoords.Value;
 
-        return _buffer.GetTextRange(startLine, startCol, endLine, endCol);
+        // Convert display columns to char indices for the underlying text buffer
+        uint startCharCol = (uint)_buffer.DisplayColToCharIndex(startLine, startDisplayCol);
+        uint endCharCol = (uint)_buffer.DisplayColToCharIndex(endLine, endDisplayCol, roundUp: true);
+
+        return _buffer.GetTextRange(startLine, startCharCol, endLine, endCharCol);
     }
 
-    /// <summary>Gets a range of text by row/column coordinates.</summary>
+    /// <summary>Gets a range of text by row/column coordinates (display columns).</summary>
     public string GetTextRangeByCoords(uint startRow, uint startCol, uint endRow, uint endCol)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _buffer.GetTextRange(startRow, startCol, endRow, endCol);
+        // Convert display columns to char indices
+        uint startCharCol = (uint)_buffer.DisplayColToCharIndex(startRow, startCol);
+        uint endCharCol = (uint)_buffer.DisplayColToCharIndex(endRow, endCol, roundUp: true);
+        return _buffer.GetTextRange(startRow, startCharCol, endRow, endCharCol);
     }
 
-    /// <summary>Returns the total character count across all lines (including newlines).</summary>
+    /// <summary>Returns the total display width across all lines (including 1 per newline).</summary>
     public uint GetTotalLength()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -423,10 +529,9 @@ public sealed class ManagedEditBuffer : IDisposable
         uint total = 0;
         for (uint i = 0; i < lineCount; i++)
         {
-            total += _buffer.GetLineLength(i);
+            total += _buffer.LineWidthAt(i);
         }
-        // Add newlines between lines
-        total += lineCount - 1;
+        total += lineCount - 1; // newlines
         return total;
     }
 
@@ -435,7 +540,7 @@ public sealed class ManagedEditBuffer : IDisposable
     #region Text insertion
 
     /// <summary>
-    /// Inserts text at the given line and column.
+    /// Inserts text at the given line and column (display column).
     /// Stores an undo checkpoint before the mutation.
     /// </summary>
     public void InsertText(uint line, uint col, string text)
@@ -443,12 +548,13 @@ public sealed class ManagedEditBuffer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrEmpty(text)) return;
 
-        _buffer.StoreUndo("insert");
-        _buffer.InsertText(line, col, text);
+        uint charCol = (uint)_buffer.DisplayColToCharIndex(line, col);
+        _buffer.StoreUndo("edit");
+        _buffer.InsertText(line, charCol, text);
     }
 
     /// <summary>
-    /// Inserts UTF-8 encoded text at the given line and column.
+    /// Inserts UTF-8 encoded text at the given line and column (display column).
     /// Stores an undo checkpoint before the mutation.
     /// </summary>
     public void InsertText(uint line, uint col, ReadOnlySpan<byte> utf8Text)
@@ -461,15 +567,16 @@ public sealed class ManagedEditBuffer : IDisposable
     }
 
     /// <summary>
-    /// Inserts a newline at the given line and column, splitting the line.
+    /// Inserts a newline at the given line and column (display column), splitting the line.
     /// Stores an undo checkpoint before the mutation.
     /// </summary>
     public void InsertNewline(uint line, uint col)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _buffer.StoreUndo("newline");
-        _buffer.InsertText(line, col, "\n");
+        uint charCol = (uint)_buffer.DisplayColToCharIndex(line, col);
+        _buffer.StoreUndo("edit");
+        _buffer.InsertText(line, charCol, "\n");
     }
 
     #endregion
@@ -478,39 +585,44 @@ public sealed class ManagedEditBuffer : IDisposable
 
     /// <summary>
     /// Deletes a range of text from (startLine, startCol) to (endLine, endCol).
+    /// Columns are display columns, converted to char indices before deletion.
     /// Stores an undo checkpoint before the mutation.
     /// </summary>
     public void DeleteRange(uint startLine, uint startCol, uint endLine, uint endCol)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _buffer.StoreUndo("delete");
-        _buffer.DeleteRange(startLine, startCol, endLine, endCol);
+        uint startCharCol = (uint)_buffer.DisplayColToCharIndex(startLine, startCol);
+        uint endCharCol = (uint)_buffer.DisplayColToCharIndex(endLine, endCol, roundUp: true);
+        _buffer.StoreUndo("edit");
+        _buffer.DeleteRange(startLine, startCharCol, endLine, endCharCol);
     }
 
     /// <summary>
-    /// Deletes the character at the given cursor position (forward delete).
+    /// Deletes the character at the given cursor position (display column, forward delete).
     /// Stores an undo checkpoint before the mutation.
     /// </summary>
     public void DeleteChar(uint line, uint col)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        uint lineLen = _buffer.GetLineLength(line);
-        if (col >= lineLen)
+        uint lineDisplayWidth = _buffer.LineWidthAt(line);
+        if (col >= lineDisplayWidth)
         {
             // At end of line: merge with next line
             if (line + 1 < _buffer.LineCount)
             {
-                _buffer.StoreUndo("delete");
-                _buffer.DeleteRange(line, col, line + 1, 0);
+                uint charCol = (uint)_buffer.DisplayColToCharIndex(line, col);
+                _buffer.StoreUndo("edit");
+                _buffer.DeleteRange(line, charCol, line + 1, 0);
             }
             return;
         }
 
-        // Delete one character at the cursor position
+        // Delete one character at the cursor position (display col → char index)
         string lineText = _buffer.GetLineText(line);
-        int charIndex = (int)Math.Min(col, (uint)lineText.Length);
+        byte tabWidth = _buffer.TabWidth;
+        int charIndex = ManagedTextBuffer.DisplayColToCharIndex(lineText, col, tabWidth);
         if (charIndex >= lineText.Length) return;
 
         // Determine the end of the character (could be multi-codepoint)
@@ -521,12 +633,12 @@ public sealed class ManagedEditBuffer : IDisposable
             consumed = 1;
         }
 
-        _buffer.StoreUndo("delete");
-        _buffer.DeleteRange(line, col, line, col + (uint)consumed);
+        _buffer.StoreUndo("edit");
+        _buffer.DeleteRange(line, (uint)charIndex, line, (uint)(charIndex + consumed));
     }
 
     /// <summary>
-    /// Deletes the character before the given cursor position (backspace).
+    /// Deletes the character before the given cursor position (display column, backspace).
     /// Stores an undo checkpoint before the mutation.
     /// </summary>
     public void DeleteCharBefore(uint line, uint col)
@@ -535,40 +647,93 @@ public sealed class ManagedEditBuffer : IDisposable
 
         if (col > 0)
         {
-            // Delete the character before the cursor
+            // Convert display col to char index
             string lineText = _buffer.GetLineText(line);
-            int charIndex = (int)Math.Min(col, (uint)lineText.Length);
+            byte tabWidth = _buffer.TabWidth;
+            int charIndex = ManagedTextBuffer.DisplayColToCharIndex(lineText, col, tabWidth);
 
-            // Find the start of the previous character
-            int prevStart = charIndex - 1;
-            if (prevStart >= 0 && char.IsLowSurrogate(lineText[prevStart]) && prevStart > 0)
-                prevStart--; // Skip back past high surrogate
+            int deleteStart, deleteEnd;
 
-            _buffer.StoreUndo("backspace");
-            _buffer.DeleteRange(line, (uint)prevStart, line, col);
+            if (_buffer.WidthMethod == WidthMethod.Unicode)
+            {
+                // Unicode mode: delete entire grapheme cluster (emoji sequences, ZWJ, etc.)
+                var clusterStarts = System.Globalization.StringInfo.ParseCombiningCharacters(lineText);
+
+                int clusterIdx = -1;
+                for (int i = 0; i < clusterStarts.Length; i++)
+                {
+                    if (clusterStarts[i] >= charIndex) break;
+                    clusterIdx = i;
+                }
+
+                if (clusterIdx >= 0)
+                {
+                    deleteStart = clusterStarts[clusterIdx];
+                    deleteEnd = (clusterIdx + 1 < clusterStarts.Length)
+                        ? clusterStarts[clusterIdx + 1]
+                        : lineText.Length;
+                }
+                else
+                {
+                    deleteStart = StepBackOneRune(lineText, charIndex);
+                    deleteEnd = charIndex;
+                }
+            }
+            else
+            {
+                // Wcwidth mode: delete one visible rune, plus any trailing zero-width
+                // chars (ZWJ, variation selectors) that connect it to the next char
+                deleteEnd = charIndex;
+                deleteStart = StepBackOneRune(lineText, charIndex);
+
+                // Extend forward past any trailing zero-width runes
+                while (deleteEnd < lineText.Length)
+                {
+                    if (Rune.DecodeFromUtf16(lineText.AsSpan(deleteEnd), out var trailRune, out int trailConsumed)
+                        != System.Buffers.OperationStatus.Done)
+                        break;
+                    if (TextWidth.CharWidth(trailRune, tabWidth) > 0) break;
+                    deleteEnd += trailConsumed;
+                }
+            }
+
+            _buffer.StoreUndo("edit");
+            _buffer.DeleteRange(line, (uint)deleteStart, line, (uint)deleteEnd);
         }
         else if (line > 0)
         {
             // At start of line: merge with previous line
-            uint prevLineLen = _buffer.GetLineLength(line - 1);
-            _buffer.StoreUndo("backspace");
-            _buffer.DeleteRange(line - 1, prevLineLen, line, 0);
+            uint prevLineCharLen = _buffer.GetLineLength(line - 1);
+            _buffer.StoreUndo("edit");
+            _buffer.DeleteRange(line - 1, prevLineCharLen, line, 0);
         }
     }
 
+    /// <summary>Steps back one rune from the given char index in the string.</summary>
+    private static int StepBackOneRune(string text, int charIndex)
+    {
+        if (charIndex <= 0) return 0;
+        charIndex--;
+        if (charIndex > 0 && char.IsLowSurrogate(text[charIndex]))
+            charIndex--; // Skip past high surrogate
+        return charIndex;
+    }
+
     /// <summary>
-    /// Replaces a range of text with new text.
+    /// Replaces a range of text with new text (display columns).
     /// Stores an undo checkpoint before the mutation.
     /// </summary>
     public void ReplaceRange(uint startLine, uint startCol, uint endLine, uint endCol, string text)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        _buffer.StoreUndo("replace");
-        _buffer.DeleteRange(startLine, startCol, endLine, endCol);
+        uint startCharCol = (uint)_buffer.DisplayColToCharIndex(startLine, startCol);
+        uint endCharCol = (uint)_buffer.DisplayColToCharIndex(endLine, endCol, roundUp: true);
+        _buffer.StoreUndo("edit");
+        _buffer.DeleteRange(startLine, startCharCol, endLine, endCharCol);
         if (!string.IsNullOrEmpty(text))
         {
-            _buffer.InsertText(startLine, startCol, text);
+            _buffer.InsertText(startLine, startCharCol, text);
         }
     }
 
@@ -582,14 +747,17 @@ public sealed class ManagedEditBuffer : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (string.IsNullOrEmpty(text)) return;
 
-        _buffer.StoreUndo("insert");
-        _buffer.InsertText(_cursorLine, _cursorCol, text);
+        // Convert display col → char index for the underlying buffer
+        uint charCol = (uint)_buffer.DisplayColToCharIndex(_cursorLine, _cursorCol);
+        _buffer.StoreUndo("edit");
+        _buffer.InsertText(_cursorLine, charCol, text);
 
-        // Advance cursor past inserted text
+        // Advance cursor past inserted text using display widths
+        byte tabWidth = _buffer.TabWidth;
         int lastNewline = text.LastIndexOf('\n');
         if (lastNewline < 0)
         {
-            _cursorCol += (uint)text.Length;
+            _cursorCol += ManagedTextBuffer.ComputeDisplayWidth(text.AsSpan(), tabWidth);
         }
         else
         {
@@ -599,7 +767,8 @@ public sealed class ManagedEditBuffer : IDisposable
                 if (ch == '\n') newlineCount++;
             }
             _cursorLine += newlineCount;
-            _cursorCol = (uint)(text.Length - lastNewline - 1);
+            ReadOnlySpan<char> lastLineText = text.AsSpan(lastNewline + 1);
+            _cursorCol = ManagedTextBuffer.ComputeDisplayWidth(lastLineText, tabWidth);
         }
         CursorChanged?.Invoke();
     }
@@ -614,7 +783,7 @@ public sealed class ManagedEditBuffer : IDisposable
     public void ReplaceText(string text)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _buffer.StoreUndo("replace");
+        _buffer.StoreUndo("edit");
         _buffer.Clear();
         if (!string.IsNullOrEmpty(text))
             _buffer.SetText(text);
@@ -623,11 +792,12 @@ public sealed class ManagedEditBuffer : IDisposable
         CursorChanged?.Invoke();
     }
 
-    /// <summary>Sets the entire text content, replacing any existing content.</summary>
+    /// <summary>Sets the entire text content, replacing any existing content and clearing undo history.</summary>
     public void SetText(string text)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         _buffer.Clear();
+        _buffer.ClearHistory();
         if (!string.IsNullOrEmpty(text))
             _buffer.SetText(text);
         _cursorLine = 0;
@@ -661,19 +831,15 @@ public sealed class ManagedEditBuffer : IDisposable
 
         if (_cursorCol > 0)
         {
-            // Move cursor back by one character
+            // Move cursor back by one visible character (in display columns)
             string lineText = _buffer.GetLineText(_cursorLine);
-            int charIndex = (int)Math.Min(_cursorCol, (uint)lineText.Length);
-            int prevStart = charIndex - 1;
-            if (prevStart >= 0 && char.IsLowSurrogate(lineText[prevStart]) && prevStart > 0)
-                prevStart--;
-
-            _cursorCol = (uint)prevStart;
+            byte tabWidth = _buffer.TabWidth;
+            _cursorCol = FindPrevVisibleCharCol(lineText, _cursorCol, tabWidth);
         }
         else if (_cursorLine > 0)
         {
             _cursorLine--;
-            _cursorCol = _buffer.GetLineLength(_cursorLine);
+            _cursorCol = _buffer.LineWidthAt(_cursorLine);
         }
         else
         {
@@ -691,31 +857,28 @@ public sealed class ManagedEditBuffer : IDisposable
         uint lineCount = _buffer.LineCount;
         if (lineCount == 0) return;
 
-        _buffer.StoreUndo("delete-line");
+        _buffer.StoreUndo("edit");
 
         if (lineCount == 1)
         {
-            // Only line — clear it
-            uint lineLen = _buffer.GetLineLength(0);
-            if (lineLen > 0)
-                _buffer.DeleteRange(0, 0, 0, lineLen);
+            uint lineCharLen = _buffer.GetLineLength(0);
+            if (lineCharLen > 0)
+                _buffer.DeleteRange(0, 0, 0, lineCharLen);
             _cursorLine = 0;
             _cursorCol = 0;
         }
         else if (_cursorLine + 1 < lineCount)
         {
-            // Not the last line — delete line including its trailing newline
             _buffer.DeleteRange(_cursorLine, 0, _cursorLine + 1, 0);
-            // Cursor stays on same line number, clamp col
-            _cursorCol = Math.Min(_cursorCol, _buffer.GetLineLength(_cursorLine));
+            _cursorCol = Math.Min(_cursorCol, _buffer.LineWidthAt(_cursorLine));
         }
         else
         {
-            // Last line — delete the newline before it and the line itself
-            uint lineLen = _buffer.GetLineLength(_cursorLine);
-            _buffer.DeleteRange(_cursorLine - 1, _buffer.GetLineLength(_cursorLine - 1), _cursorLine, lineLen);
+            uint lineCharLen = _buffer.GetLineLength(_cursorLine);
+            uint prevLineCharLen = _buffer.GetLineLength(_cursorLine - 1);
+            _buffer.DeleteRange(_cursorLine - 1, prevLineCharLen, _cursorLine, lineCharLen);
             _cursorLine--;
-            _cursorCol = Math.Min(_cursorCol, _buffer.GetLineLength(_cursorLine));
+            _cursorCol = Math.Min(_cursorCol, _buffer.LineWidthAt(_cursorLine));
         }
         CursorChanged?.Invoke();
     }
@@ -727,8 +890,11 @@ public sealed class ManagedEditBuffer : IDisposable
         var (boundLine, boundCol) = GetPrevWordBoundary();
         if (boundLine == _cursorLine && boundCol == _cursorCol) return;
 
-        _buffer.StoreUndo("delete-word-left");
-        _buffer.DeleteRange(boundLine, boundCol, _cursorLine, _cursorCol);
+        // Convert display cols to char indices for deletion
+        uint boundCharCol = (uint)_buffer.DisplayColToCharIndex(boundLine, boundCol);
+        uint curCharCol = (uint)_buffer.DisplayColToCharIndex(_cursorLine, _cursorCol, roundUp: true);
+        _buffer.StoreUndo("edit");
+        _buffer.DeleteRange(boundLine, boundCharCol, _cursorLine, curCharCol);
         _cursorLine = boundLine;
         _cursorCol = boundCol;
         CursorChanged?.Invoke();
@@ -741,8 +907,10 @@ public sealed class ManagedEditBuffer : IDisposable
         var (boundLine, boundCol) = GetNextWordBoundary();
         if (boundLine == _cursorLine && boundCol == _cursorCol) return;
 
-        _buffer.StoreUndo("delete-word-right");
-        _buffer.DeleteRange(_cursorLine, _cursorCol, boundLine, boundCol);
+        uint curCharCol = (uint)_buffer.DisplayColToCharIndex(_cursorLine, _cursorCol);
+        uint boundCharCol = (uint)_buffer.DisplayColToCharIndex(boundLine, boundCol, roundUp: true);
+        _buffer.StoreUndo("edit");
+        _buffer.DeleteRange(_cursorLine, curCharCol, boundLine, boundCharCol);
         // Cursor stays at current position
         CursorChanged?.Invoke();
     }
@@ -765,7 +933,7 @@ public sealed class ManagedEditBuffer : IDisposable
         string text = view.GetSelectedText();
         var (start, end) = view.GetSelectionCursorRange();
 
-        _buffer.StoreUndo("cut");
+        _buffer.StoreUndo("edit");
         _buffer.DeleteRange(start.Row, start.Col, end.Row, end.Col);
 
         view.ClearSelection();
@@ -797,7 +965,7 @@ public sealed class ManagedEditBuffer : IDisposable
         ArgumentNullException.ThrowIfNull(view);
         if (string.IsNullOrEmpty(text)) return;
 
-        _buffer.StoreUndo("paste");
+        _buffer.StoreUndo("edit");
 
         if (view.HasSelection)
         {
@@ -827,14 +995,18 @@ public sealed class ManagedEditBuffer : IDisposable
     public string Undo()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _buffer.Undo() ?? string.Empty;
+        var result = _buffer.Undo("current") ?? string.Empty;
+        if (result.Length > 0) ClampCursor();
+        return result;
     }
 
     /// <summary>Redoes the last undone operation. Returns the redo description, or empty if unavailable.</summary>
     public string Redo()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _buffer.Redo() ?? string.Empty;
+        var result = _buffer.Redo() ?? string.Empty;
+        if (result.Length > 0) ClampCursor();
+        return result;
     }
 
     /// <summary>
@@ -874,6 +1046,58 @@ public sealed class ManagedEditBuffer : IDisposable
 
     #endregion
 
+    #region Character width helpers
+
+    /// <summary>
+    /// Walk backwards from <paramref name="displayCol"/> to find the display column of the
+    /// previous visible character's start. Skips zero-width chars (ZWJ, combining marks).
+    /// </summary>
+    private static uint FindPrevVisibleCharCol(string lineText, uint displayCol, byte tabWidth)
+    {
+        uint col = 0;
+        uint lastVisibleCol = 0;
+        foreach (var rune in lineText.EnumerateRunes())
+        {
+            uint w = TextWidth.CharWidth(rune, tabWidth);
+            uint nextCol = col + w;
+            if (nextCol > displayCol || (nextCol == displayCol && w > 0))
+            {
+                // Cursor is strictly inside this wide char (between start and end)
+                if (nextCol > displayCol && col < displayCol && w > 1)
+                    return lastVisibleCol;
+                return w > 0 ? col : lastVisibleCol;
+            }
+            if (w > 0) lastVisibleCol = col;
+            col = nextCol;
+        }
+        return lastVisibleCol;
+    }
+
+    /// <summary>
+    /// Walk forward from <paramref name="displayCol"/> to find the display column just after
+    /// the next visible character. Skips zero-width chars (ZWJ, combining marks).
+    /// </summary>
+    private static uint FindNextVisibleCharCol(string lineText, uint displayCol, byte tabWidth)
+    {
+        uint col = 0;
+        bool passedCursor = false;
+        foreach (var rune in lineText.EnumerateRunes())
+        {
+            uint w = TextWidth.CharWidth(rune, tabWidth);
+            if (passedCursor && w > 0)
+                return col + w;
+            // Handle cursor inside wide character: col < displayCol but col+w > displayCol
+            if (!passedCursor && (col >= displayCol || (w > 0 && col + w > displayCol)))
+                passedCursor = true;
+            if (passedCursor && w > 0)
+                return col + w;
+            col += w;
+        }
+        return col;
+    }
+
+    #endregion
+
     #region Dispose
 
     /// <inheritdoc />
@@ -891,16 +1115,40 @@ public sealed class ManagedEditBuffer : IDisposable
     #region Private helpers
 
     /// <summary>
+    /// Clamps the cursor to valid line/column after an undo or redo that may have changed buffer content.
+    /// </summary>
+    private void ClampCursor()
+    {
+        uint lineCount = _buffer.LineCount;
+        if (lineCount == 0)
+        {
+            _cursorLine = 0;
+            _cursorCol = 0;
+        }
+        else
+        {
+            if (_cursorLine >= lineCount)
+                _cursorLine = lineCount - 1;
+            uint lineWidth = _buffer.LineWidthAt(_cursorLine);
+            if (_cursorCol > lineWidth)
+                _cursorCol = lineWidth;
+        }
+        CursorChanged?.Invoke();
+    }
+
+    /// <summary>
     /// Positions the cursor after inserted text, accounting for newlines within the text.
     /// </summary>
     private static void PositionCursorAfterInsert(ManagedTextBufferView view, uint startLine, uint startCol, string text)
     {
+        byte tabWidth = view.Buffer.TabWidth;
         // Count newlines in the inserted text
         int lastNewline = text.LastIndexOf('\n');
         if (lastNewline < 0)
         {
-            // No newlines: cursor moves right by text length
-            view.SetCursor(startLine, startCol + (uint)text.Length);
+            // No newlines: cursor moves right by display width of text
+            uint displayWidth = ManagedTextBuffer.ComputeDisplayWidth(text.AsSpan(), tabWidth);
+            view.SetCursor(startLine, startCol + displayWidth);
         }
         else
         {
@@ -910,7 +1158,8 @@ public sealed class ManagedEditBuffer : IDisposable
             {
                 if (ch == '\n') newlineCount++;
             }
-            uint colAfterLastNewline = (uint)(text.Length - lastNewline - 1);
+            string afterLastNewline = text.Substring(lastNewline + 1);
+            uint colAfterLastNewline = ManagedTextBuffer.ComputeDisplayWidth(afterLastNewline.AsSpan(), tabWidth);
             view.SetCursor(startLine + newlineCount, colAfterLastNewline);
         }
     }

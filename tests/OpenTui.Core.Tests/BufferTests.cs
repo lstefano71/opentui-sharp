@@ -516,14 +516,14 @@ public class BufferTests : IDisposable
     #region Raw Pointers (advanced)
 
     [Fact]
-    public void RawPointerAccessDoesNotCrash()
+    public void SafeAccessorsReturnValidData()
     {
         using var buf = OptimizedBuffer.Create(10, 5);
         buf.Clear(Black);
-        Assert.NotEqual(nint.Zero, buf.GetCharPtr());
-        Assert.NotEqual(nint.Zero, buf.GetFgPtr());
-        Assert.NotEqual(nint.Zero, buf.GetBgPtr());
-        Assert.NotEqual(nint.Zero, buf.GetAttributesPtr());
+        Assert.True(buf.GetChars().Length > 0);
+        Assert.True(buf.GetFgColors().Length > 0);
+        Assert.True(buf.GetBgColors().Length > 0);
+        Assert.True(buf.GetAttributes().Length > 0);
     }
 
     #endregion

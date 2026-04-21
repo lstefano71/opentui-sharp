@@ -16,12 +16,8 @@ public sealed class SliderRenderableTests : IDisposable
 
     private void RenderFrame() => _renderer.RenderTestFrame();
 
-    private static unsafe uint ReadCellChar(OptimizedBuffer buf, uint x, uint y)
-    {
-        nint charPtr = buf.GetCharPtr();
-        int offset = (int)(y * buf.Width + x);
-        return ((uint*)charPtr)[offset];
-    }
+    private static uint ReadCellChar(OptimizedBuffer buf, uint x, uint y) =>
+        buf.GetCharAt(x, y);
 
     /// <summary>
     /// Regression: ViewPortSize setter used Math.Clamp(value, 0.01f, _max - _min)

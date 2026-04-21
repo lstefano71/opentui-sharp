@@ -82,18 +82,11 @@ public sealed class TextBufferView : IDisposable
         _managed.GetSelectionInfo();
 
     /// <summary>Gets the current selection range, or null when no selection is active.</summary>
-    public (uint Start, uint End)? GetSelectionRange()
-    {
-        const ulong noSelection = 0xffff_ffff_ffff_ffffUL;
-        ulong packed = GetSelectionInfo();
-        if (packed == noSelection)
-            return null;
-
-        return ((uint)(packed >> 32), (uint)(packed & 0xffff_ffff));
-    }
+    public (uint Start, uint End)? GetSelectionRange() =>
+        _managed.GetSelectionRange();
 
     /// <summary>Returns true when the text buffer view currently has an active selection.</summary>
-    public bool HasSelection() => GetSelectionRange() is not null;
+    public bool HasSelection() => _managed.HasSelection;
 
     /// <summary>Sets a local (visual coordinate) selection with selection colors.</summary>
     public bool SetLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null) =>

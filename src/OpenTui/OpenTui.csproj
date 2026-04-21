@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\OpenTui.Native\OpenTui.Native.csproj" />
+    <ProjectReference Include="..\OpenTui.Core\OpenTui.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

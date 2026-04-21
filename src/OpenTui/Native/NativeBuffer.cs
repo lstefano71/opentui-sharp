@@ -1,98 +1,75 @@
-using OpenTui.Native;
+using System.Runtime.CompilerServices;
+using CoreBuffer = OpenTui.Core.OptimizedBuffer;
+using CoreBorderChars = OpenTui.Core.BorderCharacters;
+using CoreBorderSides = OpenTui.Core.BorderSides;
+using CoreTitleAlignment = OpenTui.Core.TitleAlignment;
 
 namespace OpenTui;
 
 /// <summary>High-level wrapper around the native OpenTUI optimized buffer.</summary>
 public sealed class NativeBuffer : IDisposable
 {
-    // Owned handle for buffers created by the user; null for borrowed buffers from the renderer.
-    private readonly BufferHandle? _ownedHandle;
-    private readonly nint _ptr;
+    internal readonly CoreBuffer _core;
+    private readonly bool _ownsCore;
     private bool _disposed;
 
     /// <summary>Creates a new owned optimized buffer.</summary>
     public NativeBuffer(uint width, uint height, bool respectAlpha = false, byte widthMethod = 0, string? id = null)
     {
-        var utf8Id = new Utf8String(id);
-        nint ptr = nint.Zero;
-        utf8Id.WithPtr((idPtr, idLen) =>
-            ptr = OpenTuiNative.CreateOptimizedBuffer(width, height, respectAlpha, widthMethod, idPtr, idLen));
-
-        _ownedHandle = new BufferHandle();
-        _ownedHandle.SetHandleValue(ptr);
-        _ptr = ptr;
+        _core = CoreBuffer.Create(width, height, id: id);
+        _core.RespectAlpha = respectAlpha;
+        _ownsCore = true;
     }
 
     /// <summary>Creates a borrowed (non-owning) buffer wrapper. The caller must not dispose.</summary>
-    internal NativeBuffer(nint ptr)
+    internal NativeBuffer(CoreBuffer core)
     {
-        _ptr = ptr;
-        _ownedHandle = null;
-    }
-
-    internal nint Handle
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _ownedHandle?.DangerousGetHandle() ?? _ptr;
-        }
+        _core = core;
+        _ownsCore = false;
     }
 
     /// <summary>Gets the width of the buffer in columns.</summary>
-    public uint Width => OpenTuiNative.GetBufferWidth(Handle);
+    public uint Width => _core.Width;
 
     /// <summary>Gets the height of the buffer in rows.</summary>
-    public uint Height => OpenTuiNative.GetBufferHeight(Handle);
+    public uint Height => _core.Height;
 
     /// <summary>Gets whether the buffer respects alpha transparency.</summary>
     public bool RespectAlpha
     {
-        get => OpenTuiNative.BufferGetRespectAlpha(Handle);
-        set => OpenTuiNative.BufferSetRespectAlpha(Handle, value);
+        get => _core.RespectAlpha;
+        set => _core.RespectAlpha = value;
     }
 
     /// <summary>Gets the real character size accounting for wide/combining characters.</summary>
-    public uint RealCharSize => OpenTuiNative.BufferGetRealCharSize(Handle);
+    public uint RealCharSize => _core.RealCharSize;
 
     /// <summary>Gets the current effective opacity value.</summary>
-    public float CurrentOpacity => OpenTuiNative.BufferGetCurrentOpacity(Handle);
+    public float CurrentOpacity => _core.CurrentOpacity;
 
     /// <summary>Clears the entire buffer, filling with the specified background color (default: transparent).</summary>
-    public void Clear(Rgba? bgColor = null)
-    {
-        var color = bgColor ?? Rgba.Transparent;
-        RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.BufferClear(Handle, ptr));
-    }
+    public void Clear(Rgba? bgColor = null) =>
+        _core.Clear(ToCore(bgColor ?? Rgba.Transparent));
 
     /// <summary>Sets a single cell in the buffer.</summary>
     public void SetCell(uint x, uint y, uint codepoint, Rgba fg, Rgba bg, TextAttribute attrs = TextAttribute.None) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferSetCell(Handle, x, y, codepoint, fgPtr, bgPtr, (uint)attrs));
+        _core.SetCell(x, y, codepoint, ToCore(fg), ToCore(bg), (OpenTui.Core.TextAttributes)(uint)attrs);
 
     /// <summary>Sets a single cell with alpha blending applied.</summary>
     public void SetCellWithAlphaBlending(uint x, uint y, uint codepoint, Rgba fg, Rgba bg, TextAttribute attrs = TextAttribute.None) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferSetCellWithAlphaBlending(Handle, x, y, codepoint, fgPtr, bgPtr, (uint)attrs));
+        _core.SetCellWithAlphaBlending(x, y, codepoint, ToCore(fg), ToCore(bg), (OpenTui.Core.TextAttributes)(uint)attrs);
 
     /// <summary>Draws a single character at the specified cell position with styling.</summary>
     public void DrawChar(uint x, uint y, uint codepoint, Rgba fg, Rgba bg, TextAttribute attrs = TextAttribute.None) =>
-        RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-            OpenTuiNative.BufferDrawChar(Handle, codepoint, x, y, fgPtr, bgPtr, (uint)attrs));
+        _core.DrawChar(codepoint, x, y, ToCore(fg), ToCore(bg), (OpenTui.Core.TextAttributes)(uint)attrs);
 
     /// <summary>Fills a rectangular region with the specified color.</summary>
     public void FillRect(uint x, uint y, uint w, uint h, Rgba color) =>
-        RgbaMarshalling.WithColorPtr(color, ptr =>
-            OpenTuiNative.BufferFillRect(Handle, x, y, w, h, ptr));
+        _core.FillRect(x, y, w, h, ToCore(color));
 
     /// <summary>Draws a UTF-8 text string into the buffer at the given position with styling.</summary>
-    public void DrawText(string text, uint x, uint y, Rgba fg, Rgba? bg = null, TextAttribute attrs = TextAttribute.None)
-    {
-        var utf8 = new Utf8String(text);
-        utf8.WithPtr((textPtr, textLen) =>
-            RgbaMarshalling.WithColorPtrs(fg, bg ?? Rgba.Transparent, (fgPtr, bgPtr) =>
-                OpenTuiNative.BufferDrawText(Handle, textPtr, (uint)textLen, x, y, fgPtr, bgPtr, (uint)attrs)));
-    }
+    public void DrawText(string text, uint x, uint y, Rgba fg, Rgba? bg = null, TextAttribute attrs = TextAttribute.None) =>
+        _core.DrawText(text, x, y, ToCore(fg), bg.HasValue ? ToCore(bg.Value) : null, (OpenTui.Core.TextAttributes)(uint)attrs);
 
     /// <summary>Draws a box with optional border, background fill, and title text.</summary>
     public void DrawBox(int x, int y, uint w, uint h, BorderCharacters? borderChars = null,
@@ -102,106 +79,118 @@ public sealed class NativeBuffer : IDisposable
         string? bottomTitle = null, TitleAlignment bottomTitleAlignment = TitleAlignment.Left)
     {
         var chars = borderChars ?? BorderCharacters.Single;
-        uint[] codePoints = chars.ToCodePoints();
-
-        // Pack options bitfield
-        uint packed = 0;
-        if (borderTop) packed |= 0b1000;
-        if (borderRight) packed |= 0b0100;
-        if (borderBottom) packed |= 0b0010;
-        if (borderLeft) packed |= 0b0001;
-        if (shouldFill) packed |= 1u << 4;
-        packed |= (uint)titleAlignment << 5;
-        packed |= (uint)bottomTitleAlignment << 7;
-
-        Span<float> borderRgba = [
-            (borderColor ?? Rgba.White).R, (borderColor ?? Rgba.White).G,
-            (borderColor ?? Rgba.White).B, (borderColor ?? Rgba.White).A
-        ];
-        Span<float> bgRgba = [
-            (backgroundColor ?? Rgba.Transparent).R, (backgroundColor ?? Rgba.Transparent).G,
-            (backgroundColor ?? Rgba.Transparent).B, (backgroundColor ?? Rgba.Transparent).A
-        ];
-
-        byte[]? titleBytes = title != null ? System.Text.Encoding.UTF8.GetBytes(title) : null;
-        byte[]? bottomTitleBytes = bottomTitle != null ? System.Text.Encoding.UTF8.GetBytes(bottomTitle) : null;
-
-        unsafe
+        var coreBorderChars = new CoreBorderChars
         {
-            fixed (uint* charsPtr = codePoints)
-            fixed (float* borderColorPtr = borderRgba)
-            fixed (float* bgColorPtr = bgRgba)
-            fixed (byte* titlePtr = titleBytes)
-            fixed (byte* bottomTitlePtr = bottomTitleBytes)
-            {
-                OpenTuiNative.BufferDrawBox(Handle, x, y, w, h,
-                    (nint)charsPtr, packed,
-                    (nint)borderColorPtr, (nint)bgColorPtr,
-                    titleBytes != null ? (nint)titlePtr : 0, (uint)(titleBytes?.Length ?? 0),
-                    bottomTitleBytes != null ? (nint)bottomTitlePtr : 0, (uint)(bottomTitleBytes?.Length ?? 0));
-            }
-        }
+            TopLeft = chars.TopLeft, TopRight = chars.TopRight,
+            BottomLeft = chars.BottomLeft, BottomRight = chars.BottomRight,
+            Horizontal = chars.Horizontal, Vertical = chars.Vertical,
+            TopT = chars.TopT, BottomT = chars.BottomT,
+            LeftT = chars.LeftT, RightT = chars.RightT,
+            Cross = chars.Cross,
+        };
+
+        var sides = CoreBorderSides.None;
+        if (borderTop) sides |= CoreBorderSides.Top;
+        if (borderRight) sides |= CoreBorderSides.Right;
+        if (borderBottom) sides |= CoreBorderSides.Bottom;
+        if (borderLeft) sides |= CoreBorderSides.Left;
+
+        _core.DrawBox(x, y, w, h, coreBorderChars, sides, shouldFill,
+            borderColor.HasValue ? ToCore(borderColor.Value) : null,
+            backgroundColor.HasValue ? ToCore(backgroundColor.Value) : null,
+            title, (CoreTitleAlignment)titleAlignment,
+            bottomTitle, (CoreTitleAlignment)bottomTitleAlignment);
     }
 
     /// <summary>Draws a region from a source buffer into this buffer at the specified position.</summary>
     public void DrawFrameBuffer(int x, int y, NativeBuffer source, uint srcX, uint srcY, uint w, uint h) =>
-        OpenTuiNative.DrawFrameBuffer(Handle, x, y, source.Handle, srcX, srcY, w, h);
+        _core.DrawFrameBuffer(x, y, source._core, srcX, srcY, w, h);
 
     /// <summary>Draws a text buffer view into this buffer.</summary>
+    [Obsolete("Use the Core layer TextBufferView directly.")]
     public void DrawTextBufferView(nint textBufferView, int x, int y) =>
-        OpenTuiNative.BufferDrawTextBufferView(Handle, textBufferView, x, y);
+        throw new NotSupportedException("Direct nint-based DrawTextBufferView is not supported in managed mode.");
 
     /// <summary>Draws an editor view into this buffer.</summary>
+    [Obsolete("Use the Core layer EditorView directly.")]
     public void DrawEditorView(nint editorView, int x, int y) =>
-        OpenTuiNative.BufferDrawEditorView(Handle, editorView, x, y);
+        throw new NotSupportedException("Direct nint-based DrawEditorView is not supported in managed mode.");
 
     /// <summary>Pushes a scissor (clipping) rectangle onto the buffer's clip stack.</summary>
     public void PushScissor(int x, int y, uint w, uint h) =>
-        OpenTuiNative.BufferPushScissorRect(Handle, x, y, w, h);
+        _core.PushScissorRect(x, y, w, h);
 
     /// <summary>Pops the most recent scissor rectangle from the buffer's clip stack.</summary>
     public void PopScissor() =>
-        OpenTuiNative.BufferPopScissorRect(Handle);
+        _core.PopScissorRect();
 
     /// <summary>Clears all scissor rectangles from the buffer's clip stack.</summary>
     public void ClearScissors() =>
-        OpenTuiNative.BufferClearScissorRects(Handle);
+        _core.ClearScissorRects();
 
     /// <summary>Pushes an opacity value onto the buffer's opacity stack.</summary>
     public void PushOpacity(float opacity) =>
-        OpenTuiNative.BufferPushOpacity(Handle, opacity);
+        _core.PushOpacity(opacity);
 
     /// <summary>Pops the most recent opacity value from the buffer's opacity stack.</summary>
     public void PopOpacity() =>
-        OpenTuiNative.BufferPopOpacity(Handle);
+        _core.PopOpacity();
 
     /// <summary>Clears the entire opacity stack, resetting to full opacity.</summary>
     public void ClearOpacity() =>
-        OpenTuiNative.BufferClearOpacity(Handle);
+        _core.ClearOpacity();
 
     /// <summary>Resizes the buffer to new dimensions.</summary>
     public void Resize(uint w, uint h) =>
-        OpenTuiNative.BufferResize(Handle, w, h);
+        _core.Resize(w, h);
+
+    /// <summary>Gets the character codepoint at the specified cell position.</summary>
+    public uint GetCharAt(uint x, uint y) => _core.GetCharAt(x, y);
+
+    /// <summary>Gets the foreground color at the specified cell position.</summary>
+    public Rgba GetFgAt(uint x, uint y) => FromCore(_core.GetFgAt(x, y));
+
+    /// <summary>Gets the background color at the specified cell position.</summary>
+    public Rgba GetBgAt(uint x, uint y) => FromCore(_core.GetBgAt(x, y));
+
+    /// <summary>Gets the cell attributes at the specified cell position.</summary>
+    public uint GetAttributesAt(uint x, uint y) => _core.GetAttributesAt(x, y);
 
     /// <summary>Gets a pointer to the buffer's character data array.</summary>
-    public nint GetCharPtr() => OpenTuiNative.BufferGetCharPtr(Handle);
+    [Obsolete("Use GetCharAt() instead. Raw pointer access is not supported in managed mode.")]
+    public nint GetCharPtr() =>
+        throw new NotSupportedException("Raw pointer access is not supported in managed mode. Use GetCharAt() instead.");
 
     /// <summary>Gets a pointer to the buffer's foreground color data array.</summary>
-    public nint GetFgPtr() => OpenTuiNative.BufferGetFgPtr(Handle);
+    [Obsolete("Use GetFgAt() instead. Raw pointer access is not supported in managed mode.")]
+    public nint GetFgPtr() =>
+        throw new NotSupportedException("Raw pointer access is not supported in managed mode. Use GetFgAt() instead.");
 
     /// <summary>Gets a pointer to the buffer's background color data array.</summary>
-    public nint GetBgPtr() => OpenTuiNative.BufferGetBgPtr(Handle);
+    [Obsolete("Use GetBgAt() instead. Raw pointer access is not supported in managed mode.")]
+    public nint GetBgPtr() =>
+        throw new NotSupportedException("Raw pointer access is not supported in managed mode. Use GetBgAt() instead.");
 
     /// <summary>Gets a pointer to the buffer's cell attributes array.</summary>
-    public nint GetAttributesPtr() => OpenTuiNative.BufferGetAttributesPtr(Handle);
+    [Obsolete("Use GetAttributesAt() instead. Raw pointer access is not supported in managed mode.")]
+    public nint GetAttributesPtr() =>
+        throw new NotSupportedException("Raw pointer access is not supported in managed mode. Use GetAttributesAt() instead.");
 
     /// <inheritdoc />
     public void Dispose()
     {
-        if (!_disposed && _ownedHandle is not null)
+        if (!_disposed && _ownsCore)
         {
             _disposed = true;
-            _ownedHandle.Dispose();
+            _core.Dispose();
         }
     }
+
+    // Type conversion helpers between OpenTui.Rgba and OpenTui.Core.Rgba.
+    // Both are LayoutKind.Sequential readonly record structs with identical fields (R, G, B, A).
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static OpenTui.Core.Rgba ToCore(Rgba c) => new(c.R, c.G, c.B, c.A);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static Rgba FromCore(OpenTui.Core.Rgba c) => new(c.R, c.G, c.B, c.A);
 }
