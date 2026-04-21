@@ -1,37 +1,21 @@
-using System.Runtime.InteropServices;
 using OpenTui.Core;
+using OpenTui.Core.Managed;
 using Xunit;
 
 namespace OpenTui.Core.Tests;
 
 /// <summary>
 /// C# xunit equivalents of the Zig native-span-feed tests.
-/// Exercises the NativeSpanFeed managed wrapper over the native opentui library.
-/// Tests that require internal Zig state (stateBuffer, span_ring head/tail),
-/// FailingAllocator, or markSpanConsumed for chunk reuse are not portable and are omitted.
+/// Exercises the NativeSpanFeed managed wrapper backed by ManagedSpanFeed.
 /// </summary>
 public class SpanFeedTests
 {
-    // Status codes matching Zig native-span-feed.zig Status struct
+    // Status codes matching ManagedSpanFeed constants
     private const int StatusOk = 0;
     private const int ErrNoSpace = -1;
     private const int ErrMaxBytes = -2;
     private const int ErrInvalid = -3;
     private const int ErrBusy = -5;
-
-    // EventId matching Zig native-span-feed.zig EventId enum
-    private const uint EventDataAvailable = 7;
-
-    /// <summary>Native layout matching Zig SpanInfo extern struct.</summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private struct SpanInfoNative
-    {
-        public nuint ChunkPtr;
-        public uint Offset;
-        public uint Len;
-        public uint ChunkIndex;
-        public uint Reserved;
-    }
 
     private static SpanFeedOptions TestOptions(uint chunkSize, uint initialChunks, bool autoCommit) =>
         new()
@@ -68,19 +52,17 @@ public class SpanFeedTests
 
     /// <summary>
     /// Drains all spans from the feed, returning the total byte count.
-    /// Note: markSpanConsumed is not available in the C# API, so chunks are not freed.
     /// </summary>
-    private static unsafe ulong DrainAllSpans(NativeSpanFeed feed)
+    private static ulong DrainAllSpans(NativeSpanFeed feed)
     {
-        const int maxSpans = 256;
-        SpanInfoNative* buf = stackalloc SpanInfoNative[maxSpans];
+        Span<SpanInfo> buf = stackalloc SpanInfo[256];
         ulong total = 0;
         while (true)
         {
-            uint count = feed.DrainSpans((nint)buf, maxSpans);
+            int count = feed.DrainSpans(buf);
             if (count == 0) break;
-            for (uint i = 0; i < count; i++)
-                total += buf[i].Len;
+            for (int i = 0; i < count; i++)
+                total += (ulong)buf[i].Length;
         }
         return total;
     }
@@ -88,16 +70,15 @@ public class SpanFeedTests
     /// <summary>
     /// Drains spans and returns the count of spans drained.
     /// </summary>
-    private static unsafe uint DrainSpanCount(NativeSpanFeed feed)
+    private static uint DrainSpanCount(NativeSpanFeed feed)
     {
-        const int maxSpans = 256;
-        SpanInfoNative* buf = stackalloc SpanInfoNative[maxSpans];
+        Span<SpanInfo> buf = stackalloc SpanInfo[256];
         uint totalCount = 0;
         while (true)
         {
-            uint count = feed.DrainSpans((nint)buf, maxSpans);
+            int count = feed.DrainSpans(buf);
             if (count == 0) break;
-            totalCount += count;
+            totalCount += (uint)count;
         }
         return totalCount;
     }
@@ -108,6 +89,19 @@ public class SpanFeedTests
         byte[] data = new byte[count];
         Array.Fill(data, value);
         return data;
+    }
+
+    /// <summary>Drains all spans and marks each as consumed to free chunk refcounts.</summary>
+    private static void DrainAndConsumeAll(NativeSpanFeed feed)
+    {
+        Span<SpanInfo> buf = stackalloc SpanInfo[256];
+        while (true)
+        {
+            int count = feed.DrainSpans(buf);
+            if (count == 0) break;
+            for (int i = 0; i < count; i++)
+                feed.MarkSpanConsumed(buf[i]);
+        }
     }
 
     #region Create / Destroy
@@ -222,7 +216,7 @@ public class SpanFeedTests
     }
 
     [Fact]
-    public unsafe void WrittenDataMatchesDrainedSpanContent()
+    public void WrittenDataMatchesDrainedSpanContent()
     {
         const uint chunkSize = 256;
         using var feed = NativeSpanFeed.Create(TestOptions(chunkSize, 2, false));
@@ -231,13 +225,11 @@ public class SpanFeedTests
         Assert.Equal(StatusOk, feed.Write(data));
         Assert.Equal(StatusOk, feed.Commit());
 
-        SpanInfoNative* buf = stackalloc SpanInfoNative[16];
-        uint count = feed.DrainSpans((nint)buf, 16);
-        Assert.Equal(1u, count);
+        Span<SpanInfo> buf = stackalloc SpanInfo[16];
+        int count = feed.DrainSpans(buf);
+        Assert.Equal(1, count);
 
-        var span = buf[0];
-        byte* basePtr = (byte*)span.ChunkPtr;
-        var slice = new ReadOnlySpan<byte>(basePtr + span.Offset, (int)span.Len);
+        var slice = feed.GetSpanData(buf[0]);
         Assert.Equal(data, System.Text.Encoding.UTF8.GetString(slice));
     }
 
@@ -453,7 +445,7 @@ public class SpanFeedTests
     }
 
     [Fact]
-    public unsafe void WriteExactlyFillsChunkThenWriteMoreNoAutoCommit()
+    public void WriteExactlyFillsChunkThenWriteMoreNoAutoCommit()
     {
         const uint chunkSize = 32;
         using var feed = NativeSpanFeed.Create(TestOptions(chunkSize, 2, false));
@@ -468,20 +460,19 @@ public class SpanFeedTests
         Assert.Equal(33UL, stats.BytesWritten);
         Assert.Equal(2UL, stats.SpansCommitted);
 
-        SpanInfoNative* buf = stackalloc SpanInfoNative[16];
-        uint count = feed.DrainSpans((nint)buf, 16);
-        Assert.Equal(2u, count);
+        Span<SpanInfo> buf = stackalloc SpanInfo[16];
+        int count = feed.DrainSpans(buf);
+        Assert.Equal(2, count);
 
         // Verify first span is 32 bytes of 'X'
-        byte* base1 = (byte*)buf[0].ChunkPtr;
-        Assert.Equal(32u, buf[0].Len);
-        Assert.Equal((byte)'X', base1[buf[0].Offset]);
-        Assert.Equal((byte)'X', base1[buf[0].Offset + 31]);
+        var data1 = feed.GetSpanData(buf[0]);
+        Assert.Equal(32, data1.Length);
+        Assert.Equal((byte)'X', data1[0]);
+        Assert.Equal((byte)'X', data1[31]);
 
         // Verify second span is "Y"
-        byte* base2 = (byte*)buf[1].ChunkPtr;
-        var slice2 = new ReadOnlySpan<byte>(base2 + buf[1].Offset, (int)buf[1].Len);
-        Assert.Equal("Y", System.Text.Encoding.UTF8.GetString(slice2));
+        var data2 = feed.GetSpanData(buf[1]);
+        Assert.Equal("Y", System.Text.Encoding.UTF8.GetString(data2));
     }
 
     [Fact]
@@ -756,13 +747,13 @@ public class SpanFeedTests
     }
 
     [Fact]
-    public unsafe void DrainWithNoSpansReturnsZero()
+    public void DrainWithNoSpansReturnsZero()
     {
         using var feed = NativeSpanFeed.Create(TestOptions(256, 1, false));
 
-        SpanInfoNative* buf = stackalloc SpanInfoNative[16];
-        uint count = feed.DrainSpans((nint)buf, 16);
-        Assert.Equal(0u, count);
+        Span<SpanInfo> buf = stackalloc SpanInfo[16];
+        int count = feed.DrainSpans(buf);
+        Assert.Equal(0, count);
     }
 
     #endregion
@@ -872,32 +863,26 @@ public class SpanFeedTests
 
     #region Callback tests
 
-    [ThreadStatic]
-    private static int s_dataAvailableCount;
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    private static void CountingCallback(nuint streamPtr, uint eventId, nuint param1, ulong param2)
-    {
-        if (eventId == EventDataAvailable)
-            s_dataAvailableCount++;
-    }
-
     [Fact]
-    public unsafe void WriteReturningNoSpaceEmitsDataAvailableExactlyOnce()
+    public void WriteReturningNoSpaceEmitsDataAvailableExactlyOnce()
     {
-        s_dataAvailableCount = 0;
+        int dataAvailableCount = 0;
         using var feed = NativeSpanFeed.Create(TestOptions(64, 2, false));
 
-        feed.SetCallback((nint)(delegate* unmanaged[Cdecl]<nuint, uint, nuint, ulong, void>)&CountingCallback);
+        feed._managed.SetCallback((eventId, arg0, arg1) =>
+        {
+            if (eventId == SpanFeedEvent.DataAvailable)
+                dataAvailableCount++;
+        });
         feed.Attach();
-        s_dataAvailableCount = 0;
+        dataAvailableCount = 0;
 
         byte[] first = FilledBytes((byte)'A', 64);
         Assert.Equal(StatusOk, feed.Write(first));
         byte[] overflow = FilledBytes((byte)'B', 65);
         int result = feed.Write(overflow);
         Assert.Equal(ErrNoSpace, result);
-        Assert.Equal(1, s_dataAvailableCount);
+        Assert.Equal(1, dataAvailableCount);
     }
 
     #endregion
@@ -905,7 +890,7 @@ public class SpanFeedTests
     #region Data integrity
 
     [Fact]
-    public unsafe void DataIntegrityAcrossManyChunksWithAutoCommit()
+    public void DataIntegrityAcrossManyChunksWithAutoCommit()
     {
         const uint chunkSize = 64;
         using var feed = NativeSpanFeed.Create(TestOptions(chunkSize, 1, true));
@@ -920,19 +905,16 @@ public class SpanFeedTests
         byte[] received = new byte[1024];
         int offset = 0;
 
-        const int maxSpans = 256;
-        SpanInfoNative* buf = stackalloc SpanInfoNative[maxSpans];
+        Span<SpanInfo> buf = stackalloc SpanInfo[256];
         while (true)
         {
-            uint count = feed.DrainSpans((nint)buf, maxSpans);
+            int count = feed.DrainSpans(buf);
             if (count == 0) break;
-            for (uint i = 0; i < count; i++)
+            for (int i = 0; i < count; i++)
             {
-                var span = buf[i];
-                byte* basePtr = (byte*)span.ChunkPtr;
-                new ReadOnlySpan<byte>(basePtr + span.Offset, (int)span.Len)
-                    .CopyTo(received.AsSpan(offset));
-                offset += (int)span.Len;
+                var data = feed.GetSpanData(buf[i]);
+                data.CopyTo(received.AsSpan(offset));
+                offset += data.Length;
             }
         }
 
@@ -1003,7 +985,7 @@ public class SpanFeedTests
 
     #region max_bytes allows reuse after draining
 
-    [Fact(Skip = "Chunk reuse after draining requires markSpanConsumed which is not exposed in the C# API")]
+    [Fact]
     public void MaxBytesAllowsReuseAfterDraining()
     {
         using var feed = NativeSpanFeed.Create(TestOptionsFull(32, 2, 64, false));
@@ -1015,9 +997,15 @@ public class SpanFeedTests
         Assert.Equal(StatusOk, feed.Write(fill2));
         Assert.Equal(StatusOk, feed.Commit());
 
-        // Drain (without markSpanConsumed, chunks are not freed for reuse,
-        // but the native implementation may still recycle via drainSpans).
-        DrainAllSpans(feed);
+        // Drain and mark consumed so chunks are freed for reuse
+        Span<SpanInfo> buf = stackalloc SpanInfo[256];
+        while (true)
+        {
+            int count = feed.DrainSpans(buf);
+            if (count == 0) break;
+            for (int i = 0; i < count; i++)
+                feed.MarkSpanConsumed(buf[i]);
+        }
 
         byte[] fill3 = FilledBytes((byte)'C', 32);
         Assert.Equal(StatusOk, feed.Write(fill3));
@@ -1031,18 +1019,18 @@ public class SpanFeedTests
 
     #region auto_commit with max_bytes consumer keeps up
 
-    [Fact(Skip = "Chunk reuse after draining requires markSpanConsumed which is not exposed in the C# API")]
+    [Fact]
     public void AutoCommitWithMaxBytesWorksWhenConsumerKeepsUp()
     {
         using var feed = NativeSpanFeed.Create(TestOptionsFull(32, 2, 64, true));
 
         byte[] fill1 = FilledBytes((byte)'A', 32);
         Assert.Equal(StatusOk, feed.Write(fill1));
-        DrainAllSpans(feed);
+        DrainAndConsumeAll(feed);
 
         byte[] fill2 = FilledBytes((byte)'B', 32);
         Assert.Equal(StatusOk, feed.Write(fill2));
-        DrainAllSpans(feed);
+        DrainAndConsumeAll(feed);
 
         byte[] fill3 = FilledBytes((byte)'C', 32);
         Assert.Equal(StatusOk, feed.Write(fill3));
@@ -1050,14 +1038,14 @@ public class SpanFeedTests
         Assert.Equal(96UL, feed.GetStats().BytesWritten);
         Assert.Equal(2u, feed.GetStats().Chunks);
 
-        DrainAllSpans(feed);
+        DrainAndConsumeAll(feed);
     }
 
     #endregion
 
     #region growth_policy=block allows reuse after draining
 
-    [Fact(Skip = "Chunk reuse after draining requires markSpanConsumed which is not exposed in the C# API")]
+    [Fact]
     public void GrowthPolicyBlockAllowsReuseAfterDraining()
     {
         const uint chunkSize = 64;
@@ -1068,7 +1056,7 @@ public class SpanFeedTests
         Assert.Equal(StatusOk, feed.Write(FilledBytes((byte)'B', 64)));
         Assert.Equal(StatusOk, feed.Commit());
 
-        DrainAllSpans(feed);
+        DrainAndConsumeAll(feed);
         Assert.Equal(StatusOk, feed.Write(FilledBytes((byte)'C', 64)));
         Assert.Equal(StatusOk, feed.Commit());
 
@@ -1160,40 +1148,32 @@ public class SpanFeedTests
 
     #region Synchronous drain during write (callback)
 
-    [ThreadStatic]
-    private static NativeSpanFeed? s_drainFeed;
-    [ThreadStatic]
-    private static ulong s_drainTotal;
-
-    [UnmanagedCallersOnly(CallConvs = [typeof(System.Runtime.CompilerServices.CallConvCdecl)])]
-    private static unsafe void DrainingCallback(nuint streamPtr, uint eventId, nuint param1, ulong param2)
-    {
-        if (eventId != EventDataAvailable) return;
-        if (s_drainFeed is null) return;
-
-        SpanInfoNative* buf = stackalloc SpanInfoNative[64];
-        while (true)
-        {
-            uint count = s_drainFeed.DrainSpans((nint)buf, 64);
-            if (count == 0) break;
-            for (uint i = 0; i < count; i++)
-                s_drainTotal += buf[i].Len;
-        }
-    }
-
     [Fact]
-    public unsafe void SynchronousDrainDuringWriteDoesNotCorruptState()
+    public void SynchronousDrainDuringWriteDoesNotCorruptState()
     {
-        s_drainFeed = null;
-        s_drainTotal = 0;
+        ulong drainTotal = 0;
+        NativeSpanFeed? drainFeed = null;
 
         const uint chunkSize = 64;
         using var feed = NativeSpanFeed.Create(TestOptions(chunkSize, 2, true));
 
-        feed.SetCallback((nint)(delegate* unmanaged[Cdecl]<nuint, uint, nuint, ulong, void>)&DrainingCallback);
+        feed._managed.SetCallback((eventId, arg0, arg1) =>
+        {
+            if (eventId != SpanFeedEvent.DataAvailable) return;
+            if (drainFeed is null) return;
+
+            Span<SpanInfo> cbBuf = stackalloc SpanInfo[64];
+            while (true)
+            {
+                int count = drainFeed.DrainSpans(cbBuf);
+                if (count == 0) break;
+                for (int i = 0; i < count; i++)
+                    drainTotal += (ulong)cbBuf[i].Length;
+            }
+        });
         feed.Attach();
-        s_drainFeed = feed;
-        s_drainTotal = 0;
+        drainFeed = feed;
+        drainTotal = 0;
 
         byte[] data = FilledBytes((byte)'D', 256);
         Assert.Equal(StatusOk, feed.Write(data));
@@ -1201,20 +1181,17 @@ public class SpanFeedTests
         Assert.Equal(StatusOk, feed.Commit());
 
         // Also drain any remaining spans manually
-        const int maxSpans = 64;
-        SpanInfoNative* finalBuf = stackalloc SpanInfoNative[maxSpans];
+        Span<SpanInfo> finalBuf = stackalloc SpanInfo[64];
         while (true)
         {
-            uint count = feed.DrainSpans((nint)finalBuf, maxSpans);
+            int count = feed.DrainSpans(finalBuf);
             if (count == 0) break;
-            for (uint i = 0; i < count; i++)
-                s_drainTotal += finalBuf[i].Len;
+            for (int i = 0; i < count; i++)
+                drainTotal += (ulong)finalBuf[i].Length;
         }
 
-        Assert.Equal(256UL, s_drainTotal);
+        Assert.Equal(256UL, drainTotal);
         Assert.Equal(256UL, feed.GetStats().BytesWritten);
-
-        s_drainFeed = null;
     }
 
     #endregion
