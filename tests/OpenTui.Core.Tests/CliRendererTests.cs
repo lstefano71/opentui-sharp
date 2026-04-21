@@ -960,6 +960,30 @@ public sealed class CliRendererTests : IDisposable
         Assert.Contains("PACKETS: 2", outputAfterCapturedStdout);
     }
 
+    /// <summary>
+    /// Regression: ManagedBuffer stores grapheme cluster IDs in a local dictionary
+    /// with sequential keys. ManagedRenderer must resolve them from the buffer,
+    /// not from ManagedGraphemePool (which uses a different ID scheme).
+    /// </summary>
+    [Fact]
+    public void PresentTestFrame_GraphemeClusters_DoNotCrashRenderer()
+    {
+        // Emoji flag sequences and ZWJ sequences are multi-codepoint grapheme clusters
+        var text = new TextRenderable(_renderer, new TextOptions
+        {
+            Id = "emoji",
+            Content = "Hello 🇺🇸 World 👨‍👩‍👧‍👦 Done",
+        });
+        _renderer.Root.Add(text);
+
+        // Should not throw InvalidOperationException about slot index out of range
+        _renderer.PresentTestFrame();
+        string output = StripAnsi(_renderer.Native.GetLastOutputForTest());
+        Assert.Contains("Hello", output);
+        Assert.Contains("World", output);
+        Assert.Contains("Done", output);
+    }
+
     #endregion
 
     #region Live Mode

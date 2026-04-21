@@ -2109,6 +2109,17 @@ public sealed class ManagedBuffer : IDisposable
         return [];
     }
 
+    /// <summary>
+    /// Encodes the grapheme for the given ID into the destination span.
+    /// Returns the number of bytes written, or 0 if the ID is unknown.
+    /// </summary>
+    internal int WriteGraphemeUtf8(uint graphemeId, Span<byte> destination)
+    {
+        if (_renderGraphemes.TryGetValue(graphemeId, out string? graphemeStr))
+            return Encoding.UTF8.GetBytes(graphemeStr, destination);
+        return 0;
+    }
+
     #endregion
 
     #region Grapheme / Link Tracking

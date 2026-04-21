@@ -603,10 +603,13 @@ public sealed class ManagedRenderer : IDisposable
                 if (IsGraphemeChar(nc.Char))
                 {
                     uint gid = GraphemeIdFromChar(nc.Char);
-                    var bytes = _graphemePool.Get(gid);
-                    if (bytes.Length > 0)
+                    // Grapheme IDs are stored in the buffer's render dictionary,
+                    // not in the ManagedGraphemePool. Resolve from the source buffer.
+                    Span<byte> graphemeBuf = stackalloc byte[64];
+                    int written = _nextRenderBuffer.WriteGraphemeUtf8(gid, graphemeBuf);
+                    if (written > 0)
                     {
-                        WriteToOutput(bytes);
+                        WriteToOutput(graphemeBuf[..written]);
                     }
                 }
                 else if (IsContinuationChar(nc.Char))
