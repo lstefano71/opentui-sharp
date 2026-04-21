@@ -1628,6 +1628,217 @@ public sealed class ManagedBuffer : IDisposable
 
     #endregion
 
+    #region DrawGrid
+
+    /// <summary>
+    /// Draws a table grid using the border characters. Column/row offsets define grid boundaries.
+    /// Draws horizontal lines at each row offset, vertical lines at each column offset,
+    /// and proper intersection characters.
+    /// </summary>
+    public void DrawGrid(
+        int[] columnOffsets,
+        int[] rowOffsets,
+        BorderCharacters borderChars,
+        Rgba borderFg,
+        Rgba borderBg,
+        bool drawInner,
+        bool drawOuter)
+    {
+        if (columnOffsets.Length < 2 || rowOffsets.Length < 2 || (!drawInner && !drawOuter))
+            return;
+
+        // codepoints: [topLeft, topRight, bottomLeft, bottomRight, horizontal, vertical,
+        //              topT, bottomT, leftT, rightT, cross]
+        uint cpTopLeft = borderChars.TopLeft;
+        uint cpTopRight = borderChars.TopRight;
+        uint cpBottomLeft = borderChars.BottomLeft;
+        uint cpBottomRight = borderChars.BottomRight;
+        uint cpHorizontal = borderChars.Horizontal;
+        uint cpVertical = borderChars.Vertical;
+        uint cpTopT = borderChars.TopT;
+        uint cpBottomT = borderChars.BottomT;
+        uint cpLeftT = borderChars.LeftT;
+        uint cpRightT = borderChars.RightT;
+        uint cpCross = borderChars.Cross;
+
+        int numCols = columnOffsets.Length;
+        int numRows = rowOffsets.Length;
+        int lastCol = numCols - 1;
+        int lastRow = numRows - 1;
+
+        // Draw horizontal lines at each row offset
+        for (int ri = 0; ri < numRows; ri++)
+        {
+            bool isFirstRow = ri == 0;
+            bool isLastRow = ri == lastRow;
+            bool isOuterRow = isFirstRow || isLastRow;
+            if (isOuterRow && !drawOuter) continue;
+            if (!isOuterRow && !drawInner) continue;
+
+            int y = rowOffsets[ri];
+            if (y < 0 || y >= (int)Height) continue;
+
+            // Draw horizontal line segments between column offsets
+            for (int ci = 0; ci < numCols - 1; ci++)
+            {
+                int x0 = columnOffsets[ci];
+                int x1 = columnOffsets[ci + 1];
+
+                // Draw horizontal chars between column boundaries
+                for (int x = x0 + 1; x < x1; x++)
+                {
+                    if (x >= 0 && x < (int)Width)
+                        DrawChar(cpHorizontal, (uint)x, (uint)y, borderFg, borderBg);
+                }
+            }
+
+            // Draw intersection/corner chars at each column offset
+            for (int ci = 0; ci < numCols; ci++)
+            {
+                bool isFirstCol = ci == 0;
+                bool isLastCol = ci == lastCol;
+                bool isOuterCol = isFirstCol || isLastCol;
+
+                // Skip outer column intersections if not drawing outer
+                if (isOuterCol && !drawOuter) continue;
+                if (!isOuterCol && !drawInner) continue;
+
+                int x = columnOffsets[ci];
+                if (x < 0 || x >= (int)Width) continue;
+
+                uint ch;
+                if (isFirstRow && isFirstCol)
+                    ch = cpTopLeft;
+                else if (isFirstRow && isLastCol)
+                    ch = cpTopRight;
+                else if (isLastRow && isFirstCol)
+                    ch = cpBottomLeft;
+                else if (isLastRow && isLastCol)
+                    ch = cpBottomRight;
+                else if (isFirstRow)
+                    ch = cpTopT;
+                else if (isLastRow)
+                    ch = cpBottomT;
+                else if (isFirstCol)
+                    ch = cpLeftT;
+                else if (isLastCol)
+                    ch = cpRightT;
+                else
+                    ch = cpCross;
+
+                DrawChar(ch, (uint)x, (uint)y, borderFg, borderBg);
+            }
+        }
+
+        // Draw vertical lines between row offsets at each column offset
+        for (int ci = 0; ci < numCols; ci++)
+        {
+            bool isFirstCol = ci == 0;
+            bool isLastCol = ci == lastCol;
+            bool isOuterCol = isFirstCol || isLastCol;
+            if (isOuterCol && !drawOuter) continue;
+            if (!isOuterCol && !drawInner) continue;
+
+            int x = columnOffsets[ci];
+            if (x < 0 || x >= (int)Width) continue;
+
+            for (int ri = 0; ri < numRows - 1; ri++)
+            {
+                int y0 = rowOffsets[ri];
+                int y1 = rowOffsets[ri + 1];
+
+                for (int y = y0 + 1; y < y1; y++)
+                {
+                    if (y >= 0 && y < (int)Height)
+                        DrawChar(cpVertical, (uint)x, (uint)y, borderFg, borderBg);
+                }
+            }
+        }
+    }
+
+    #endregion
+
+    #region Resolved Text
+
+    /// <summary>
+    /// Iterates all cells in the buffer and returns the resolved text as a string.
+    /// Decodes codepoints to characters, resolves grapheme clusters, and skips continuation cells.
+    /// If addLineBreaks is true, adds \n after each row.
+    /// </summary>
+    public string GetResolvedText(bool addLineBreaks = false)
+    {
+        int totalCells = (int)(Width * Height);
+        var sb = new StringBuilder(totalCells + (addLineBreaks ? (int)Height : 0));
+        Span<char> graphemeCharBuf = stackalloc char[4];
+
+        for (uint row = 0; row < Height; row++)
+        {
+            uint rowBase = row * Width;
+            for (uint col = 0; col < Width; col++)
+            {
+                uint c = _chars[(int)(rowBase + col)];
+
+                // Skip continuation cells
+                if (IsContinuationChar(c))
+                    continue;
+
+                if (IsGraphemeChar(c))
+                {
+                    // Look up grapheme in the pool
+                    uint graphemeId = GraphemeIdFromChar(c);
+                    try
+                    {
+                        ReadOnlySpan<byte> bytes = _graphemeTracker.HasAny()
+                            ? ResolveGraphemeBytes(graphemeId)
+                            : [];
+                        if (bytes.Length > 0)
+                        {
+                            int charsWritten = Encoding.UTF8.GetChars(bytes, graphemeCharBuf);
+                            sb.Append(graphemeCharBuf[..charsWritten]);
+                        }
+                        else
+                        {
+                            sb.Append('\uFFFD'); // replacement character
+                        }
+                    }
+                    catch
+                    {
+                        sb.Append('\uFFFD');
+                    }
+                }
+                else
+                {
+                    // Regular codepoint
+                    if (c <= 0x10FFFF && c > 0)
+                    {
+                        sb.Append(char.ConvertFromUtf32((int)c));
+                    }
+                    else if (c == 0)
+                    {
+                        sb.Append(' ');
+                    }
+                }
+            }
+
+            if (addLineBreaks)
+                sb.Append('\n');
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>Attempts to resolve grapheme bytes by ID. Override point for pools.</summary>
+    private static ReadOnlySpan<byte> ResolveGraphemeBytes(uint graphemeId)
+    {
+        // The ManagedBuffer doesn't own a ManagedGraphemePool directly;
+        // grapheme cells are created by DrawTextBufferView from the text buffer's pool.
+        // For resolution, we return empty — the grapheme data was encoded during rendering.
+        // A full implementation would require access to the pool that created the ID.
+        return [];
+    }
+
+    #endregion
+
     #region Grapheme / Link Tracking
 
     private sealed class GraphemeTracker

@@ -42,6 +42,17 @@ public sealed class ManagedTextBufferView : IDisposable
 
     // ── Wrapping ────────────────────────────────────────────────────
     private WrapMode _wrapMode = WrapMode.None;
+    private uint _wrapWidth; // 0 means "use viewport _width"
+
+    // ── Truncation ──────────────────────────────────────────────────
+    private bool _truncate;
+
+    // ── Tab indicators ──────────────────────────────────────────────
+    /// <summary>Unicode codepoint used to display tab indicator characters (0 = none).</summary>
+    public uint TabIndicatorCodepoint { get; set; }
+
+    /// <summary>Color for tab indicator characters (null = use default fg).</summary>
+    public Rgba? TabIndicatorColor { get; set; }
 
     // Cached wrap data: invalidated when buffer changes or viewport width changes
     private ulong _wrapCacheVersion;
@@ -237,6 +248,25 @@ public sealed class ManagedTextBufferView : IDisposable
             }
         }
     }
+
+    /// <summary>Sets the wrap width independently of the viewport width. 0 means use viewport width.</summary>
+    public void SetWrapWidth(uint width)
+    {
+        if (_wrapWidth != width)
+        {
+            _wrapWidth = width;
+            InvalidateWrapCache();
+        }
+    }
+
+    /// <summary>Enables or disables line truncation (when WrapMode is None, truncates lines to viewport width).</summary>
+    public void SetTruncate(bool truncate)
+    {
+        _truncate = truncate;
+    }
+
+    /// <summary>Gets whether line truncation is enabled.</summary>
+    public bool Truncate => _truncate;
 
     #endregion
 
@@ -581,6 +611,271 @@ public sealed class ManagedTextBufferView : IDisposable
 
     #endregion
 
+    #region Measurement
+
+    /// <summary>
+    /// Measures text content to fit within the given dimensions.
+    /// Temporarily sets viewport to w×h, counts virtual lines, and returns effective dimensions.
+    /// Returns true if content overflows (scrollable).
+    /// </summary>
+    public bool MeasureForDimensions(uint w, uint h, out MeasureResult result)
+    {
+        // Save current state
+        uint savedWidth = _width;
+        uint savedHeight = _height;
+        uint savedWrapWidth = _wrapWidth;
+
+        // Temporarily set viewport for measurement
+        _width = w;
+        _height = h;
+        _wrapWidth = 0; // measure uses viewport width directly
+        InvalidateWrapCache();
+
+        try
+        {
+            UpdateVirtualLines();
+            var virtualLines = GetVirtualLines();
+
+            uint totalVirtualLines = (uint)virtualLines.Length;
+            uint maxWidth = 0;
+
+            for (int i = 0; i < virtualLines.Length; i++)
+            {
+                uint lineWidth = virtualLines[i].WidthCols;
+                if (lineWidth > maxWidth)
+                    maxWidth = lineWidth;
+            }
+
+            uint effectiveWidth = Math.Min(maxWidth, w);
+            uint effectiveHeight = Math.Min(totalVirtualLines, h);
+
+            result = new MeasureResult(effectiveHeight, effectiveWidth);
+            return totalVirtualLines > h;
+        }
+        finally
+        {
+            // Restore
+            _width = savedWidth;
+            _height = savedHeight;
+            _wrapWidth = savedWrapWidth;
+            InvalidateWrapCache();
+        }
+    }
+
+    #endregion
+
+    #region Line Info
+
+    /// <summary>
+    /// Gets virtual line layout information for the current viewport.
+    /// Returns line starts, widths, sources, and wrap markers for visible lines only.
+    /// </summary>
+    public LineInfo GetLineInfo()
+    {
+        UpdateVirtualLines();
+        var virtualLines = GetVirtualLines();
+
+        uint firstVisible = _scrollTop;
+        uint visibleCount = GetVisibleLineCount();
+
+        var startCols = new uint[visibleCount];
+        var widthCols = new uint[visibleCount];
+        var sources = new uint[visibleCount];
+        var wraps = new uint[visibleCount];
+        uint maxWidth = 0;
+
+        for (uint i = 0; i < visibleCount; i++)
+        {
+            uint vlineIdx = firstVisible + i;
+            if (vlineIdx >= (uint)virtualLines.Length) break;
+
+            ref readonly var vl = ref virtualLines[vlineIdx];
+            startCols[i] = vl.SourceColOffset;
+            widthCols[i] = vl.WidthCols;
+            sources[i] = vl.SourceLine;
+            wraps[i] = vl.SourceColOffset > 0 ? 1u : 0u;
+
+            if (vl.WidthCols > maxWidth)
+                maxWidth = vl.WidthCols;
+        }
+
+        return new LineInfo
+        {
+            LineStartCols = startCols,
+            LineWidthCols = widthCols,
+            LineSources = sources,
+            LineWraps = wraps,
+            LineWidthColsMax = maxWidth,
+        };
+    }
+
+    /// <summary>
+    /// Gets logical (full-document) line layout information.
+    /// Unlike <see cref="GetLineInfo"/> which returns viewport-only data,
+    /// this returns mapping for all virtual lines in the document.
+    /// </summary>
+    public LineInfo GetLogicalLineInfo()
+    {
+        UpdateVirtualLines();
+        var virtualLines = GetVirtualLines();
+
+        int count = virtualLines.Length;
+        var startCols = new uint[count];
+        var widthCols = new uint[count];
+        var sources = new uint[count];
+        var wraps = new uint[count];
+        uint maxWidth = 0;
+
+        for (int i = 0; i < count; i++)
+        {
+            ref readonly var vl = ref virtualLines[i];
+            startCols[i] = vl.SourceColOffset;
+            widthCols[i] = vl.WidthCols;
+            sources[i] = vl.SourceLine;
+            wraps[i] = vl.SourceColOffset > 0 ? 1u : 0u;
+
+            if (vl.WidthCols > maxWidth)
+                maxWidth = vl.WidthCols;
+        }
+
+        return new LineInfo
+        {
+            LineStartCols = startCols,
+            LineWidthCols = widthCols,
+            LineSources = sources,
+            LineWraps = wraps,
+            LineWidthColsMax = maxWidth,
+        };
+    }
+
+    #endregion
+
+    #region Text Access
+
+    /// <summary>
+    /// Gets the plain text visible in the viewport as a string.
+    /// Iterates visible virtual lines and concatenates their text content.
+    /// </summary>
+    public string GetPlainText(int maxLen = 64 * 1024)
+    {
+        UpdateVirtualLines();
+        var virtualLines = GetVirtualLines();
+
+        uint firstVisible = _scrollTop;
+        uint visibleCount = GetVisibleLineCount();
+
+        var sb = new StringBuilder();
+        for (uint i = 0; i < visibleCount; i++)
+        {
+            uint vlineIdx = firstVisible + i;
+            if (vlineIdx >= (uint)virtualLines.Length) break;
+
+            ref readonly var vl = ref virtualLines[vlineIdx];
+            if (vl.SourceLine >= _buffer.LineCount) break;
+
+            string lineText = _buffer.GetLineText(vl.SourceLine);
+            int startCol = (int)vl.SourceColOffset;
+            int endCol = startCol + (int)vl.WidthCols;
+            if (startCol < lineText.Length)
+            {
+                int len = Math.Min(endCol, lineText.Length) - startCol;
+                if (len > 0)
+                {
+                    sb.Append(lineText.AsSpan(startCol, len));
+                }
+            }
+
+            if (i < visibleCount - 1)
+                sb.Append('\n');
+
+            if (sb.Length >= maxLen)
+            {
+                sb.Length = maxLen;
+                break;
+            }
+        }
+
+        return sb.ToString();
+    }
+
+    #endregion
+
+    #region Local Selection
+
+    /// <summary>
+    /// Sets a local (visual coordinate) selection. Converts screen-space x,y to buffer offsets.
+    /// Returns true if the selection was set successfully.
+    /// </summary>
+    public bool SetLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
+    {
+        if (!TryVisualToOffset(startX, startY, out uint startOffset) ||
+            !TryVisualToOffset(endX, endY, out uint endOffset))
+            return false;
+
+        SetSelection(startOffset, endOffset, selBg, selFg);
+        return true;
+    }
+
+    /// <summary>
+    /// Updates the local (visual coordinate) selection extent.
+    /// Returns true if the selection was updated successfully.
+    /// </summary>
+    public bool UpdateLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
+    {
+        return SetLocalSelection(startX, startY, endX, endY, selBg, selFg);
+    }
+
+    /// <summary>Resets the local (visual coordinate) selection.</summary>
+    public void ResetLocalSelection()
+    {
+        ResetSelection();
+    }
+
+    /// <summary>
+    /// Updates the end offset of the current selection, keeping the start.
+    /// If no selection exists, this is a no-op.
+    /// </summary>
+    public void UpdateSelection(uint newEnd, Rgba? selBg = null, Rgba? selFg = null)
+    {
+        if (_selectionStartOffset is null)
+            return;
+
+        _selectionEndOffset = newEnd;
+        if (selBg.HasValue) _selectionBg = selBg;
+        if (selFg.HasValue) _selectionFg = selFg;
+    }
+
+    /// <summary>
+    /// Gets the current selection info as a packed 64-bit value.
+    /// Start in upper 32 bits, end in lower 32 bits.
+    /// Returns 0xFFFFFFFF_FFFFFFFF if no selection is active.
+    /// </summary>
+    public ulong GetSelectionInfo()
+    {
+        var range = GetSelectionRange();
+        if (range is null)
+            return 0xFFFF_FFFF_FFFF_FFFFUL;
+
+        var (start, end) = range.Value;
+        return ((ulong)start << 32) | end;
+    }
+
+    /// <summary>
+    /// Converts viewport-relative visual coordinates to a buffer character offset.
+    /// </summary>
+    private bool TryVisualToOffset(int visualX, int visualY, out uint offset)
+    {
+        offset = 0;
+        if (visualX < 0 || visualY < 0)
+            return false;
+
+        var logical = VisualToLogical((uint)visualY, (uint)visualX);
+        offset = logical.Offset;
+        return true;
+    }
+
+    #endregion
+
     #region Dispose
 
     /// <inheritdoc />
@@ -648,14 +943,14 @@ public sealed class ManagedTextBufferView : IDisposable
         ulong version = _buffer.Version;
         if (_virtualLineArray is not null
             && _virtualLineArrayVersion == version
-            && _virtualLineArrayWidth == _width)
+            && _virtualLineArrayWidth == EffectiveWrapWidth)
         {
             return;
         }
 
         RebuildVirtualLineArray();
         _virtualLineArrayVersion = version;
-        _virtualLineArrayWidth = _width;
+        _virtualLineArrayWidth = EffectiveWrapWidth;
     }
 
     private void RebuildVirtualLineArray()
@@ -712,6 +1007,9 @@ public sealed class ManagedTextBufferView : IDisposable
     /// <summary>Represents one visual line (possibly a wrapped portion of a logical line).</summary>
     private readonly record struct WrapLine(uint LogicalLine, uint StartCol, uint ColCount);
 
+    /// <summary>The effective width used for wrapping: _wrapWidth if set, otherwise _width.</summary>
+    private uint EffectiveWrapWidth => _wrapWidth > 0 ? _wrapWidth : _width;
+
     private void InvalidateWrapCache()
     {
         _wrapLineCache = null;
@@ -721,24 +1019,26 @@ public sealed class ManagedTextBufferView : IDisposable
     private void EnsureWrapCache()
     {
         ulong bufferVersion = _buffer.Version;
+        uint wrapWidth = EffectiveWrapWidth;
         if (_wrapLineCache is not null
             && _wrapCacheVersion == bufferVersion
-            && _wrapCacheWidth == _width)
+            && _wrapCacheWidth == wrapWidth)
         {
             return;
         }
 
         RebuildWrapCache();
         _wrapCacheVersion = bufferVersion;
-        _wrapCacheWidth = _width;
+        _wrapCacheWidth = wrapWidth;
     }
 
     private void RebuildWrapCache()
     {
         uint lineCount = _buffer.LineCount;
+        uint wrapWidth = EffectiveWrapWidth;
         _wrapLineCache = new List<WrapLine>((int)lineCount);
 
-        if (_width == 0)
+        if (wrapWidth == 0)
         {
             // Degenerate case: zero-width viewport → one visual line per logical line
             for (uint i = 0; i < lineCount; i++)
@@ -757,21 +1057,21 @@ public sealed class ManagedTextBufferView : IDisposable
 
             if (_wrapMode == WrapMode.Char)
             {
-                WrapLineByChar(line, lineText);
+                WrapLineByChar(line, lineText, wrapWidth);
             }
             else // WrapMode.Word
             {
-                WrapLineByWord(line, lineText);
+                WrapLineByWord(line, lineText, wrapWidth);
             }
         }
     }
 
-    private void WrapLineByChar(uint logicalLine, string lineText)
+    private void WrapLineByChar(uint logicalLine, string lineText, uint wrapWidth)
     {
         uint col = 0;
         uint displayWidth = TextWidth.CalculateTextWidth(lineText.AsSpan(), _buffer.TabWidth, _buffer.WidthMethod);
 
-        if (displayWidth <= _width)
+        if (displayWidth <= wrapWidth)
         {
             _wrapLineCache!.Add(new WrapLine(logicalLine, 0, (uint)lineText.Length));
             return;
@@ -795,7 +1095,7 @@ public sealed class ManagedTextBufferView : IDisposable
 
             uint charWidth = TextWidth.CharWidth(rune, _buffer.TabWidth);
 
-            if (currentWidth + charWidth > _width && currentWidth > 0)
+            if (currentWidth + charWidth > wrapWidth && currentWidth > 0)
             {
                 // Wrap here
                 _wrapLineCache!.Add(new WrapLine(logicalLine, startCol, col - startCol));
@@ -815,7 +1115,7 @@ public sealed class ManagedTextBufferView : IDisposable
         }
     }
 
-    private void WrapLineByWord(uint logicalLine, string lineText)
+    private void WrapLineByWord(uint logicalLine, string lineText, uint wrapWidth)
     {
         // Use WrapBreaks to find break opportunities
         byte[] utf8Bytes = Encoding.UTF8.GetBytes(lineText);
@@ -825,7 +1125,7 @@ public sealed class ManagedTextBufferView : IDisposable
         if (breaks.Count == 0)
         {
             // No break opportunities; fall back to char wrapping
-            WrapLineByChar(logicalLine, lineText);
+            WrapLineByChar(logicalLine, lineText, wrapWidth);
             return;
         }
 
@@ -861,7 +1161,7 @@ public sealed class ManagedTextBufferView : IDisposable
 
             uint charWidth = TextWidth.CharWidth(rune, _buffer.TabWidth);
 
-            if (currentWidth + charWidth > _width && currentWidth > 0)
+            if (currentWidth + charWidth > wrapWidth && currentWidth > 0)
             {
                 // Need to wrap
                 if (haveBreak && lastBreakCol > startCol)
