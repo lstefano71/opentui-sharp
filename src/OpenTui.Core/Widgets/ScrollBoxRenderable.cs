@@ -115,7 +115,9 @@ public class ScrollBoxRenderable : BoxRenderable
         _viewport = new BoxRenderable(ctx, options.ViewportOptions ?? new BoxOptions());
         _viewport.FlexGrow = 1;
         _viewport.FlexDirection = FlexDirectionValue.Column;
-        _viewport.Overflow = OverflowValue.Hidden;
+        // Yoga.Net requires Scroll (not Hidden) so children measure at intrinsic size
+        // and the content box can grow beyond the viewport for scrolling.
+        _viewport.Overflow = OverflowValue.Scroll;
         _viewport.OnSizeChange = () => RecalculateBarProps();
 
         // Content: actual child container (scrolls within viewport)

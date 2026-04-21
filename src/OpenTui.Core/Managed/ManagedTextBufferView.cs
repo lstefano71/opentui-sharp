@@ -669,10 +669,8 @@ public sealed class ManagedTextBufferView : IDisposable
                     maxWidth = lineWidth;
             }
 
-            // Report intrinsic content size — don't cap at viewport width
-            uint effectiveHeight = Math.Min(totalVirtualLines, h);
-
-            result = new MeasureResult(effectiveHeight, maxWidth);
+            // Report intrinsic content size — don't cap at viewport h (which may be a fallback)
+            result = new MeasureResult(totalVirtualLines, maxWidth);
             return true; // measurement always succeeds
         }
         finally

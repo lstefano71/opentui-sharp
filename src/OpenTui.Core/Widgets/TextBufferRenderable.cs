@@ -44,6 +44,14 @@ public class TextBufferRenderable : Renderable
         _textBufferView = TextBufferView.Create(_textBuffer);
         _syntaxStyle = SyntaxStyle.Create();
 
+        // Eagerly set viewport when initial dimensions are known (e.g. Width=24, Height=1).
+        // Without this, the first layout pass may report identical dimensions (sizeChanged=false)
+        // and OnResize never fires, leaving the viewport at 0×0.
+        if (_widthValue > 0 || _heightValue > 0)
+            _textBufferView.SetViewport(0, 0,
+                (uint)Math.Max(1, _widthValue),
+                (uint)Math.Max(1, _heightValue));
+
         // Apply initial styling
         _textBuffer.SetForeground(_fg);
         _textBuffer.SetBackground(_bg);
@@ -274,15 +282,13 @@ public class TextBufferRenderable : Renderable
             float h = Math.Max(1, result.LineCount);
 
             // Match TS: only clamp when widthMode is AtMost and not absolute-positioned.
-            // The TS reference clamps BOTH axes together in this case, and never
-            // independently clamps height based on heightMode. This is critical for
-            // scroll containers: without this, a CodeRenderable inside a ScrollBox
-            // reports its height clamped to the viewport, making scrollHeight == viewportHeight
-            // and preventing any scrolling.
             if (widthMode == MeasureMode.AtMost && _positionType != PositionValue.Absolute)
             {
                 w = Math.Min(effectiveWidth, w);
-                h = Math.Min(effectiveHeight, h);
+                // Only clamp height when Yoga actually constrains it (AtMost/Exactly),
+                // not when heightMode is Undefined (intrinsic sizing for scroll containers).
+                if (heightMode != MeasureMode.Undefined)
+                    h = Math.Min(effectiveHeight, h);
             }
 
             return new YGSize { Width = w, Height = h };
