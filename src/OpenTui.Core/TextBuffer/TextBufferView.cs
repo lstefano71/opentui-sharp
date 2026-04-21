@@ -1,60 +1,50 @@
-using System.Runtime.InteropServices;
-using OpenTui.Core.Native;
-using OpenTui.Native;
+using OpenTui.Core.Managed;
 
 namespace OpenTui.Core;
 
 /// <summary>
-/// Managed wrapper around the native text buffer view.
-/// Provides viewport, selection, measurement, and line info over a <see cref="TextBuffer"/>.
+/// Managed wrapper providing viewport, selection, measurement, and line info
+/// over a <see cref="TextBuffer"/>. Delegates to <see cref="ManagedTextBufferView"/>.
 /// </summary>
 public sealed class TextBufferView : IDisposable
 {
-    private nint _handle;
+    internal ManagedTextBufferView _managed;
     private bool _disposed;
 
-    private TextBufferView(nint handle) => _handle = handle;
+    private TextBufferView(ManagedTextBufferView managed) => _managed = managed;
 
     /// <summary>Creates a new text buffer view for the given text buffer.</summary>
     public static TextBufferView Create(TextBuffer textBuffer)
     {
         ArgumentNullException.ThrowIfNull(textBuffer);
-        nint handle = OpenTuiNative.CreateTextBufferView(textBuffer.Handle);
-        if (handle == nint.Zero)
-            throw new InvalidOperationException("Failed to create native text buffer view.");
-        return new TextBufferView(handle);
+        var managed = ManagedTextBufferView.Create(textBuffer._managed, 0, 0);
+        return new TextBufferView(managed);
     }
 
     /// <summary>Creates a new text buffer view from an edit buffer's underlying text buffer.</summary>
+    /// <remarks>
+    /// Requires EditBuffer to have been migrated to managed internals.
+    /// Currently throws <see cref="NotSupportedException"/> until the EditBuffer swap is complete.
+    /// </remarks>
     public static TextBufferView CreateFrom(EditBuffer editBuffer)
     {
         ArgumentNullException.ThrowIfNull(editBuffer);
-        nint tbHandle = editBuffer.GetTextBuffer();
-        nint handle = OpenTuiNative.CreateTextBufferView(tbHandle);
-        if (handle == nint.Zero)
-            throw new InvalidOperationException("Failed to create native text buffer view.");
-        return new TextBufferView(handle);
-    }
-
-    /// <summary>Gets the native handle.</summary>
-    internal nint Handle
-    {
-        get
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _handle;
-        }
+        // EditBuffer._managed (ManagedEditBuffer) is being added by the EditBuffer swap agent.
+        // Once available, this becomes:
+        //   var managed = ManagedTextBufferView.Create(editBuffer._managed.Buffer, 0, 0);
+        //   return new TextBufferView(managed);
+        throw new NotSupportedException("EditBuffer has not been migrated to managed internals yet.");
     }
 
     #region Viewport
 
     /// <summary>Sets the viewport position and size.</summary>
     public void SetViewport(uint x, uint y, uint w, uint h) =>
-        OpenTuiNative.TextBufferViewSetViewport(Handle, x, y, w, h);
+        _managed.SetViewport(x, y, w, h);
 
     /// <summary>Sets the viewport size in columns and rows.</summary>
     public void SetViewportSize(uint w, uint h) =>
-        OpenTuiNative.TextBufferViewSetViewportSize(Handle, w, h);
+        _managed.SetViewportSize(w, h);
 
     #endregion
 
@@ -62,18 +52,18 @@ public sealed class TextBufferView : IDisposable
 
     /// <summary>Sets the line wrap mode.</summary>
     public void SetWrapMode(WrapMode mode) =>
-        OpenTuiNative.TextBufferViewSetWrapMode(Handle, (byte)mode);
+        _managed.WrapMode = mode;
 
     /// <summary>Sets the line wrap mode (raw byte).</summary>
     public void SetWrapMode(byte mode) =>
-        OpenTuiNative.TextBufferViewSetWrapMode(Handle, mode);
+        _managed.WrapMode = (WrapMode)mode;
 
     /// <summary>Sets the wrap width for line wrapping.</summary>
     public void SetWrapWidth(uint width) =>
-        OpenTuiNative.TextBufferViewSetWrapWidth(Handle, width);
+        _managed.SetWrapWidth(width);
 
     /// <summary>Gets the number of virtual (wrapped) lines.</summary>
-    public uint GetVirtualLineCount() => OpenTuiNative.TextBufferViewGetVirtualLineCount(Handle);
+    public uint GetVirtualLineCount() => _managed.GetVirtualLineCount();
 
     #endregion
 
@@ -81,21 +71,19 @@ public sealed class TextBufferView : IDisposable
 
     /// <summary>Sets the text selection by character offsets with selection colors.</summary>
     public void SetSelection(uint startOffset, uint endOffset, Rgba? selBg = null, Rgba? selFg = null) =>
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            OpenTuiNative.TextBufferViewSetSelection(Handle, startOffset, endOffset, bgPtr, fgPtr));
+        _managed.SetSelection(startOffset, endOffset, selBg, selFg);
 
     /// <summary>Resets (clears) the current selection.</summary>
     public void ResetSelection() =>
-        OpenTuiNative.TextBufferViewResetSelection(Handle);
+        _managed.ResetSelection();
 
     /// <summary>Gets the currently selected text as a string.</summary>
     public string GetSelectedText() =>
-        Utf8String.GetString((outBuf, maxLen) =>
-            OpenTuiNative.TextBufferViewGetSelectedText(Handle, outBuf, maxLen));
+        _managed.GetSelectedText();
 
     /// <summary>Gets the current selection info as a packed 64-bit value.</summary>
     public ulong GetSelectionInfo() =>
-        OpenTuiNative.TextBufferViewGetSelectionInfo(Handle);
+        _managed.GetSelectionInfo();
 
     /// <summary>Gets the current selection range, or null when no selection is active.</summary>
     public (uint Start, uint End)? GetSelectionRange()
@@ -112,45 +100,28 @@ public sealed class TextBufferView : IDisposable
     public bool HasSelection() => GetSelectionRange() is not null;
 
     /// <summary>Sets a local (visual coordinate) selection with selection colors.</summary>
-    public bool SetLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
-    {
-        bool result = false;
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            result = OpenTuiNative.TextBufferViewSetLocalSelection(Handle, startX, startY, endX, endY, bgPtr, fgPtr));
-        return result;
-    }
+    public bool SetLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null) =>
+        _managed.SetLocalSelection(startX, startY, endX, endY, selBg, selFg);
 
     /// <summary>Resets the local (visual coordinate) selection.</summary>
     public void ResetLocalSelection() =>
-        OpenTuiNative.TextBufferViewResetLocalSelection(Handle);
+        _managed.ResetLocalSelection();
 
     /// <summary>Updates the local (visual coordinate) selection extent.</summary>
-    public bool UpdateLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
-    {
-        bool result = false;
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            result = OpenTuiNative.TextBufferViewUpdateLocalSelection(Handle, startX, startY, endX, endY, bgPtr, fgPtr));
-        return result;
-    }
+    public bool UpdateLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null) =>
+        _managed.UpdateLocalSelection(startX, startY, endX, endY, selBg, selFg);
 
     /// <summary>Updates the end offset of the current selection.</summary>
     public void UpdateSelection(uint newEnd, Rgba? selBg = null, Rgba? selFg = null) =>
-        RgbaMarshalling.WithColorPtrs(selBg, selFg, (bgPtr, fgPtr) =>
-            OpenTuiNative.TextBufferViewUpdateSelection(Handle, newEnd, bgPtr, fgPtr));
+        _managed.UpdateSelection(newEnd, selBg, selFg);
 
     #endregion
 
     #region Measurement
 
     /// <summary>Measures text content to fit within the given dimensions.</summary>
-    public unsafe bool MeasureForDimensions(uint w, uint h, out MeasureResult result)
-    {
-        result = default;
-        fixed (MeasureResult* p = &result)
-        {
-            return OpenTuiNative.TextBufferViewMeasureForDimensions(Handle, w, h, (nint)p);
-        }
-    }
+    public bool MeasureForDimensions(uint w, uint h, out MeasureResult result) =>
+        _managed.MeasureForDimensions(w, h, out result);
 
     #endregion
 
@@ -158,87 +129,23 @@ public sealed class TextBufferView : IDisposable
 
     /// <summary>Enables or disables line truncation.</summary>
     public void SetTruncate(bool truncate) =>
-        OpenTuiNative.TextBufferViewSetTruncate(Handle, truncate);
+        _managed.SetTruncate(truncate);
 
     #endregion
 
     #region Line Info
 
-    /// <summary>Native struct matching Zig ExternalLineInfo layout.</summary>
-    [StructLayout(LayoutKind.Sequential)]
-    private struct NativeLineInfo
-    {
-        public nint StartColsPtr;
-        public uint StartColsLen;
-        public nint WidthColsPtr;
-        public uint WidthColsLen;
-        public nint SourcesPtr;
-        public uint SourcesLen;
-        public nint WrapsPtr;
-        public uint WrapsLen;
-        public uint WidthColsMax;
-    }
-
-    /// <summary>Gets line information directly into the output struct.</summary>
-    public void GetLineInfoDirect(nint outInfo) =>
-        OpenTuiNative.TextBufferViewGetLineInfoDirect(Handle, outInfo);
-
-    /// <summary>Gets logical line information directly into the output struct.</summary>
-    public void GetLogicalLineInfoDirect(nint outInfo) =>
-        OpenTuiNative.TextBufferViewGetLogicalLineInfoDirect(Handle, outInfo);
-
     /// <summary>Gets virtual line layout information as a managed <see cref="LineInfo"/>.</summary>
-    public unsafe LineInfo GetLineInfo()
-    {
-        // Trigger layout by querying line count first
-        GetVirtualLineCount();
-
-        NativeLineInfo info = default;
-        OpenTuiNative.TextBufferViewGetLineInfoDirect(Handle, (nint)(&info));
-
-        return MarshalLineInfo(in info);
-    }
+    public LineInfo GetLineInfo() =>
+        _managed.GetLineInfo();
 
     /// <summary>
     /// Gets logical (full-document) line layout information as a managed <see cref="LineInfo"/>.
     /// Unlike <see cref="GetLineInfo"/> which returns viewport-only data,
     /// this returns mapping for all virtual lines in the document.
     /// </summary>
-    public unsafe LineInfo GetLogicalLineInfo()
-    {
-        GetVirtualLineCount();
-
-        NativeLineInfo info = default;
-        OpenTuiNative.TextBufferViewGetLogicalLineInfoDirect(Handle, (nint)(&info));
-
-        return MarshalLineInfo(in info);
-    }
-
-    private static unsafe LineInfo MarshalLineInfo(in NativeLineInfo info)
-    {
-        var startCols = new uint[info.StartColsLen];
-        var widthCols = new uint[info.WidthColsLen];
-        var sources = new uint[info.SourcesLen];
-        var wraps = new uint[info.WrapsLen];
-
-        for (int i = 0; i < (int)info.StartColsLen; i++)
-            startCols[i] = ((uint*)info.StartColsPtr)[i];
-        for (int i = 0; i < (int)info.WidthColsLen; i++)
-            widthCols[i] = ((uint*)info.WidthColsPtr)[i];
-        for (int i = 0; i < (int)info.SourcesLen; i++)
-            sources[i] = ((uint*)info.SourcesPtr)[i];
-        for (int i = 0; i < (int)info.WrapsLen; i++)
-            wraps[i] = ((uint*)info.WrapsPtr)[i];
-
-        return new LineInfo
-        {
-            LineStartCols = startCols,
-            LineWidthCols = widthCols,
-            LineSources = sources,
-            LineWraps = wraps,
-            LineWidthColsMax = info.WidthColsMax,
-        };
-    }
+    public LineInfo GetLogicalLineInfo() =>
+        _managed.GetLogicalLineInfo();
 
     #endregion
 
@@ -246,9 +153,7 @@ public sealed class TextBufferView : IDisposable
 
     /// <summary>Gets the plain text visible in the view.</summary>
     public string GetPlainText(int maxLen = 64 * 1024) =>
-        Utf8String.GetString(
-            (outBuf, maxLength) => OpenTuiNative.TextBufferViewGetPlainText(Handle, outBuf, maxLength),
-            maxLen);
+        _managed.GetPlainText(maxLen);
 
     #endregion
 
@@ -256,11 +161,11 @@ public sealed class TextBufferView : IDisposable
 
     /// <summary>Sets the Unicode codepoint used to display tab indicators.</summary>
     public void SetTabIndicator(uint codepoint) =>
-        OpenTuiNative.TextBufferViewSetTabIndicator(Handle, codepoint);
+        _managed.TabIndicatorCodepoint = codepoint;
 
     /// <summary>Sets the color for tab indicator characters.</summary>
     public void SetTabIndicatorColor(Rgba color) =>
-        RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.TextBufferViewSetTabIndicatorColor(Handle, ptr));
+        _managed.TabIndicatorColor = color;
 
     #endregion
 
@@ -272,11 +177,7 @@ public sealed class TextBufferView : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            if (_handle != nint.Zero)
-            {
-                OpenTuiNative.TextBufferViewDestroy(_handle);
-                _handle = nint.Zero;
-            }
+            _managed.Dispose();
         }
     }
 

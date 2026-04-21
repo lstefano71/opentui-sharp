@@ -1,5 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Text;
+using OpenTui.Core.Managed;
+using OpenTui.Core.Managed.Unicode;
 using OpenTui.Core.Native;
 using OpenTui.Native;
 
@@ -57,10 +59,17 @@ public sealed class OptimizedBuffer : IDisposable
     private nint _handle;
     private bool _disposed;
     private bool _ownsHandle = true;
+    internal ManagedBuffer? _managed;
+    private bool _ownsManaged = true;
 
     private OptimizedBuffer(nint handle)
     {
         _handle = handle;
+    }
+
+    private OptimizedBuffer(ManagedBuffer managed)
+    {
+        _managed = managed;
     }
 
     /// <summary>
@@ -69,6 +78,13 @@ public sealed class OptimizedBuffer : IDisposable
     /// </summary>
     internal static OptimizedBuffer WrapExisting(nint handle) =>
         new(handle) { _ownsHandle = false };
+
+    /// <summary>
+    /// Wraps an existing <see cref="ManagedBuffer"/> without taking ownership.
+    /// Dispose is a no-op for the underlying buffer.
+    /// </summary>
+    internal static OptimizedBuffer WrapExisting(ManagedBuffer buf) =>
+        new(buf) { _ownsManaged = false };
 
     /// <summary>Creates a new optimized buffer with the specified dimensions.</summary>
     public static OptimizedBuffer Create(
@@ -264,9 +280,187 @@ public sealed class OptimizedBuffer : IDisposable
     public void DrawTextBufferView(nint textBufferView, int x, int y) =>
         OpenTuiNative.BufferDrawTextBufferView(Handle, textBufferView, x, y);
 
+    /// <summary>Draws a text buffer view into this buffer (managed or native path).</summary>
+    public void DrawTextBufferView(TextBufferView view, int x, int y)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        DrawManagedTextBufferView(view._managed, x, y);
+    }
+
     /// <summary>Draws an editor view into this buffer.</summary>
     public void DrawEditorView(nint editorView, int x, int y) =>
         OpenTuiNative.BufferDrawEditorView(Handle, editorView, x, y);
+
+    /// <summary>Draws an editor view into this buffer.</summary>
+    public void DrawEditorView(EditorView editorView, int x, int y)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        DrawManagedTextBufferView(editorView._managed.View, x, y);
+    }
+
+    /// <summary>Renders a managed text buffer view into this native buffer cell by cell.</summary>
+    private void DrawManagedTextBufferView(ManagedTextBufferView view, int x, int y)
+    {
+        view.UpdateVirtualLines();
+        var virtualLines = view.GetVirtualLines();
+        if (virtualLines.Length == 0) return;
+
+        uint bufWidth = Width;
+        uint bufHeight = Height;
+
+        int firstVisible = Math.Max(0, -y);
+        int lastPossible = Math.Min(virtualLines.Length, (int)bufHeight - y);
+        if (firstVisible >= lastPossible) return;
+
+        uint horizontalOffset = view.ViewportX;
+        uint viewportWidth = view.Width;
+
+        var buffer = view.Buffer;
+        byte tabWidth = buffer.TabWidth;
+        var syntaxStyle = buffer.SyntaxStyle;
+
+        var selectionRange = view.GetSelectionRange();
+        Rgba? selBg = view.SelectionBg;
+        Rgba? selFg = view.SelectionFg;
+
+        uint prevLogicalLine = uint.MaxValue;
+        uint lineCharOffset = 0;
+
+        for (int vlineIdx = firstVisible; vlineIdx < lastPossible; vlineIdx++)
+        {
+            int screenY = y + vlineIdx;
+            if (screenY < 0 || screenY >= (int)bufHeight) continue;
+
+            ref readonly var vline = ref virtualLines[vlineIdx];
+            uint logicalLine = vline.SourceLine;
+            if (logicalLine >= buffer.LineCount) break;
+
+            string lineText = buffer.GetLineText(logicalLine);
+
+            if (selectionRange.HasValue && logicalLine != prevLogicalLine)
+            {
+                lineCharOffset = buffer.GetOffset(logicalLine, 0);
+                prevLogicalLine = logicalLine;
+            }
+
+            ReadOnlySpan<StyleSpan> styleSpans = syntaxStyle != null
+                ? buffer.GetStyleSpans(logicalLine)
+                : [];
+            int spanIdx = 0;
+
+            uint col = 0;
+            uint charIdx = 0;
+
+            foreach (var rune in lineText.EnumerateRunes())
+            {
+                uint displayWidth = TextWidth.CharWidth(rune, tabWidth);
+                if (displayWidth == 0)
+                {
+                    charIdx++;
+                    continue;
+                }
+
+                if (col + displayWidth <= vline.SourceColOffset)
+                {
+                    col += displayWidth;
+                    charIdx++;
+                    continue;
+                }
+
+                if (col >= vline.SourceColOffset + vline.WidthCols)
+                    break;
+
+                uint columnInVline = col - vline.SourceColOffset;
+
+                if (columnInVline < horizontalOffset)
+                {
+                    col += displayWidth;
+                    charIdx++;
+                    continue;
+                }
+
+                if (columnInVline >= horizontalOffset + viewportWidth)
+                    break;
+
+                int screenX = x + (int)(columnInVline - horizontalOffset);
+                if (screenX >= (int)bufWidth) break;
+
+                if (screenX >= 0)
+                {
+                    Rgba cellFg = Rgba.White;
+                    Rgba cellBg = Rgba.Transparent;
+                    var attrs = TextAttributes.None;
+
+                    if (styleSpans.Length > 0)
+                    {
+                        while (spanIdx < styleSpans.Length && styleSpans[spanIdx].End <= col)
+                            spanIdx++;
+
+                        if (spanIdx < styleSpans.Length)
+                        {
+                            ref readonly var span = ref styleSpans[spanIdx];
+                            if (col >= span.Start && col < span.End)
+                            {
+                                var style = syntaxStyle!.GetStyleById(span.StyleId);
+                                if (style.HasValue)
+                                {
+                                    if (style.Value.Fg.HasValue) cellFg = style.Value.Fg.Value;
+                                    if (style.Value.Bg.HasValue) cellBg = style.Value.Bg.Value;
+                                    attrs = style.Value.Attributes;
+                                }
+                            }
+                        }
+                    }
+
+                    if (selectionRange.HasValue)
+                    {
+                        uint charOffset = lineCharOffset + charIdx;
+                        var (selStart, selEnd) = selectionRange.Value;
+                        if (charOffset >= selStart && charOffset < selEnd)
+                        {
+                            if (selBg.HasValue || selFg.HasValue)
+                            {
+                                if (selBg.HasValue) cellBg = selBg.Value;
+                                if (selFg.HasValue) cellFg = selFg.Value;
+                            }
+                            else
+                            {
+                                Rgba newFg = cellBg.A > 0 ? cellBg : Rgba.Black;
+                                cellBg = cellFg;
+                                cellFg = newFg;
+                            }
+                        }
+                    }
+
+                    uint codepoint = (uint)rune.Value;
+
+                    if (rune.Value == '\t')
+                    {
+                        for (uint t = 0; t < displayWidth; t++)
+                        {
+                            int tx = screenX + (int)t;
+                            if (tx >= (int)bufWidth) break;
+                            if (tx >= 0)
+                                SetCellWithAlphaBlending((uint)tx, (uint)screenY, ' ', cellFg, cellBg, attrs);
+                        }
+                    }
+                    else
+                    {
+                        SetCellWithAlphaBlending((uint)screenX, (uint)screenY, codepoint, cellFg, cellBg, attrs);
+
+                        if (displayWidth == 2 && screenX + 1 < (int)bufWidth)
+                        {
+                            SetCellWithAlphaBlending((uint)(screenX + 1), (uint)screenY,
+                                0x80000000 | codepoint, cellFg, cellBg, attrs);
+                        }
+                    }
+                }
+
+                col += displayWidth;
+                charIdx++;
+            }
+        }
+    }
 
     /// <summary>Draws a border grid using precomputed column and row boundary offsets.</summary>
     public void DrawGrid(

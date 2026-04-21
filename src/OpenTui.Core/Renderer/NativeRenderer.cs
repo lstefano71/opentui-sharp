@@ -1,63 +1,70 @@
-using System.Runtime.InteropServices;
 using System.Text;
-using OpenTui.Core.Native;
-using OpenTui.Native;
+using OpenTui.Core.Managed;
 
 namespace OpenTui.Core;
 
 /// <summary>
-/// Safe managed wrapper around the native OpenTUI renderer and its hit grid.
-/// Wraps the P/Invoke surface from <see cref="OpenTuiNative"/> (Renderer + Hit Grid regions).
+/// Façade over <see cref="ManagedRenderer"/> (double-buffered diff rendering)
+/// and <see cref="ManagedTerminal"/> (terminal I/O and capability management).
+/// Preserves the same public API surface that callers (e.g. <see cref="CliRenderer"/>) expect.
 /// </summary>
 public sealed class NativeRenderer : IDisposable
 {
-    private nint _handle;
+    internal ManagedRenderer _managedRenderer;
+    internal ManagedTerminal _managedTerminal;
+    private readonly ITerminalWriter _writer;
     private bool _disposed;
 
-    private NativeRenderer(nint handle)
+    // ManagedRenderer uses this value to mark the current buffer so every cell diffs as changed
+    // on the first frame. Re-used here for force-full-render support.
+    private const uint ClearChar = 0x0A00;
+
+    private NativeRenderer(ManagedRenderer managedRenderer, ManagedTerminal managedTerminal, ITerminalWriter writer)
     {
-        _handle = handle;
+        _managedRenderer = managedRenderer;
+        _managedTerminal = managedTerminal;
+        _writer = writer;
     }
 
-    /// <summary>Creates a new native renderer with the specified terminal dimensions.</summary>
+    /// <summary>Creates a new renderer with the specified terminal dimensions.</summary>
     public static NativeRenderer Create(uint cols, uint rows, bool testing = false, bool remote = false)
     {
-        nint ptr = OpenTuiNative.CreateRenderer(cols, rows, testing, remote);
-        return new NativeRenderer(ptr);
+        var managedRenderer = ManagedRenderer.Create(cols, rows, testing: testing, remote: remote);
+        var managedTerminal = new ManagedTerminal(new TerminalOptions { Remote = remote });
+        ITerminalWriter writer = testing ? NullTerminalWriter.Instance : new StdoutTerminalWriter();
+        return new NativeRenderer(managedRenderer, managedTerminal, writer);
     }
 
-    /// <summary>Gets the raw native handle. Throws if the renderer has been disposed.</summary>
-    internal nint Handle
+    #region Terminal writers
+
+    private sealed class NullTerminalWriter : ITerminalWriter
     {
-        get
-        {
-            ObjectDisposedException.ThrowIf(_disposed, this);
-            return _handle;
-        }
+        public static readonly NullTerminalWriter Instance = new();
+        public void Write(ReadOnlySpan<byte> data) { }
+        public void Flush() { }
     }
+
+    private sealed class StdoutTerminalWriter : ITerminalWriter
+    {
+        private readonly Stream _stdout = Console.OpenStandardOutput();
+        public void Write(ReadOnlySpan<byte> data) => _stdout.Write(data);
+        public void Flush() => _stdout.Flush();
+    }
+
+    #endregion
 
     #region Environment
 
     /// <summary>Sets a terminal environment variable on the renderer.</summary>
     public bool SetTerminalEnvVar(string key, string value)
     {
-        byte[] keyBytes = Encoding.UTF8.GetBytes(key);
-        byte[] valueBytes = Encoding.UTF8.GetBytes(value);
-        unsafe
-        {
-            fixed (byte* kPtr = keyBytes)
-            fixed (byte* vPtr = valueBytes)
-            {
-                return OpenTuiNative.SetTerminalEnvVar(
-                    Handle, (nint)kPtr, (nuint)keyBytes.Length,
-                    (nint)vPtr, (nuint)valueBytes.Length);
-            }
-        }
+        _managedTerminal.SetHostEnvVar(key, value);
+        return true;
     }
 
     /// <summary>
-    /// Forwards terminal-related environment variables to the native renderer
-    /// so it can detect capabilities (Unicode support, color depth, etc.).
+    /// Forwards terminal-related environment variables so the renderer
+    /// can detect capabilities (Unicode support, color depth, etc.).
     /// Call after construction, before <see cref="SetupTerminal"/>.
     /// </summary>
     public void ForwardEnvironment()
@@ -66,8 +73,9 @@ public sealed class NativeRenderer : IDisposable
         {
             var value = Environment.GetEnvironmentVariable(key);
             if (value is not null)
-                SetTerminalEnvVar(key, value);
+                _managedTerminal.SetHostEnvVar(key, value);
         }
+        _managedTerminal.CheckEnvironmentOverrides();
     }
 
     private static readonly string[] ForwardedEnvKeys =
@@ -82,41 +90,46 @@ public sealed class NativeRenderer : IDisposable
 
     #region Settings
 
-    /// <summary>Enables or disables threaded rendering.</summary>
-    public void SetUseThread(bool useThread) =>
-        OpenTuiNative.SetUseThread(Handle, useThread);
+    /// <summary>Enables or disables threaded rendering (no-op in managed mode).</summary>
+    public void SetUseThread(bool useThread) { }
 
     /// <summary>Sets the renderer background color.</summary>
     public void SetBackgroundColor(Rgba color) =>
-        RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.SetBackgroundColor(Handle, ptr));
+        _managedRenderer.BackgroundColor = color;
 
     /// <summary>Sets the vertical render offset in rows.</summary>
     public void SetRenderOffset(uint offset) =>
-        OpenTuiNative.SetRenderOffset(Handle, offset);
+        _managedRenderer.RenderOffset = offset;
 
     /// <summary>Updates the renderer performance statistics.</summary>
-    public void UpdateStats(double frameTime, uint fps, double frameCallbackTime) =>
-        OpenTuiNative.UpdateStats(Handle, frameTime, fps, frameCallbackTime);
+    public void UpdateStats(double frameTime, uint fps, double frameCallbackTime)
+    {
+        _managedRenderer.Stats.LastFrameTime = frameTime;
+        _managedRenderer.Stats.Fps = fps;
+    }
 
-    /// <summary>Updates the renderer memory usage statistics.</summary>
-    public void UpdateMemoryStats(uint heapUsed, uint heapTotal, uint external) =>
-        OpenTuiNative.UpdateMemoryStats(Handle, heapUsed, heapTotal, external);
+    /// <summary>Updates the renderer memory usage statistics (no-op in managed mode).</summary>
+    public void UpdateMemoryStats(uint heapUsed, uint heapTotal, uint external) { }
 
     #endregion
 
     #region Rendering
 
     /// <summary>Renders the current frame to the terminal.</summary>
-    public void Render(bool forceFullRender = false) =>
-        OpenTuiNative.Render(Handle, forceFullRender);
+    public void Render(bool forceFullRender = false)
+    {
+        if (forceFullRender)
+            _managedRenderer.GetCurrentBuffer().Clear(Rgba.Black, ClearChar);
+        _managedRenderer.Render(_writer);
+    }
 
-    /// <summary>Gets the next (back) buffer handle for double-buffered rendering. The renderer owns this buffer.</summary>
-    public nint GetNextBuffer() =>
-        OpenTuiNative.GetNextBuffer(Handle);
+    /// <summary>Gets the next (back) buffer for double-buffered rendering.</summary>
+    public OptimizedBuffer GetNextBuffer() =>
+        OptimizedBuffer.WrapExisting(_managedRenderer.GetNextBuffer());
 
-    /// <summary>Gets the current (front) buffer handle. The renderer owns this buffer.</summary>
-    public nint GetCurrentBuffer() =>
-        OpenTuiNative.GetCurrentBuffer(Handle);
+    /// <summary>Gets the current (front) buffer showing what's on screen.</summary>
+    public OptimizedBuffer GetCurrentBuffer() =>
+        OptimizedBuffer.WrapExisting(_managedRenderer.GetCurrentBuffer());
 
     #endregion
 
@@ -124,37 +137,40 @@ public sealed class NativeRenderer : IDisposable
 
     /// <summary>Resizes the renderer to new column/row dimensions.</summary>
     public void Resize(uint cols, uint rows) =>
-        OpenTuiNative.ResizeRenderer(Handle, cols, rows);
+        _managedRenderer.Resize(cols, rows);
 
     #endregion
 
     #region Cursor
 
     /// <summary>Sets the cursor position and visibility.</summary>
-    public void SetCursorPosition(int x, int y, bool visible) =>
-        OpenTuiNative.SetCursorPosition(Handle, x, y, visible);
+    public void SetCursorPosition(int x, int y, bool visible)
+    {
+        _managedRenderer.SetCursorPosition((uint)Math.Max(0, x), (uint)Math.Max(0, y));
+        _managedRenderer.SetCursorVisible(visible);
+    }
 
     /// <summary>Sets the cursor color.</summary>
     public void SetCursorColor(Rgba color) =>
-        RgbaMarshalling.WithColorPtr(color, ptr => OpenTuiNative.SetCursorColor(Handle, ptr));
+        _managedRenderer.SetCursorColor(color);
 
     /// <summary>Gets the current cursor state from the renderer.</summary>
-    public CursorState GetCursorState()
-    {
-        CursorState state = default;
-        unsafe
-        {
-            OpenTuiNative.GetCursorState(Handle, (nint)(&state));
-        }
-        return state;
-    }
+    public CursorState GetCursorState() =>
+        _managedRenderer.GetCursorState();
 
     /// <summary>Sets cursor style options.</summary>
     public void SetCursorStyleOptions(CursorStyleOptions options)
     {
-        unsafe
+        if (options.Style != 255)
         {
-            OpenTuiNative.SetCursorStyleOptions(Handle, (nint)(&options));
+            bool blinking = options.Blinking != 255 && options.Blinking != 0;
+            _managedRenderer.SetCursorStyle((CursorStyle)options.Style, blinking);
+        }
+        else if (options.Blinking != 255)
+        {
+            // Only blinking changed — re-apply current style with new blinking value
+            var state = _managedRenderer.GetCursorState();
+            _managedRenderer.SetCursorStyle((CursorStyle)state.Style, options.Blinking != 0);
         }
     }
 
@@ -162,206 +178,142 @@ public sealed class NativeRenderer : IDisposable
 
     #region Debug
 
-    /// <summary>Enables or disables the debug overlay in the specified corner.</summary>
-    public void SetDebugOverlay(bool enabled, DebugOverlayCorner corner = DebugOverlayCorner.TopLeft) =>
-        OpenTuiNative.SetDebugOverlay(Handle, enabled, (byte)corner);
+    /// <summary>Enables or disables the debug overlay (no-op in managed mode).</summary>
+    public void SetDebugOverlay(bool enabled, DebugOverlayCorner corner = DebugOverlayCorner.TopLeft) { }
 
     /// <summary>Clears the entire terminal screen.</summary>
-    public void ClearTerminal() =>
-        OpenTuiNative.ClearTerminal(Handle);
+    public void ClearTerminal()
+    {
+        _writer.Write("\x1b[2J\x1b[H"u8);
+        _writer.Flush();
+    }
 
     #endregion
 
     #region Terminal
 
     /// <summary>Sets the terminal window title.</summary>
-    public void SetTerminalTitle(string title)
-    {
-        byte[] bytes = Encoding.UTF8.GetBytes(title);
-        unsafe
-        {
-            fixed (byte* ptr = bytes)
-            {
-                OpenTuiNative.SetTerminalTitle(Handle, (nint)ptr, (nuint)bytes.Length);
-            }
-        }
-    }
+    public void SetTerminalTitle(string title) =>
+        _managedTerminal.SetTerminalTitle(_writer, title);
 
     /// <summary>Copies text to the system clipboard via OSC 52.</summary>
     public bool CopyToClipboard(string text, byte register = 0)
     {
         byte[] bytes = Encoding.UTF8.GetBytes(text);
-        unsafe
-        {
-            fixed (byte* ptr = bytes)
-            {
-                return OpenTuiNative.CopyToClipboardOSC52(Handle, register, (nint)ptr, (nuint)bytes.Length);
-            }
-        }
+        _managedTerminal.SetClipboard(_writer, ClipboardTarget.Clipboard, bytes);
+        return true;
     }
 
     /// <summary>Clears the system clipboard via OSC 52.</summary>
-    public bool ClearClipboard(byte register = 0) =>
-        OpenTuiNative.ClearClipboardOSC52(Handle, register);
+    public bool ClearClipboard(byte register = 0)
+    {
+        _managedTerminal.SetClipboard(_writer, ClipboardTarget.Clipboard, ReadOnlySpan<byte>.Empty);
+        return true;
+    }
 
     /// <summary>Restores the terminal to its original mode settings.</summary>
     public void RestoreTerminalModes() =>
-        OpenTuiNative.RestoreTerminalModes(Handle);
+        _managedTerminal.RestoreTerminalModes(_writer);
 
     /// <summary>Enables mouse tracking.</summary>
     public void EnableMouse(bool sgr = true) =>
-        OpenTuiNative.EnableMouse(Handle, sgr);
+        _managedTerminal.SetMouseMode(_writer, sgr ? MouseLevel.Motion : MouseLevel.Basic);
 
     /// <summary>Disables mouse tracking.</summary>
     public void DisableMouse() =>
-        OpenTuiNative.DisableMouse(Handle);
+        _managedTerminal.SetMouseMode(_writer, MouseLevel.None);
 
     /// <summary>Enables the Kitty keyboard protocol with the specified flags.</summary>
     public void EnableKittyKeyboard(byte flags) =>
-        OpenTuiNative.EnableKittyKeyboard(Handle, flags);
+        _managedTerminal.SetKittyKeyboard(_writer, true, flags);
 
     /// <summary>Disables the Kitty keyboard protocol.</summary>
     public void DisableKittyKeyboard() =>
-        OpenTuiNative.DisableKittyKeyboard(Handle);
+        _managedTerminal.SetKittyKeyboard(_writer, false, 0);
 
     /// <summary>Sets the Kitty keyboard protocol flags.</summary>
     public void SetKittyKeyboardFlags(byte flags) =>
-        OpenTuiNative.SetKittyKeyboardFlags(Handle, flags);
+        _managedTerminal.SetKittyKeyboardFlags(flags);
 
     /// <summary>Gets the current Kitty keyboard protocol flags.</summary>
     public byte GetKittyKeyboardFlags() =>
-        OpenTuiNative.GetKittyKeyboardFlags(Handle);
+        _managedTerminal.State.KittyKeyboardFlags;
 
     /// <summary>Sets up the terminal for rendering.</summary>
-    public void SetupTerminal(bool alternateBuffer = true) =>
-        OpenTuiNative.SetupTerminal(Handle, alternateBuffer);
+    public void SetupTerminal(bool alternateBuffer = true)
+    {
+        _managedRenderer.UseAlternateScreen = alternateBuffer;
+        _managedRenderer.SetupTerminal(_writer);
+    }
 
     /// <summary>Suspends the renderer, restoring the terminal to a normal state.</summary>
     public void Suspend() =>
-        OpenTuiNative.SuspendRenderer(Handle);
+        _managedRenderer.ShutdownTerminal(_writer);
 
     /// <summary>Resumes the renderer after a suspension.</summary>
     public void Resume() =>
-        OpenTuiNative.ResumeRenderer(Handle);
+        _managedRenderer.SetupTerminal(_writer);
 
     /// <summary>Writes raw bytes to the terminal output.</summary>
     public void WriteOut(ReadOnlySpan<byte> data)
     {
-        unsafe
-        {
-            fixed (byte* ptr = data)
-            {
-                OpenTuiNative.WriteOut(Handle, (nint)ptr, (ulong)data.Length);
-            }
-        }
+        _writer.Write(data);
+        _writer.Flush();
     }
 
-    /// <summary>Retrieves terminal capabilities from the renderer.</summary>
+    /// <summary>Retrieves terminal capabilities.</summary>
     public TerminalCapabilities GetTerminalCapabilities()
     {
-        // Native struct: 15 bools (byte each) + padding + 2×(nint ptr, nuint len) + 1 bool
-        const int BufSize = 256;
-        unsafe
+        var mc = _managedTerminal.Capabilities;
+        var ti = _managedTerminal.TermInfo;
+        return new TerminalCapabilities
         {
-            byte* buf = stackalloc byte[BufSize];
-            OpenTuiNative.GetTerminalCapabilities(Handle, (nint)buf);
-
-            int i = 0;
-            bool kittyKeyboard = buf[i++] != 0;
-            bool kittyGraphics = buf[i++] != 0;
-            bool rgb = buf[i++] != 0;
-            var unicode = (WidthMethod)buf[i++];
-            bool sgrPixels = buf[i++] != 0;
-            bool colorSchemeUpdates = buf[i++] != 0;
-            bool explicitWidth = buf[i++] != 0;
-            bool scaledText = buf[i++] != 0;
-            bool sixel = buf[i++] != 0;
-            bool focusTracking = buf[i++] != 0;
-            bool sync = buf[i++] != 0;
-            bool bracketedPaste = buf[i++] != 0;
-            bool hyperlinks = buf[i++] != 0;
-            bool osc52 = buf[i++] != 0;
-            bool explicitCursorPositioning = buf[i++] != 0;
-
-            // Align to pointer boundary for string pointer/length pairs
-            int ptrSize = nint.Size;
-            i = (i + ptrSize - 1) / ptrSize * ptrSize;
-
-            string termName = "";
-            string termVersion = "";
-
-            nint namePtr = *(nint*)(buf + i);
-            i += ptrSize;
-            nuint nameLen = *(nuint*)(buf + i);
-            i += ptrSize;
-            nint versionPtr = *(nint*)(buf + i);
-            i += ptrSize;
-            nuint versionLen = *(nuint*)(buf + i);
-            i += ptrSize;
-
-            if (namePtr != nint.Zero && nameLen > 0)
-                termName = Encoding.UTF8.GetString((byte*)namePtr, (int)nameLen);
-            if (versionPtr != nint.Zero && versionLen > 0)
-                termVersion = Encoding.UTF8.GetString((byte*)versionPtr, (int)versionLen);
-            bool termFromXtversion = buf[i] != 0;
-
-            return new TerminalCapabilities
-            {
-                KittyKeyboard = kittyKeyboard,
-                KittyGraphics = kittyGraphics,
-                Rgb = rgb,
-                Unicode = unicode,
-                SgrPixels = sgrPixels,
-                ColorSchemeUpdates = colorSchemeUpdates,
-                ExplicitWidth = explicitWidth,
-                ScaledText = scaledText,
-                Sixel = sixel,
-                FocusTracking = focusTracking,
-                Sync = sync,
-                BracketedPaste = bracketedPaste,
-                Hyperlinks = hyperlinks,
-                Osc52 = osc52,
-                ExplicitCursorPositioning = explicitCursorPositioning,
-                TermName = termName,
-                TermVersion = termVersion,
-                TermFromXtversion = termFromXtversion,
-            };
-        }
+            KittyKeyboard = mc.KittyKeyboard,
+            KittyGraphics = mc.KittyGraphics,
+            Rgb = mc.Rgb,
+            Unicode = mc.Unicode,
+            SgrPixels = mc.SgrPixels,
+            ColorSchemeUpdates = mc.ColorSchemeUpdates,
+            ExplicitWidth = mc.ExplicitWidth,
+            ScaledText = mc.ScaledText,
+            Sixel = mc.Sixel,
+            FocusTracking = mc.FocusTracking,
+            Sync = mc.Sync,
+            BracketedPaste = mc.BracketedPaste,
+            Hyperlinks = mc.Hyperlinks,
+            Osc52 = mc.Osc52,
+            ExplicitCursorPositioning = mc.ExplicitCursorPositioning,
+            TermName = ti.Name,
+            TermVersion = ti.Version,
+            TermFromXtversion = ti.FromXtversion,
+        };
     }
 
     /// <summary>Processes a terminal capability response.</summary>
     public void ProcessCapabilityResponse(ReadOnlySpan<byte> data)
     {
-        unsafe
-        {
-            fixed (byte* ptr = data)
-            {
-                OpenTuiNative.ProcessCapabilityResponse(Handle, (nint)ptr, (nuint)data.Length);
-            }
-        }
+        // ManagedTerminal expects chars (Latin-1 encoding: each byte maps 1:1 to char)
+        Span<char> chars = data.Length <= 512 ? stackalloc char[data.Length] : new char[data.Length];
+        for (int i = 0; i < data.Length; i++)
+            chars[i] = (char)data[i];
+        _managedTerminal.ProcessCapabilityResponse(chars);
     }
 
-    /// <summary>Queries the terminal for pixel resolution (async response via event callback).</summary>
-    public void QueryPixelResolution() =>
-        OpenTuiNative.QueryPixelResolution(Handle);
+    /// <summary>Queries the terminal for pixel resolution (no-op in managed mode).</summary>
+    public void QueryPixelResolution() { }
 
-    /// <summary>Dumps internal buffers to a file for debugging.</summary>
-    public void DumpBuffers(long? timestamp = null) =>
-        OpenTuiNative.DumpBuffers(Handle, timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    /// <summary>Dumps internal buffers to a file for debugging (no-op in managed mode).</summary>
+    public void DumpBuffers(long? timestamp = null) { }
 
-    /// <summary>Dumps the stdout buffer to a file for debugging.</summary>
-    public void DumpStdoutBuffer(long? timestamp = null) =>
-        OpenTuiNative.DumpStdoutBuffer(Handle, timestamp ?? DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    /// <summary>Dumps the stdout buffer to a file for debugging (no-op in managed mode).</summary>
+    public void DumpStdoutBuffer(long? timestamp = null) { }
 
     /// <summary>Returns the raw ANSI bytes from the last Render() call (testing mode only).</summary>
     public string GetLastOutputForTest()
     {
-        OpenTuiNative.GetLastOutputForTest(Handle, out var slice);
-        if (slice.Ptr == 0 || slice.Len == 0) return string.Empty;
-        unsafe
-        {
-            return System.Text.Encoding.UTF8.GetString((byte*)slice.Ptr, (int)slice.Len);
-        }
+        var output = _managedRenderer.LastOutputForTest;
+        if (output.IsEmpty) return string.Empty;
+        return Encoding.UTF8.GetString(output);
     }
 
     #endregion
@@ -370,52 +322,49 @@ public sealed class NativeRenderer : IDisposable
 
     /// <summary>Adds a rectangular hit region to the hit grid.</summary>
     public void AddToHitGrid(int x, int y, uint w, uint h, uint id) =>
-        OpenTuiNative.AddToHitGrid(Handle, x, y, w, h, id);
+        _managedRenderer.AddToHitGrid(id, x, y, w, h);
 
     /// <summary>Clears all hit regions from the current hit grid.</summary>
     public void ClearCurrentHitGrid() =>
-        OpenTuiNative.ClearCurrentHitGrid(Handle);
+        _managedRenderer.ClearCurrentHitGrid();
 
     /// <summary>Pushes a scissor (clipping) rectangle onto the hit grid's clip stack.</summary>
     public void HitGridPushScissorRect(int x, int y, uint w, uint h) =>
-        OpenTuiNative.HitGridPushScissorRect(Handle, x, y, w, h);
+        _managedRenderer.PushHitScissor(x, y, w, h);
 
     /// <summary>Pops the most recent scissor rectangle from the hit grid's clip stack.</summary>
     public void HitGridPopScissorRect() =>
-        OpenTuiNative.HitGridPopScissorRect(Handle);
+        _managedRenderer.PopHitScissor();
 
     /// <summary>Clears all scissor rectangles from the hit grid's clip stack.</summary>
     public void HitGridClearScissorRects() =>
-        OpenTuiNative.HitGridClearScissorRects(Handle);
+        _managedRenderer.ClearHitScissors();
 
     /// <summary>Adds a hit region to the current hit grid, clipped by active scissor rectangles.</summary>
     public void AddToCurrentHitGridClipped(int x, int y, uint w, uint h, uint id) =>
-        OpenTuiNative.AddToCurrentHitGridClipped(Handle, x, y, w, h, id);
+        _managedRenderer.AddToCurrentHitGridClipped(id, x, y, w, h);
 
     /// <summary>Tests whether the given coordinates hit any region.</summary>
     /// <returns>The hit region ID, or 0 if no hit.</returns>
     public uint CheckHit(uint x, uint y) =>
-        OpenTuiNative.CheckHit(Handle, x, y);
+        _managedRenderer.CheckHit(x, y);
 
     /// <summary>Gets whether the hit grid has been modified since the last check.</summary>
     public bool GetHitGridDirty() =>
-        OpenTuiNative.GetHitGridDirty(Handle);
+        _managedRenderer.GetHitGridDirty();
 
-    /// <summary>Dumps the hit grid contents for debugging.</summary>
-    public void DumpHitGrid() =>
-        OpenTuiNative.DumpHitGrid(Handle);
+    /// <summary>Dumps the hit grid contents for debugging (no-op in managed mode).</summary>
+    public void DumpHitGrid() { }
 
     #endregion
 
     #region Static Callbacks
 
-    /// <summary>Sets the global log callback function pointer.</summary>
-    public static void SetLogCallback(nint callback) =>
-        OpenTuiNative.SetLogCallback(callback);
+    /// <summary>Sets the global log callback function pointer (no-op in managed mode).</summary>
+    public static void SetLogCallback(nint callback) { }
 
-    /// <summary>Sets the global event callback function pointer.</summary>
-    public static void SetEventCallback(nint callback) =>
-        OpenTuiNative.SetEventCallback(callback);
+    /// <summary>Sets the global event callback function pointer (no-op in managed mode).</summary>
+    public static void SetEventCallback(nint callback) { }
 
     #endregion
 
@@ -425,8 +374,8 @@ public sealed class NativeRenderer : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            OpenTuiNative.RendererDestroy(_handle);
-            _handle = nint.Zero;
+            _managedRenderer.Dispose();
+            _managedTerminal.Dispose();
         }
     }
 }

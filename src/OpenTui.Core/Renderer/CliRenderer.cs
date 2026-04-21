@@ -430,9 +430,9 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
         _nativeRenderer.SetUseThread(config.UseThread);
         _nativeRenderer.SetRenderOffset((uint)_renderOffset);
 
-        // Buffers (wrapped, non-owning — the native renderer owns these)
-        NextRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetNextBuffer());
-        CurrentRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetCurrentBuffer());
+        // Buffers — the managed renderer owns the underlying ManagedBuffers
+        NextRenderBuffer = _nativeRenderer.GetNextBuffer();
+        CurrentRenderBuffer = _nativeRenderer.GetCurrentBuffer();
 
         // Key handler
         _keyHandler = new KeyHandler();
@@ -2032,8 +2032,8 @@ public sealed class CliRenderer : EventEmitter, IRenderContext, IDisposable
     {
         NextRenderBuffer.Dispose();
         CurrentRenderBuffer.Dispose();
-        NextRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetNextBuffer());
-        CurrentRenderBuffer = OptimizedBuffer.WrapExisting(_nativeRenderer.GetCurrentBuffer());
+        NextRenderBuffer = _nativeRenderer.GetNextBuffer();
+        CurrentRenderBuffer = _nativeRenderer.GetCurrentBuffer();
         CurrentRenderBuffer.Clear(_backgroundColor);
         NextRenderBuffer.Clear(_backgroundColor);
         _forceFullRenderPending = true;
