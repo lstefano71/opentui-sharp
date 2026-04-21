@@ -92,6 +92,15 @@ public sealed class ManagedTextBufferView : IDisposable
     /// <summary>Horizontal scroll offset (first visible column, used in no-wrap mode).</summary>
     public uint ScrollLeft => _scrollLeft;
 
+    /// <summary>Gets the underlying text buffer.</summary>
+    public ManagedTextBuffer Buffer => _buffer;
+
+    /// <summary>Gets the selection background color, if set.</summary>
+    public Rgba? SelectionBg => _selectionBg;
+
+    /// <summary>Gets the selection foreground color, if set.</summary>
+    public Rgba? SelectionFg => _selectionFg;
+
     #endregion
 
     #region Cursor

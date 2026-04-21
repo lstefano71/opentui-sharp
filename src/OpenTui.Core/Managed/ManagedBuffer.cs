@@ -872,6 +872,228 @@ public sealed class ManagedBuffer : IDisposable
         }
     }
 
+    /// <summary>Renders a text buffer view's visible content into this buffer.</summary>
+    public void DrawTextBufferView(ManagedTextBufferView view, int x, int y)
+    {
+        DrawTextBufferViewInternal(view, x, y);
+    }
+
+    /// <summary>Renders an editor view's visible content into this buffer.</summary>
+    public void DrawEditorView(ManagedEditorView editorView, int x, int y)
+    {
+        DrawTextBufferView(editorView.View, x, y);
+    }
+
+    private void DrawTextBufferViewInternal(ManagedTextBufferView view, int x, int y)
+    {
+        float opacity = CurrentOpacity;
+        if (opacity == 0f) return;
+
+        view.UpdateVirtualLines();
+        var virtualLines = view.GetVirtualLines();
+        if (virtualLines.Length == 0) return;
+
+        // Compute visible row range: virtual line i renders at screenY = y + i
+        int firstVisible = Math.Max(0, -y);
+        int lastPossible = Math.Min(virtualLines.Length, (int)Height - y);
+        if (firstVisible >= lastPossible) return;
+
+        uint horizontalOffset = view.ViewportX;
+        uint viewportWidth = view.Width;
+
+        var buffer = view.Buffer;
+        byte tabWidth = buffer.TabWidth;
+        var syntaxStyle = buffer.SyntaxStyle;
+
+        // Selection state
+        var selectionRange = view.GetSelectionRange();
+        Rgba? selBg = view.SelectionBg;
+        Rgba? selFg = view.SelectionFg;
+
+        // Cache per-logical-line char offset for selection hit testing
+        uint prevLogicalLine = uint.MaxValue;
+        uint lineCharOffset = 0;
+
+        for (int vlineIdx = firstVisible; vlineIdx < lastPossible; vlineIdx++)
+        {
+            int screenY = y + vlineIdx;
+            if (screenY < 0 || screenY >= (int)Height) continue;
+
+            ref readonly var vline = ref virtualLines[vlineIdx];
+            uint logicalLine = vline.SourceLine;
+            if (logicalLine >= buffer.LineCount) break;
+
+            string lineText = buffer.GetLineText(logicalLine);
+
+            // Compute char offset once per logical line (for selection)
+            if (selectionRange.HasValue && logicalLine != prevLogicalLine)
+            {
+                lineCharOffset = buffer.GetOffset(logicalLine, 0);
+                prevLogicalLine = logicalLine;
+            }
+
+            // Style spans for syntax highlighting
+            ReadOnlySpan<StyleSpan> styleSpans = syntaxStyle != null
+                ? buffer.GetStyleSpans(logicalLine)
+                : [];
+            int spanIdx = 0;
+
+            uint col = 0;       // display column in logical line
+            uint charIdx = 0;   // character index in logical line
+
+            foreach (var rune in lineText.EnumerateRunes())
+            {
+                uint displayWidth = TextWidth.CharWidth(rune, tabWidth);
+
+                // Skip zero-width characters (combining marks, ZWJ, etc.)
+                if (displayWidth == 0)
+                {
+                    charIdx++;
+                    continue;
+                }
+
+                // Before this virtual line's column range
+                if (col + displayWidth <= vline.SourceColOffset)
+                {
+                    col += displayWidth;
+                    charIdx++;
+                    continue;
+                }
+
+                // Past this virtual line's column range
+                if (col >= vline.SourceColOffset + vline.WidthCols)
+                    break;
+
+                uint columnInVline = col - vline.SourceColOffset;
+
+                // Apply horizontal scrolling
+                if (columnInVline < horizontalOffset)
+                {
+                    col += displayWidth;
+                    charIdx++;
+                    continue;
+                }
+
+                if (columnInVline >= horizontalOffset + viewportWidth)
+                    break;
+
+                int screenX = x + (int)(columnInVline - horizontalOffset);
+                if (screenX >= (int)Width) break;
+
+                if (screenX >= 0)
+                {
+                    Rgba cellFg = Rgba.White;
+                    Rgba cellBg = Rgba.Transparent;
+                    uint attrs = 0;
+
+                    // ── Syntax highlighting ──
+                    if (styleSpans.Length > 0)
+                    {
+                        while (spanIdx < styleSpans.Length && styleSpans[spanIdx].End <= col)
+                            spanIdx++;
+
+                        if (spanIdx < styleSpans.Length)
+                        {
+                            ref readonly var span = ref styleSpans[spanIdx];
+                            if (col >= span.Start && col < span.End)
+                            {
+                                var style = syntaxStyle!.GetStyleById(span.StyleId);
+                                if (style.HasValue)
+                                {
+                                    if (style.Value.Fg.HasValue) cellFg = style.Value.Fg.Value;
+                                    if (style.Value.Bg.HasValue) cellBg = style.Value.Bg.Value;
+                                    attrs = (uint)style.Value.Attributes;
+                                }
+                            }
+                        }
+                    }
+
+                    // ── Selection overlay ──
+                    if (selectionRange.HasValue)
+                    {
+                        uint charOffset = lineCharOffset + charIdx;
+                        var (selStart, selEnd) = selectionRange.Value;
+                        if (charOffset >= selStart && charOffset < selEnd)
+                        {
+                            if (selBg.HasValue || selFg.HasValue)
+                            {
+                                if (selBg.HasValue) cellBg = selBg.Value;
+                                if (selFg.HasValue) cellFg = selFg.Value;
+                            }
+                            else
+                            {
+                                // Invert selection: swap fg/bg
+                                Rgba newFg = cellBg.A > 0 ? cellBg : Rgba.Black;
+                                cellBg = cellFg;
+                                cellFg = newFg;
+                            }
+                        }
+                    }
+
+                    uint codepoint = (uint)rune.Value;
+
+                    if (rune.Value == '\t')
+                    {
+                        // Tab: fill with spaces
+                        for (uint t = 0; t < displayWidth; t++)
+                        {
+                            int tx = screenX + (int)t;
+                            if (tx >= (int)Width) break;
+                            if (tx >= 0)
+                                WriteTextBufferCell((uint)tx, (uint)screenY,
+                                    DefaultSpaceChar, cellFg, cellBg, attrs);
+                        }
+                    }
+                    else
+                    {
+                        WriteTextBufferCell((uint)screenX, (uint)screenY,
+                            codepoint, cellFg, cellBg, attrs);
+
+                        // Wide character continuation cell
+                        if (displayWidth == 2 && screenX + 1 < (int)Width)
+                        {
+                            WriteTextBufferCell((uint)(screenX + 1), (uint)screenY,
+                                CharFlagContinuation | codepoint, cellFg, cellBg, attrs);
+                        }
+                    }
+                }
+
+                col += displayWidth;
+                charIdx++;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Writes a cell for text buffer rendering with transparent-background semantics:
+    /// spaces with transparent bg preserve the underlying non-space character;
+    /// non-space characters with transparent bg preserve the existing background.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void WriteTextBufferCell(uint x, uint y, uint codepoint, Rgba fg, Rgba bg, uint attrs)
+    {
+        if (bg.A == 0f)
+        {
+            // Space with transparent bg: preserve underlying non-space character
+            if (codepoint == DefaultSpaceChar)
+            {
+                uint idx = y * Width + x;
+                uint destChar = _chars[(int)idx];
+                if (destChar > DefaultSpaceChar && destChar <= MaxUnicodeCodepoint)
+                    return;
+            }
+
+            // Transparent bg: write char/fg/attrs, keep existing background
+            uint index = y * Width + x;
+            Rgba existingBg = _bg[(int)index];
+            SetCellWithAlphaBlending(x, y, codepoint, fg, existingBg, attrs);
+        }
+        else
+        {
+            SetCellWithAlphaBlending(x, y, codepoint, fg, bg, attrs);
+        }
+    }
+
     #endregion
 
     #region Color Blending
