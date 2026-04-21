@@ -23,15 +23,13 @@ public sealed class TextBufferView : IDisposable
 
     /// <summary>Creates a new text buffer view from an edit buffer's underlying text buffer.</summary>
     /// <remarks>
-    /// Requires EditBuffer to have been migrated to managed internals.
-    /// Currently throws <see cref="NotSupportedException"/> until the EditBuffer swap is complete.
+    /// Creates a view over the EditBuffer's underlying ManagedTextBuffer.
     /// </remarks>
     public static TextBufferView CreateFrom(EditBuffer editBuffer)
     {
         ArgumentNullException.ThrowIfNull(editBuffer);
-        // EditBuffer hasn't been migrated to managed yet.
-        throw new NotSupportedException(
-            "TextBufferView.CreateFrom(EditBuffer) requires EditBuffer to be migrated to managed internals.");
+        var managed = ManagedTextBufferView.Create(editBuffer._managed.Buffer, 0, 0);
+        return new TextBufferView(managed);
     }
 
     #region Viewport

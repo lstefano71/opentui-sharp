@@ -71,13 +71,13 @@ public class RendererTests
         view.SetViewportSize(80, 24);
 
         using var buf = OptimizedBuffer.Create(80, 24);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // Blit into renderer's next buffer and render
         renderer.Render(false);
 
         var currentBuf = renderer.GetCurrentBuffer();
-        Assert.NotEqual(nint.Zero, currentBuf);
+        Assert.NotNull(currentBuf);
     }
 
     [Fact]
@@ -90,7 +90,7 @@ public class RendererTests
         view.SetViewportSize(80, 24);
 
         using var buf = OptimizedBuffer.Create(80, 24);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         renderer.Render(false);
     }
 
@@ -104,7 +104,7 @@ public class RendererTests
         view.SetViewportSize(80, 24);
 
         using var buf = OptimizedBuffer.Create(80, 24);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         renderer.Render(false);
     }
 
@@ -118,7 +118,7 @@ public class RendererTests
         view.SetViewportSize(80, 24);
 
         using var buf = OptimizedBuffer.Create(80, 24);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         renderer.Render(false);
     }
 
@@ -132,7 +132,7 @@ public class RendererTests
         view.SetViewportSize(80, 24);
 
         using var buf = OptimizedBuffer.Create(80, 24);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         renderer.Render(false);
     }
 
@@ -146,7 +146,7 @@ public class RendererTests
         view.SetViewportSize(80, 24);
 
         using var buf = OptimizedBuffer.Create(80, 24);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         renderer.Render(false);
     }
 
@@ -160,12 +160,12 @@ public class RendererTests
         using var buf = OptimizedBuffer.Create(80, 24);
 
         tb.SetText("Hello");
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         renderer.Render(false);
 
         tb.SetText("World");
         buf.Clear();
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         renderer.Render(false);
     }
 
@@ -184,7 +184,7 @@ public class RendererTests
         {
             tb.SetText(texts[frame % texts.Length]);
             buf.Clear();
-            buf.DrawTextBufferView(view.Handle, 0, 0);
+            buf.DrawTextBufferView(view, 0, 0);
             renderer.Render(false);
         }
     }

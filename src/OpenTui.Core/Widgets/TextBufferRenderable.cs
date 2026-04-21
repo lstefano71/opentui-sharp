@@ -48,7 +48,7 @@ public class TextBufferRenderable : Renderable
         _textBuffer.SetForeground(_fg);
         _textBuffer.SetBackground(_bg);
         _textBuffer.SetAttributes(options.Attributes);
-        _textBuffer.SetSyntaxStyle(_syntaxStyle.Handle);
+        _textBuffer.SetSyntaxStyle(_syntaxStyle);
 
         _textBufferView.SetWrapMode(_wrapMode);
         if (_truncate) _textBufferView.SetTruncate(true);
@@ -298,7 +298,7 @@ public class TextBufferRenderable : Renderable
     /// <inheritdoc />
     protected override void RenderSelf(OptimizedBuffer buffer, float deltaTime)
     {
-        buffer.DrawTextBufferView(_textBufferView.Handle, (int)_screenX, (int)_screenY);
+        buffer.DrawTextBufferView(_textBufferView, (int)_screenX, (int)_screenY);
     }
 
     /// <inheritdoc />

@@ -100,6 +100,10 @@ public enum WidthMethod : byte
     /// Represents the Unicode option.
     /// </summary>
     Unicode = 1,
+    /// <summary>
+    /// Unicode width but without ZWJ sequence handling (faster, slightly less accurate for emoji).
+    /// </summary>
+    NoZwj = 2,
 }
 
 /// <summary>Theme mode (dark or light).</summary>

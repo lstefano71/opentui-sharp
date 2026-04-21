@@ -1108,6 +1108,18 @@ public sealed class ManagedTextBuffer : IDisposable
         return (uint)lineText.Length;
     }
 
+    /// <summary>
+    /// Gets the character offset one past the end of the text (total character positions).
+    /// </summary>
+    public uint GetTextEndOffset()
+    {
+        ThrowIfDisposed();
+        uint lc = LineCount;
+        if (lc == 0) return 0;
+        uint lastLine = lc - 1;
+        return GetOffset(lastLine, GetLineLength(lastLine));
+    }
+
     /// <summary>Gets a range of text by line/column coordinates.</summary>
     public string GetTextRange(uint startLine, uint startCol, uint endLine, uint endCol)
     {
@@ -1195,7 +1207,7 @@ public sealed class ManagedTextBuffer : IDisposable
             {
                 if (currentLine == line)
                 {
-                    offset += Math.Min(col, currentCol);
+                    // Don't add offset here — post-walk code handles it.
                     return false;
                 }
                 offset += currentCol + 1; // +1 for the newline character
@@ -1221,6 +1233,29 @@ public sealed class ManagedTextBuffer : IDisposable
             offset += Math.Min(col, currentCol);
 
         return offset;
+    }
+
+    /// <summary>
+    /// Converts a character offset to a (line, col) position.
+    /// Walks lines until the offset is consumed.
+    /// </summary>
+    public (uint Line, uint Col) OffsetToLineCol(uint offset)
+    {
+        ThrowIfDisposed();
+        uint remaining = offset;
+        uint lineCount = LineCount;
+
+        for (uint i = 0; i < lineCount; i++)
+        {
+            uint lineLen = GetLineLength(i);
+            if (remaining <= lineLen)
+                return (i, remaining);
+            remaining -= lineLen + 1; // +1 for the newline
+        }
+
+        // Past end — clamp to last line
+        uint lastLine = lineCount > 0 ? lineCount - 1 : 0;
+        return (lastLine, lineCount > 0 ? GetLineLength(lastLine) : 0);
     }
 
     /// <summary>

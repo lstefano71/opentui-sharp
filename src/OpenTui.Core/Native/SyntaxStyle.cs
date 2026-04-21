@@ -1,5 +1,4 @@
-using OpenTui.Core.Native;
-using OpenTui.Native;
+using OpenTui.Core.Managed;
 
 namespace OpenTui.Core;
 
@@ -9,76 +8,62 @@ namespace OpenTui.Core;
 public readonly record struct SyntaxStyleEntry(Rgba? Fg, Rgba? Bg, TextAttributes Attributes);
 
 /// <summary>
-/// Managed wrapper around the native syntax style registry.
-/// Allows registering named styles (fg/bg/attrs) and resolving them by name.
+/// Managed wrapper around the syntax style registry.
+/// Delegates to <see cref="ManagedSyntaxStyle"/>.
 /// </summary>
 public sealed class SyntaxStyle : IDisposable
 {
-    private nint _handle;
+    internal ManagedSyntaxStyle _managed;
     private bool _disposed;
     private readonly Dictionary<string, SyntaxStyleEntry> _stylesByName = new(StringComparer.Ordinal);
 
-    private SyntaxStyle(nint handle) => _handle = handle;
+    private SyntaxStyle(ManagedSyntaxStyle managed) => _managed = managed;
 
     /// <summary>Creates a new syntax style registry.</summary>
     public static SyntaxStyle Create()
     {
-        nint handle = OpenTuiNative.CreateSyntaxStyle();
-        if (handle == nint.Zero)
-            throw new InvalidOperationException("Failed to create native syntax style.");
-        return new SyntaxStyle(handle);
+        return new SyntaxStyle(new ManagedSyntaxStyle());
     }
 
-    internal nint Handle
+    /// <summary>Gets the total number of registered styles.</summary>
+    public nuint StyleCount
     {
         get
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return _handle;
+            return (nuint)_managed.StyleCount;
         }
     }
 
     /// <summary>Registers a named style and returns its ID.</summary>
     public uint Register(string name, Rgba? fg = null, Rgba? bg = null, TextAttributes attrs = TextAttributes.None)
     {
-        var utf8 = new Utf8String(name);
-        uint result = 0;
-        utf8.WithPtr((namePtr, nameLen) =>
-            RgbaMarshalling.WithColorPtrs(fg, bg, (fgPtr, bgPtr) =>
-                result = OpenTuiNative.SyntaxStyleRegister(Handle, namePtr, nameLen, fgPtr, bgPtr, (byte)attrs)));
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        uint result = _managed.Register(name, fg, bg, attrs);
         _stylesByName[name] = new SyntaxStyleEntry(fg, bg, attrs);
         return result;
     }
 
-    /// <summary>Resolves a style ID by name. Returns 0 if not found.</summary>
+    /// <summary>Resolves a style name to its 1-based ID, or 0 if not found.</summary>
     public uint ResolveByName(string name)
     {
-        var utf8 = new Utf8String(name);
-        uint result = 0;
-        utf8.WithPtr((namePtr, nameLen) =>
-            result = OpenTuiNative.SyntaxStyleResolveByName(Handle, namePtr, nameLen));
-        return result;
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _managed.ResolveByName(name);
     }
 
-    /// <summary>Gets the total number of registered styles.</summary>
-    public nuint StyleCount => OpenTuiNative.SyntaxStyleGetStyleCount(Handle);
+    /// <summary>Attempts to retrieve a style entry by name.</summary>
+    public bool TryGetStyle(string name, out SyntaxStyleEntry style)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _stylesByName.TryGetValue(name, out style);
+    }
 
-    /// <summary>
-    /// Attempts to get style.
-    /// </summary>
-    /// <param name="name">The name.</param>
-    /// <param name="style">The style.</param>
-    /// <returns>true if try get style; otherwise, false.</returns>
-    public bool TryGetStyle(string name, out SyntaxStyleEntry style) =>
-        _stylesByName.TryGetValue(name, out style);
-
-    /// <summary>
-    /// Gets a style.
-    /// </summary>
-    /// <param name="name">The name.</param>
-    /// <returns>The style.</returns>
-    public SyntaxStyleEntry? GetStyle(string name) =>
-        _stylesByName.TryGetValue(name, out var style) ? style : null;
+    /// <summary>Gets a style entry by name, or null if not found.</summary>
+    public SyntaxStyleEntry? GetStyle(string name)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _stylesByName.TryGetValue(name, out var style) ? style : null;
+    }
 
     /// <inheritdoc />
     public void Dispose()
@@ -87,8 +72,8 @@ public sealed class SyntaxStyle : IDisposable
         {
             _disposed = true;
             _stylesByName.Clear();
-            OpenTuiNative.SyntaxStyleDestroy(_handle);
-            _handle = nint.Zero;
+            _managed?.Dispose();
+            _managed = null!;
         }
     }
 }

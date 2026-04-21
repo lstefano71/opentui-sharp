@@ -151,7 +151,7 @@ public class TextTableRenderable : Renderable
         {
             TextBuffer = TextBuffer.Create(widthMethod);
             SyntaxStyle = SyntaxStyle.Create();
-            TextBuffer.SetSyntaxStyle(SyntaxStyle.Handle);
+            TextBuffer.SetSyntaxStyle(SyntaxStyle);
             TextBufferView = TextBufferView.Create(TextBuffer);
         }
 
@@ -1115,7 +1115,7 @@ public class TextTableRenderable : Renderable
             for (int c = 0; c < _colCount; c++)
             {
                 int cellX = baseX + layout.ColumnOffsets[c] + 1 + _cellPadding;
-                buffer.DrawTextBufferView(_cells[r, c].TextBufferView.Handle, cellX, cellY);
+                buffer.DrawTextBufferView(_cells[r, c].TextBufferView, cellX, cellY);
             }
         }
     }

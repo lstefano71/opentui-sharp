@@ -37,6 +37,7 @@ public sealed class ManagedTextBufferView : IDisposable
     // Offset-based selection (used by ManagedEditorView)
     private uint? _selectionStartOffset;
     private uint? _selectionEndOffset;
+    private uint? _selectionAnchorOffset; // anchor from SetLocalSelection, preserved by UpdateLocalSelection
     private Rgba? _selectionBg;
     private Rgba? _selectionFg;
 
@@ -217,18 +218,24 @@ public sealed class ManagedTextBufferView : IDisposable
     public void ResetSelection()
     {
         _selectionAnchor = null;
+        _selectionAnchorOffset = null;
         _selectionStartOffset = null;
         _selectionEndOffset = null;
         _selectionBg = null;
         _selectionFg = null;
     }
 
-    /// <summary>Gets the text covered by the current anchor-based selection.</summary>
+    /// <summary>Gets the text covered by the current selection (offset-based or anchor-based).</summary>
     /// <exception cref="InvalidOperationException">Thrown when no selection is active.</exception>
     public string GetSelectedText()
     {
-        var (start, end) = GetSelectionCursorRange();
-        return _buffer.GetTextRange(start.Row, start.Col, end.Row, end.Col);
+        // Prefer offset-based selection (set via SetSelection)
+        if (_selectionStartOffset is { } start && _selectionEndOffset is { } end)
+            return _buffer.GetTextRangeByOffset(start, end);
+
+        // Fall back to anchor-based selection (set via SetLocalSelection/UpdateSelection)
+        var (cursorStart, cursorEnd) = GetSelectionCursorRange();
+        return _buffer.GetTextRange(cursorStart.Row, cursorStart.Col, cursorEnd.Row, cursorEnd.Col);
     }
 
     #endregion
@@ -555,7 +562,8 @@ public sealed class ManagedTextBufferView : IDisposable
         uint totalVisual = GetTotalVisualLines();
         if (totalVisual <= _scrollTop)
             return 0;
-        return Math.Min(totalVisual - _scrollTop, _height);
+        uint available = totalVisual - _scrollTop;
+        return _height > 0 ? Math.Min(available, _height) : available;
     }
 
     /// <summary>
@@ -804,30 +812,59 @@ public sealed class ManagedTextBufferView : IDisposable
 
     /// <summary>
     /// Sets a local (visual coordinate) selection. Converts screen-space x,y to buffer offsets.
+    /// Stores the anchor offset for use by subsequent UpdateLocalSelection calls.
     /// Returns true if the selection was set successfully.
     /// </summary>
     public bool SetLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
     {
-        if (!TryVisualToOffset(startX, startY, out uint startOffset) ||
-            !TryVisualToOffset(endX, endY, out uint endOffset))
+        if (!TryVisualToOffset(startX, startY, out uint anchorOffset) ||
+            !TryVisualToOffset(endX, endY, out uint focusOffset))
+        {
+            _selectionAnchorOffset = null;
             return false;
+        }
 
-        SetSelection(startOffset, endOffset, selBg, selFg);
+        _selectionAnchorOffset = anchorOffset;
+        uint start = Math.Min(anchorOffset, focusOffset);
+        uint end = Math.Max(anchorOffset, focusOffset);
+        SetSelection(start, end, selBg, selFg);
         return true;
     }
 
     /// <summary>
     /// Updates the local (visual coordinate) selection extent.
+    /// Preserves the anchor from the initial SetLocalSelection call;
+    /// only the focus (end) point is updated. Falls back to SetLocalSelection
+    /// when no anchor exists yet.
     /// Returns true if the selection was updated successfully.
     /// </summary>
     public bool UpdateLocalSelection(int startX, int startY, int endX, int endY, Rgba? selBg = null, Rgba? selFg = null)
     {
-        return SetLocalSelection(startX, startY, endX, endY, selBg, selFg);
+        if (_selectionAnchorOffset is not { } anchorOffset)
+            return SetLocalSelection(startX, startY, endX, endY, selBg, selFg);
+
+        if (!TryVisualToOffset(endX, endY, out uint focusOffset))
+            return false;
+
+        uint start = Math.Min(anchorOffset, focusOffset);
+        uint end = Math.Max(anchorOffset, focusOffset);
+
+        // When focus is before anchor (backward selection), extend end by 1
+        // to include the anchor character (matching Zig reference behavior).
+        if (focusOffset < anchorOffset)
+        {
+            uint textEnd = _buffer.Length;
+            end = Math.Min(end + 1, textEnd);
+        }
+
+        SetSelection(start, end, selBg, selFg);
+        return true;
     }
 
     /// <summary>Resets the local (visual coordinate) selection.</summary>
     public void ResetLocalSelection()
     {
+        _selectionAnchorOffset = null;
         ResetSelection();
     }
 
@@ -848,7 +885,7 @@ public sealed class ManagedTextBufferView : IDisposable
     /// <summary>
     /// Gets the current selection info as a packed 64-bit value.
     /// Start in upper 32 bits, end in lower 32 bits.
-    /// Returns 0xFFFFFFFF_FFFFFFFF if no selection is active.
+    /// Returns 0xFFFFFFFF_FFFFFFFF if no selection is active or selection is zero-width.
     /// </summary>
     public ulong GetSelectionInfo()
     {
@@ -857,6 +894,9 @@ public sealed class ManagedTextBufferView : IDisposable
             return 0xFFFF_FFFF_FFFF_FFFFUL;
 
         var (start, end) = range.Value;
+        if (start == end)
+            return 0xFFFF_FFFF_FFFF_FFFFUL;
+
         return ((ulong)start << 32) | end;
     }
 

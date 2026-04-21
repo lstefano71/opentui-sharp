@@ -177,9 +177,9 @@ public class TextBufferExtendedTests
         using var tb = TextBuffer.Create(WidthMethod.Unicode);
         using var style = SyntaxStyle.Create();
 
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
         // Should not crash
-        tb.SetSyntaxStyle(nint.Zero);
+        tb.SetSyntaxStyle(null);
     }
 
     [Fact]
@@ -194,7 +194,7 @@ public class TextBufferExtendedTests
         var commentId = style.Register("comment", fg: new Rgba(0.5f, 0.5f, 0.5f, 1f));
 
         tb.SetText("function hello() // comment");
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
 
         tb.AddHighlight(0, new Highlight { Start = 0, End = 8, StyleId = keywordId, Priority = 1, HlRef = 0 });
         tb.AddHighlight(0, new Highlight { Start = 9, End = 14, StyleId = stringId, Priority = 1, HlRef = 0 });
@@ -1332,7 +1332,7 @@ public class TextBufferExtendedTests
 
         tb.SetText("Hello World");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // Verify no crash; text was drawn
         Assert.Equal(20u, buf.Width);
@@ -1349,7 +1349,7 @@ public class TextBufferExtendedTests
 
         tb.SetText("");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1362,7 +1362,7 @@ public class TextBufferExtendedTests
 
         tb.SetText("Line 1\nLine 2\nLine 3");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(3u, tb.LineCount);
     }
@@ -1380,7 +1380,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(15);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 1);
     }
@@ -1404,7 +1404,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(10);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(4u, view.GetVirtualLineCount());
     }
@@ -1422,7 +1422,7 @@ public class TextBufferExtendedTests
         // No wrap width set => no wrapping
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(1u, view.GetVirtualLineCount());
     }
@@ -1440,7 +1440,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(15);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() >= 3);
     }
@@ -1458,7 +1458,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(15);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 0);
     }
@@ -1476,7 +1476,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(10);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 1);
     }
@@ -1504,7 +1504,7 @@ public class TextBufferExtendedTests
         tb.SetText("Line 1\nLine 2\nLine 3\nLine 4");
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() >= 4);
     }
@@ -1522,7 +1522,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(3);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(2u, view.GetVirtualLineCount());
     }
@@ -1540,7 +1540,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(8);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(2u, view.GetVirtualLineCount());
     }
@@ -1556,7 +1556,7 @@ public class TextBufferExtendedTests
         tb.SetText("Line 1\n\nLine 3");
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(3u, view.GetVirtualLineCount());
     }
@@ -1574,7 +1574,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(15);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1590,7 +1590,7 @@ public class TextBufferExtendedTests
         // No wrap width
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(1u, view.GetVirtualLineCount());
     }
@@ -1659,7 +1659,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(10);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 1);
     }
@@ -1697,7 +1697,7 @@ public class TextBufferExtendedTests
         // Viewport set; drawing should not crash
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1712,7 +1712,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(20, 3);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1727,7 +1727,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(20, 3);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1742,7 +1742,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1763,7 +1763,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(15, 3);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact(Skip = "getCachedLineInfo is internal-only in Zig")]
@@ -1783,15 +1783,15 @@ public class TextBufferExtendedTests
         view.SetViewport(0, 0, 20, 2);
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetViewport(0, 3, 20, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetViewport(0, 1, 20, 4);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact(Skip = "Null viewport (setViewport(null)) has no C# equivalent")]
@@ -1812,7 +1812,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(20, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1828,7 +1828,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1844,11 +1844,11 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(8, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetViewport(3, 1, 8, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1864,7 +1864,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(10, 3);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1880,7 +1880,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(15, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1896,12 +1896,12 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(15, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetWrapMode((byte)WrapMode.Char);
         view.SetViewport(10, 0, 15, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1921,7 +1921,7 @@ public class TextBufferExtendedTests
 
         using var buf = OptimizedBuffer.Create(15, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1935,11 +1935,11 @@ public class TextBufferExtendedTests
         view.SetViewport(0, 0, 20, 0);
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetViewport(0, 0, 0, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -1975,19 +1975,19 @@ public class TextBufferExtendedTests
 
         view.SetViewport(0, 0, 5, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetViewport(0, 1, 5, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetViewport(3, 1, 5, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         view.SetViewport(5, 2, 5, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     #endregion
@@ -2007,7 +2007,7 @@ public class TextBufferExtendedTests
         view.SetViewport(5, 0, 10, 1);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -2023,7 +2023,7 @@ public class TextBufferExtendedTests
         view.SetViewport(3, 0, 8, 3);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -2039,7 +2039,7 @@ public class TextBufferExtendedTests
         view.SetViewport(5, 1, 10, 2);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact(Skip = "Cell-level inspection (get(x,y)) not exposed in C# OptimizedBuffer")]
@@ -2079,21 +2079,21 @@ public class TextBufferExtendedTests
         using var buf = OptimizedBuffer.Create(20, 5);
 
         var style = SyntaxStyle.Create();
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
 
         var styleId = style.Register("test", fg: Rgba.Red);
         tb.SetText("Hello World");
         tb.AddHighlightByCharRange(new Highlight { Start = 0, End = 5, StyleId = styleId, Priority = 1, HlRef = 0 });
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         style.Dispose();
 
-        tb.SetSyntaxStyle(nint.Zero);
+        tb.SetSyntaxStyle(null);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -2108,7 +2108,7 @@ public class TextBufferExtendedTests
         tb.SetText("A\tB");
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // Verify plain text is intact
         Assert.Equal("A\tB", tb.GetPlainText());
@@ -2129,7 +2129,7 @@ public class TextBufferExtendedTests
         view.SetTabIndicatorColor(new Rgba(0.25f, 0.25f, 0.25f, 1f));
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -2144,7 +2144,7 @@ public class TextBufferExtendedTests
         tb.SetText("A\tB");
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     #endregion
@@ -2182,7 +2182,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(80);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 0);
 
@@ -2204,7 +2204,7 @@ public class TextBufferExtendedTests
         view.SetWrapWidth(80);
         view.SetViewport(0, 2, 80, 3);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact(Skip = "setStyledText chunk API is not fully exposed in C#")]
@@ -2228,7 +2228,7 @@ public class TextBufferExtendedTests
         Assert.Equal(6u, tb.Length);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     #endregion

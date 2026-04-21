@@ -112,7 +112,7 @@ public class TextBufferDrawingTests
 
         tb.SetText("Hello World");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         Assert.StartsWith("Hello World", result);
@@ -128,7 +128,7 @@ public class TextBufferDrawingTests
 
         tb.SetText("");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         // No crash = pass
     }
 
@@ -142,7 +142,7 @@ public class TextBufferDrawingTests
 
         tb.SetText("Line 1\nLine 2\nLine 3");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         uint virtualLines = view.GetVirtualLineCount();
         Assert.Equal(3u, virtualLines);
@@ -161,7 +161,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(15, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 1);
     }
@@ -181,7 +181,7 @@ public class TextBufferDrawingTests
         tb.SetText("A A");
         buf.Clear(redBg);
         buf.DrawChar('X', 1, 0, greenFg, blueBg, TextAttributes.Bold);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // Cell (0,0): 'A'
         uint leftChar = ReadCellChar(buf, 0, 0);
@@ -227,7 +227,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(4u, view.GetVirtualLineCount());
     }
@@ -247,7 +247,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(1u, view.GetVirtualLineCount());
     }
@@ -265,7 +265,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(15, 15);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() >= 3);
     }
@@ -283,7 +283,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(15, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 0);
     }
@@ -301,7 +301,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 1);
     }
@@ -325,7 +325,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 20);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 5, 5);
+        buf.DrawTextBufferView(view, 5, 5);
 
         uint cell = ReadCellChar(buf, 5, 5);
         Assert.NotEqual(32u, cell); // Not a space
@@ -342,7 +342,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() >= 4);
     }
@@ -360,7 +360,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(3, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(2u, view.GetVirtualLineCount());
     }
@@ -378,7 +378,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(8, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(2u, view.GetVirtualLineCount());
     }
@@ -394,7 +394,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(3u, view.GetVirtualLineCount());
     }
@@ -412,7 +412,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(15, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
         // No crash = pass
     }
 
@@ -429,7 +429,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal(1u, view.GetVirtualLineCount());
     }
@@ -500,7 +500,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 1);
     }
@@ -626,7 +626,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -675,7 +675,7 @@ public class TextBufferDrawingTests
         // We verify drawing works
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -693,7 +693,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(8, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -710,7 +710,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 3);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -727,7 +727,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(15, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     [Fact]
@@ -819,7 +819,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(5, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
     }
 
     #endregion
@@ -845,7 +845,7 @@ public class TextBufferDrawingTests
 
             using var buf = OptimizedBuffer.Create(20, 5);
             buf.Clear(BlackBg);
-            buf.DrawTextBufferView(view.Handle, 0, 0);
+            buf.DrawTextBufferView(view, 0, 0);
 
             string result = GetResolvedText(buf);
             Assert.StartsWith("ABC", result);
@@ -874,7 +874,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         Assert.StartsWith("56789ABCDE", result);
@@ -893,7 +893,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(8, 3);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         Assert.Contains("DEFGHIJK", result);
@@ -914,7 +914,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         Assert.Contains("KLMNOPQRST", result);
@@ -934,7 +934,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         Assert.Equal("56789ABCDE", result[..10]);
@@ -956,7 +956,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal((uint)'K', ReadCellChar(buf, 0, 0));
         Assert.Equal((uint)'O', ReadCellChar(buf, 4, 0));
@@ -977,7 +977,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(50, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         uint nonSpaceCount = 0;
         for (uint i = 0; i < 50; i++)
@@ -999,12 +999,12 @@ public class TextBufferDrawingTests
         // First draw wide characters
         tb.SetText("世界");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // Now overwrite with ASCII
         tb.SetText("ABC");
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal((uint)'A', ReadCellChar(buf, 0, 0));
         Assert.Equal((uint)'B', ReadCellChar(buf, 1, 0));
@@ -1026,7 +1026,7 @@ public class TextBufferDrawingTests
         using var view = TextBufferView.Create(tb);
 
         var style = SyntaxStyle.Create();
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
 
         uint styleId = style.Register("test", fg: new Rgba(1f, 0f, 0f, 1f));
         tb.SetText("Hello World");
@@ -1034,7 +1034,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         Assert.StartsWith("Hello World", result);
@@ -1044,7 +1044,7 @@ public class TextBufferDrawingTests
 
         // Draw again after style destroyed — should not crash
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result2 = GetResolvedText(buf);
         Assert.StartsWith("Hello World", result2);
@@ -1066,7 +1066,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal((uint)'A', ReadCellChar(buf, 0, 0));
         Assert.Equal(32u, ReadCellChar(buf, 1, 0));
@@ -1092,7 +1092,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal((uint)'A', ReadCellChar(buf, 0, 0));
         Assert.Equal((uint)'→', ReadCellChar(buf, 1, 0));
@@ -1120,7 +1120,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(20, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal((uint)'A', ReadCellChar(buf, 0, 0));
         Assert.Equal(32u, ReadCellChar(buf, 1, 0));
@@ -1153,7 +1153,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(50, 5);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // The last 's' at cell 30 should be present
         uint cell30 = ReadCellChar(buf, 30, 0);
@@ -1194,7 +1194,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(80, 100);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(view.GetVirtualLineCount() > 0);
 
@@ -1221,7 +1221,7 @@ public class TextBufferDrawingTests
         view.SetViewport(0, 10, 80, 20);
 
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.True(tb.LineCount > 15);
     }
@@ -1243,7 +1243,7 @@ public class TextBufferDrawingTests
         using var tb = TextBuffer.Create(WidthMethod.Unicode);
         using var view = TextBufferView.Create(tb);
         using var style = SyntaxStyle.Create();
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
 
         uint redStyle = style.Register("red", fg: new Rgba(1f, 0f, 0f, 1f));
         uint greenStyle = style.Register("green", fg: new Rgba(0f, 1f, 0f, 1f));
@@ -1265,7 +1265,7 @@ public class TextBufferDrawingTests
             view.SetViewport(0, 0, 40, 1);
             using var buf = OptimizedBuffer.Create(40, 1);
             buf.Clear(BlackBg);
-            buf.DrawTextBufferView(view.Handle, 0, 0);
+            buf.DrawTextBufferView(view, 0, 0);
 
             // "const" is red
             Assert.Equal((uint)'c', ReadCellChar(buf, 0, 0));
@@ -1287,7 +1287,7 @@ public class TextBufferDrawingTests
             view.SetViewport(3, 0, 20, 1);
             using var buf = OptimizedBuffer.Create(20, 1);
             buf.Clear(BlackBg);
-            buf.DrawTextBufferView(view.Handle, 0, 0);
+            buf.DrawTextBufferView(view, 0, 0);
 
             // Position 0: 's' (source 3) - RED
             Assert.Equal((uint)'s', ReadCellChar(buf, 0, 0));
@@ -1328,7 +1328,7 @@ public class TextBufferDrawingTests
             view.SetViewport(30, 0, 20, 1);
             using var buf = OptimizedBuffer.Create(20, 1);
             buf.Clear(BlackBg);
-            buf.DrawTextBufferView(view.Handle, 0, 0);
+            buf.DrawTextBufferView(view, 0, 0);
 
             // Position 5: '2' (source 35) - YELLOW
             Assert.Equal((uint)'2', ReadCellChar(buf, 5, 0));
@@ -1346,7 +1346,7 @@ public class TextBufferDrawingTests
         using var tb = TextBuffer.Create(WidthMethod.Unicode);
         using var view = TextBufferView.Create(tb);
         using var style = SyntaxStyle.Create();
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
 
         uint redStyleId = style.Register("keyword", fg: new Rgba(1f, 0f, 0f, 1f));
         tb.SetText("const x = 1");
@@ -1357,7 +1357,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // 's' at position 0 is RED
         Assert.Equal((uint)'s', ReadCellChar(buf, 0, 0));
@@ -1408,7 +1408,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         var yellowBg = new Rgba(1f, 1f, 0f, 1f);
 
@@ -1472,7 +1472,7 @@ public class TextBufferDrawingTests
         using var tb = TextBuffer.Create(WidthMethod.Unicode);
         using var view = TextBufferView.Create(tb);
         using var style = SyntaxStyle.Create();
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
 
         uint redStyle = style.Register("red", fg: new Rgba(1f, 0f, 0f, 1f));
         uint greenStyle = style.Register("green", fg: new Rgba(0f, 1f, 0f, 1f));
@@ -1487,7 +1487,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // Prefix: '1' at position 1 should be white
         Assert.Equal((uint)'1', ReadCellChar(buf, 1, 0));
@@ -1518,7 +1518,7 @@ public class TextBufferDrawingTests
         using var tb = TextBuffer.Create(WidthMethod.Unicode);
         using var view = TextBufferView.Create(tb);
         using var style = SyntaxStyle.Create();
-        tb.SetSyntaxStyle(style.Handle);
+        tb.SetSyntaxStyle(style);
 
         uint magentaStyle = style.Register("magenta", fg: new Rgba(1f, 0f, 1f, 1f));
         uint greenStyle = style.Register("green", fg: new Rgba(0f, 1f, 0f, 1f));
@@ -1533,7 +1533,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         // Ellipsis '.' at position 3 should be white
         Assert.Equal((uint)'.', ReadCellChar(buf, 3, 0));
@@ -1574,7 +1574,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         var yellowBg = new Rgba(1f, 1f, 0f, 1f);
 
@@ -1621,7 +1621,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 2);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         var yellowBg = new Rgba(1f, 1f, 0f, 1f);
 
@@ -1666,7 +1666,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(40, 20);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf, 2000);
 
@@ -1702,7 +1702,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(80, 10);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf, 2000);
 
@@ -1731,7 +1731,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(35, 20);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf, 2000);
 
@@ -1759,7 +1759,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(30, 20);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf, 1000);
 
@@ -1781,7 +1781,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create(10, 1);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         Assert.Equal((uint)'"', ReadCellChar(buf, 0, 0));
 
@@ -1827,7 +1827,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create((uint)width, 20);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         // Collapse rendered lines into a single string (strip trailing spaces per line)
@@ -1865,7 +1865,7 @@ public class TextBufferDrawingTests
 
         using var buf = OptimizedBuffer.Create((uint)width, 20);
         buf.Clear(BlackBg);
-        buf.DrawTextBufferView(view.Handle, 0, 0);
+        buf.DrawTextBufferView(view, 0, 0);
 
         string result = GetResolvedText(buf);
         var allText = string.Join("", result.Split('\n').Select(l => l.TrimEnd()));
@@ -2391,7 +2391,7 @@ public class TextBufferDrawingTests
         root.Add(footer);
 
         // Render the tree to the NativeRenderer's next buffer
-        using var nextBuf = OptimizedBuffer.WrapExisting(nativeRenderer.GetNextBuffer());
+        using var nextBuf = nativeRenderer.GetNextBuffer();
         ctx.FrameId = 1;
         root.Render(nextBuf, 0.016f);
 

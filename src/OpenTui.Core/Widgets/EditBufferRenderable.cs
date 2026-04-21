@@ -189,10 +189,10 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         uint w = _widthValue > 0 ? (uint)_widthValue : 80u;
         uint h = _heightValue > 0 ? (uint)_heightValue : 24u;
         EditorView = EditorView.Create(EditBuffer, w, h);
-        _textBuffer = TextBuffer.WrapExisting(EditBuffer.GetTextBuffer());
+        _textBuffer = TextBuffer.Create(ctx.WidthMethod);
         Extmarks = new ExtmarksController(EditBuffer, EditorView, _textBuffer);
         if (options.SyntaxStyle is { } syntaxStyle)
-            _textBuffer.SetSyntaxStyle(syntaxStyle.Handle);
+            _textBuffer.SetSyntaxStyle(syntaxStyle);
 
         EditorView.SetWrapMode(_wrapMode);
         EditorView.SetScrollMargin(_scrollMargin);
@@ -969,7 +969,7 @@ public abstract class EditBufferRenderable : Renderable, ILineInfoProvider
         buffer.FillRect((uint)baseX, (uint)baseY,
             (uint)_widthValue, (uint)_heightValue, _ebBackgroundColor);
 
-        buffer.DrawEditorView(EditorView.Handle, baseX, baseY);
+        buffer.DrawEditorView(EditorView, baseX, baseY);
 
         if (_showCursor && Focused)
         {
