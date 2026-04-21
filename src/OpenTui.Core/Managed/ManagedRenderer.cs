@@ -12,15 +12,18 @@ namespace OpenTui.Core.Managed;
 /// </summary>
 public readonly record struct ClipRect(int X, int Y, uint Width, uint Height);
 
-/// <summary>
-/// Render performance statistics.
-/// </summary>
+/// <summary>Render performance statistics.</summary>
 public sealed class RenderStats
 {
+    /// <summary>Time of the last rendered frame in milliseconds.</summary>
     public double LastFrameTime { get; set; }
+    /// <summary>Average frame time in milliseconds.</summary>
     public double AverageFrameTime { get; set; }
+    /// <summary>Total number of frames rendered.</summary>
     public ulong FrameCount { get; set; }
+    /// <summary>Frames per second.</summary>
     public uint Fps { get; set; }
+    /// <summary>Number of cells updated in the last frame.</summary>
     public uint CellsUpdated { get; set; }
 }
 
@@ -30,7 +33,9 @@ public sealed class RenderStats
 /// </summary>
 public interface ITerminalWriter
 {
+    /// <summary>Writes a span of bytes to the terminal output.</summary>
     void Write(ReadOnlySpan<byte> data);
+    /// <summary>Flushes the terminal output buffer.</summary>
     void Flush();
 }
 
@@ -75,6 +80,7 @@ public sealed class ManagedRenderer : IDisposable
     private static ReadOnlySpan<byte> CursorLineBlink => "\x1b[5 q"u8;
     private static ReadOnlySpan<byte> CursorUnderlineSeq => "\x1b[4 q"u8;
     private static ReadOnlySpan<byte> CursorUnderlineBlink => "\x1b[3 q"u8;
+    private static ReadOnlySpan<byte> HyperlinkClose => "\x1b]8;;\x1b\\"u8;
 
     #endregion
 
@@ -133,6 +139,12 @@ public sealed class ManagedRenderer : IDisposable
 
     #endregion
 
+    #region State — link pool
+
+    private ManagedLinkPool? _linkPool;
+
+    #endregion
+
     #region Public properties
 
     /// <summary>Width in columns.</summary>
@@ -166,6 +178,16 @@ public sealed class ManagedRenderer : IDisposable
 
     /// <summary>The grapheme pool used by this renderer's buffers.</summary>
     public ManagedGraphemePool GraphemePool => _graphemePool;
+
+    /// <summary>
+    /// Optional link pool for resolving hyperlink IDs to URLs.
+    /// When set, the renderer emits OSC 8 hyperlink escape sequences during rendering.
+    /// </summary>
+    public ManagedLinkPool? LinkPool
+    {
+        get => _linkPool;
+        set => _linkPool = value;
+    }
 
     /// <summary>Last rendered output bytes (testing mode). Empty when not in testing mode.</summary>
     public ReadOnlySpan<byte> LastOutputForTest => _outputBuffer.AsSpan(0, _outputLen);
@@ -471,11 +493,12 @@ public sealed class ManagedRenderer : IDisposable
         Rgba? currentFg = null;
         Rgba? currentBg = null;
         int currentAttributes = -1;
-        uint currentLinkId = 0;
         Span<byte> utf8Buf = stackalloc byte[4];
 
         int runStart = -1;
         uint runLength = 0;
+        uint currentLinkId = 0;
+        ManagedLinkPool? linkPool = _linkPool;
 
         for (uint y = 0; y < Height; y++)
         {
@@ -512,10 +535,29 @@ public sealed class ManagedRenderer : IDisposable
                 bool bgMatch = currentBg.HasValue && RgbaEqual(currentBg.Value, nc.Bg);
                 bool sameAttributes = fgMatch && bgMatch && (int)nc.Attributes == currentAttributes;
 
-                // Hyperlink handling
-                uint linkId = TextAttributeUtils.GetBase(nc.Attributes) != 0
-                    ? 0 // simplified — link support can be added later
-                    : 0;
+                // Hyperlink support (OSC 8)
+                uint linkId = linkPool is not null ? ManagedLinkPool.GetLinkId(nc.Attributes) : 0;
+
+                if (linkPool is not null && linkId != currentLinkId)
+                {
+                    if (currentLinkId != 0)
+                        WriteToOutput(HyperlinkClose);
+
+                    currentLinkId = linkId;
+
+                    if (currentLinkId != 0)
+                    {
+                        string? url = linkPool.GetUrl(currentLinkId);
+                        if (url is not null)
+                        {
+                            WriteHyperlinkOpen(currentLinkId, url);
+                        }
+                        else
+                        {
+                            currentLinkId = 0;
+                        }
+                    }
+                }
 
                 if (!sameAttributes || runStart == -1)
                 {
@@ -587,6 +629,10 @@ public sealed class ManagedRenderer : IDisposable
                 cellsUpdated++;
             }
         }
+
+        // Close any open hyperlink before end-of-frame reset
+        if (linkPool is not null && currentLinkId != 0)
+            WriteToOutput(HyperlinkClose);
 
         // End-of-frame reset
         WriteToOutput(Reset);
@@ -762,6 +808,19 @@ public sealed class ManagedRenderer : IDisposable
         WriteToOutput((byte)0x07);
     }
 
+    /// <summary>Writes OSC 8 hyperlink open: \x1b]8;id={linkId};{url}\x1b\\</summary>
+    private void WriteHyperlinkOpen(uint linkId, string url)
+    {
+        WriteToOutput("\x1b]8;id="u8);
+        WriteUIntAscii(linkId);
+        WriteToOutput((byte)';');
+        int maxBytes = Encoding.UTF8.GetMaxByteCount(url.Length);
+        Span<byte> urlBytes = maxBytes <= 512 ? stackalloc byte[maxBytes] : new byte[maxBytes];
+        int urlLen = Encoding.UTF8.GetBytes(url, urlBytes);
+        WriteToOutput(urlBytes[..urlLen]);
+        WriteToOutput("\x1b\\"u8);
+    }
+
     private void WriteCursorStyleSequence(CursorStyle style, bool blinking)
     {
         ReadOnlySpan<byte> seq = style switch
@@ -888,6 +947,7 @@ public sealed class ManagedRenderer : IDisposable
 
     private bool _disposed;
 
+    /// <inheritdoc />
     public void Dispose()
     {
         if (_disposed) return;
@@ -896,8 +956,7 @@ public sealed class ManagedRenderer : IDisposable
         _currentRenderBuffer.Dispose();
         _nextRenderBuffer.Dispose();
 
-        if (_ownsGraphemePool && _graphemePool is IDisposable disposablePool)
-            disposablePool.Dispose();
+        // ManagedGraphemePool does not implement IDisposable — no cleanup needed.
     }
 
     #endregion
