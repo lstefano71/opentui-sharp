@@ -209,6 +209,43 @@ public sealed class ManagedBuffer : IDisposable
         return new Cell(_chars[index], _fg[index], _bg[index], _attributes[index]);
     }
 
+    /// <summary>Gets the cell data at the specified position.</summary>
+    public Cell GetCell(uint x, uint y)
+    {
+        if (x >= Width || y >= Height)
+            return default;
+        int idx = (int)(y * Width + x);
+        return new Cell(_chars[idx], _fg[idx], _bg[idx], _attributes[idx]);
+    }
+
+    /// <summary>Gets the character codepoint at the specified position.</summary>
+    public uint GetCharAt(uint x, uint y)
+    {
+        if (x >= Width || y >= Height) return 0;
+        return _chars[(int)(y * Width + x)];
+    }
+
+    /// <summary>Gets the foreground color at the specified position.</summary>
+    public Rgba GetFgAt(uint x, uint y)
+    {
+        if (x >= Width || y >= Height) return default;
+        return _fg[(int)(y * Width + x)];
+    }
+
+    /// <summary>Gets the background color at the specified position.</summary>
+    public Rgba GetBgAt(uint x, uint y)
+    {
+        if (x >= Width || y >= Height) return default;
+        return _bg[(int)(y * Width + x)];
+    }
+
+    /// <summary>Gets the attributes at the specified position.</summary>
+    public uint GetAttributesAt(uint x, uint y)
+    {
+        if (x >= Width || y >= Height) return 0;
+        return _attributes[(int)(y * Width + x)];
+    }
+
     private void SetInternal(uint x, uint y, Cell cell, bool spanCleanup)
     {
         uint? maybeIndex = ValidateAndIndex(x, y);
@@ -502,7 +539,7 @@ public sealed class ManagedBuffer : IDisposable
         _bg.AsSpan().Fill(bg);
     }
 
-    /// <summary>Draws UTF-8 text into the buffer. Currently handles ASCII; full Unicode in Phase 4.</summary>
+    /// <summary>Draws UTF-8 text into the buffer with full Unicode / grapheme cluster support.</summary>
     public void DrawText(ReadOnlySpan<byte> utf8Text, uint x, uint y, Rgba fg, Rgba? bg, uint attributes = 0)
     {
         if (x >= Width || y >= Height || utf8Text.Length == 0) return;
@@ -511,28 +548,49 @@ public sealed class ManagedBuffer : IDisposable
         Rgba bgColor = bg ?? Rgba.Transparent;
         if (IsFullyTransparent(opacity, fg, bgColor)) return;
 
-        // TODO: Full grapheme/Unicode support will be added in Phase 4.
-        // For now, process bytes as ASCII (1 byte = 1 cell = width 1).
         uint charX = x;
-        for (int i = 0; i < utf8Text.Length; i++)
+        int idx = 0;
+        while (idx < utf8Text.Length && charX < Width)
         {
-            if (charX >= Width) break;
-            byte b = utf8Text[i];
-
-            // Skip non-ASCII lead bytes (multi-byte sequences)
-            if (b >= 0x80)
+            var status = Rune.DecodeFromUtf8(utf8Text[idx..], out Rune rune, out int bytesConsumed);
+            if (status != System.Buffers.OperationStatus.Done)
             {
-                // Count continuation bytes to skip the full sequence
-                if ((b & 0xE0) == 0xC0) { i += 1; } // 2-byte
-                else if ((b & 0xF0) == 0xE0) { i += 2; } // 3-byte
-                else if ((b & 0xF8) == 0xF0) { i += 3; } // 4-byte
-                // Place a replacement character
-                SetCellForText(charX, y, '?', fg, bgColor, attributes, opacity);
-                charX++;
+                idx++;
                 continue;
             }
 
-            if (b < 32) { charX++; continue; } // Skip control chars
+            int cp = rune.Value;
+
+            // Stop at newlines
+            if (cp == '\n' || cp == '\r') break;
+
+            // Skip control characters (except tab)
+            if (cp < 32 && cp != '\t')
+            {
+                idx += bytesConsumed;
+                continue;
+            }
+
+            uint displayWidth = TextWidth.CharWidth(rune, 8);
+
+            // Skip zero-width characters (combining marks, ZWJ, etc.)
+            if (displayWidth == 0)
+            {
+                idx += bytesConsumed;
+                continue;
+            }
+
+            // Tab: advance to next tab stop
+            if (cp == '\t')
+            {
+                uint tabStop = ((charX / 8) + 1) * 8;
+                charX = Math.Min(tabStop, Width);
+                idx += bytesConsumed;
+                continue;
+            }
+
+            // Check if character fits
+            if (charX + displayWidth > Width) break;
 
             Rgba actualBg;
             if (bg.HasValue)
@@ -545,8 +603,17 @@ public sealed class ManagedBuffer : IDisposable
                 actualBg = existing?.Bg ?? new Rgba(0f, 0f, 0f, 1f);
             }
 
-            SetCellForText(charX, y, b, fg, actualBg, attributes, opacity);
-            charX++;
+            uint codepoint = (uint)cp;
+            SetCellForText(charX, y, codepoint, fg, actualBg, attributes, opacity);
+
+            if (displayWidth == 2 && charX + 1 < Width)
+            {
+                // Wide character continuation cell
+                SetCellForText(charX + 1, y, CharFlagContinuation | codepoint, fg, actualBg, attributes, opacity);
+            }
+
+            charX += displayWidth;
+            idx += bytesConsumed;
         }
     }
 
@@ -1317,9 +1384,8 @@ public sealed class ManagedBuffer : IDisposable
         if (titleText is null || titleText.Length == 0 || !borderSide || !isAtActualSide)
             return new BoxTitleLayout(false, startX, startX, startX);
 
-        // Simplified: ASCII length for now
-        // TODO: Full Unicode text width calculation in Phase 4
-        int titleLength = titleText.Length;
+        // Unicode-aware display width for title
+        int titleLength = (int)TextWidth.CalculateTextWidth(titleText.AsSpan(), 8, _widthMethod);
         const int minTitleSpace = 4;
 
         if ((int)boxWidth < titleLength + minTitleSpace)
@@ -1411,6 +1477,18 @@ public sealed class ManagedBuffer : IDisposable
 
     /// <summary>Gets the raw attributes buffer.</summary>
     public Span<uint> AttributesBuffer => _attributes.AsSpan();
+
+    /// <summary>Gets the raw character array (for direct access).</summary>
+    public ReadOnlySpan<uint> GetChars() => _chars.AsSpan(0, (int)(Width * Height));
+
+    /// <summary>Gets the raw foreground color array.</summary>
+    public ReadOnlySpan<Rgba> GetFgColors() => _fg.AsSpan(0, (int)(Width * Height));
+
+    /// <summary>Gets the raw background color array.</summary>
+    public ReadOnlySpan<Rgba> GetBgColors() => _bg.AsSpan(0, (int)(Width * Height));
+
+    /// <summary>Gets the raw attributes array.</summary>
+    public ReadOnlySpan<uint> GetAttributes() => _attributes.AsSpan(0, (int)(Width * Height));
 
     #endregion
 
